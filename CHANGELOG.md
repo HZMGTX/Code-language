@@ -108,6 +108,11 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
 
 ### Fixed
 
+- **`:ast` in the REPL printed raw JSON where `lumen ast` printed a tree.** Two
+  renderings of one structure, and the worse one in the place you reach for it
+  most: twenty-eight lines for `1 + 2 ** 3` where the tree is seven. It now uses
+  the same renderer, so the two cannot disagree.
+
 - **`lumen ast` printed `(node)` where an argument, a match arm or a parameter
   should be.** Seven AST types are structure rather than syntax — there is no
   `Arg` in the grammar, only a call with things in it — so they carry no `kind`,

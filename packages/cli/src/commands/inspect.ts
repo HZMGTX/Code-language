@@ -34,7 +34,18 @@ export async function dumpTokens(file: string): Promise<void> {
 
 const SKIP = new Set(['span', 'kind']);
 
-/** Render any AST node as an indented tree, hiding spans. */
+/**
+ * Render any AST node as an indented tree, hiding spans.
+ *
+ * Exported so `:ast` in the REPL shows the same thing `lumen ast` does. It used
+ * to print the raw JSON with spans stripped, which for `1 + 2 ** 3` was
+ * twenty-eight lines where this is seven — two renderings of one structure, and
+ * the worse one in the place you reach for it most.
+ */
+export function renderNode(node: unknown, indent: number, out: string[]): void {
+  render(node, indent, out);
+}
+
 function render(node: unknown, indent: number, out: string[]): void {
   const pad = '  '.repeat(indent);
 

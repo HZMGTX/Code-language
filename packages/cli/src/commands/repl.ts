@@ -21,6 +21,7 @@ import {
   type SourceUnit,
 } from '@lumen-lang/core';
 import { STD_MODULE_NAMES } from '@lumen-lang/stdlib';
+import { renderNode } from './inspect.js';
 import { VERSION, newInterpreter, useColor } from '../support.js';
 
 /** Operators that cannot legally end an input. */
@@ -179,9 +180,10 @@ export async function startRepl(): Promise<void> {
           }
           try {
             const module = parse(argument, '<repl>');
-            process.stdout.write(
-              JSON.stringify(module.stmts, (key, value) => (key === 'span' ? undefined : value), 2) + '\n',
-            );
+            // The same renderer `lumen ast` uses, so the two never disagree.
+            const lines: string[] = [];
+            renderNode(module.stmts, 0, lines);
+            process.stdout.write(lines.join('\n') + '\n');
           } catch (error) {
             if (error instanceof LumenError) process.stdout.write(error.render(color) + '\n');
             else throw error;

@@ -78,6 +78,26 @@ describe('repl', () => {
     assert.match(out, /std\/web/);
   });
 
+  it('answers :ast with the same tree `lumen ast` prints', async () => {
+    // It used to print the raw JSON with spans stripped: twenty-eight lines for
+    // `1 + 2 ** 3` where the tree is seven, and a second rendering of one
+    // structure that could drift from the command's.
+    const out = await repl([':ast 1 + 2 ** 3']);
+    assert.match(out, /Binary op="\+"/, out);
+    assert.match(out, /NumberLit value=1/, out);
+    assert.doesNotMatch(out, /"kind":/, 'still printing JSON:\n' + out);
+  });
+
+  it('reports a :ast that does not parse, and carries on', async () => {
+    const out = await repl([':ast nope +', '1 + 1']);
+    assert.match(out, /error\[PA\d+\]/, out);
+    assert.match(out, /\n?2/, out);
+  });
+
+  it('asks for an expression when :ast is given none', async () => {
+    assert.match(await repl([':ast']), /usage: :ast/);
+  });
+
   it('rejects an unknown command without dying', async () => {
     const out = await repl([':nonsense', '1 + 1']);
     assert.match(out, /unknown command/);
