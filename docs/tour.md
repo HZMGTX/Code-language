@@ -96,9 +96,14 @@ while i < 3 { i += 1 }
 
 for x in [1, 2, 3] { print(x) }
 for ch in "abc" { print(ch) }
-for [key, value] in { a: 1 } { print("${key}=${value}") }
+for [key, value] in ({ a: 1 }) { print("${key}=${value}") }   // parenthesised: see below
 for i in 0..5 { print(i) }          // 0 to 4
 ```
+
+The parentheses around that map are required. Inside the header of an `if`,
+`while`, `for` or `match`, a `{` starts the body, so a map literal there has to
+be wrapped to say which you meant. It is the one place the brace is ambiguous,
+and Lumen asks rather than guesses.
 
 ## Pipelines
 
@@ -126,7 +131,7 @@ Every standard-library function takes its subject first, and `x.f(a)` simply
 means `f(x, a)`. So the same call has three spellings, and you can pick whichever
 reads best:
 
-```lumen
+```text
 x.f(a)        f(x, a)        x |> f(a)
 ```
 

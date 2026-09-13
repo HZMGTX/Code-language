@@ -74,17 +74,25 @@ export function stdList(): Map<string, Value> {
       return None;
     }),
 
-    fn('any', ['xs', 'predicate'], async (a, c) => {
+    // The predicate is optional: with none, the elements are tested directly,
+    // so `any([true, false])` reads the way a Python programmer expects.
+    fn('any', ['xs', { name: 'predicate', defaultValue: NIL }], async (a, c) => {
       const xs = expectList(arg(a, 0), c, 'any(xs)');
-      const p = expectFn(arg(a, 1), c, 'any(predicate)');
-      for (const item of xs.items) if (truthy(await c.call(p, [item]))) return bool(true);
+      const p = arg(a, 1);
+      for (const item of xs.items) {
+        const held = p.k === 'nil' ? item : await c.call(expectFn(p, c, 'any(predicate)'), [item]);
+        if (truthy(held)) return bool(true);
+      }
       return bool(false);
     }),
 
-    fn('all', ['xs', 'predicate'], async (a, c) => {
+    fn('all', ['xs', { name: 'predicate', defaultValue: NIL }], async (a, c) => {
       const xs = expectList(arg(a, 0), c, 'all(xs)');
-      const p = expectFn(arg(a, 1), c, 'all(predicate)');
-      for (const item of xs.items) if (!truthy(await c.call(p, [item]))) return bool(false);
+      const p = arg(a, 1);
+      for (const item of xs.items) {
+        const held = p.k === 'nil' ? item : await c.call(expectFn(p, c, 'all(predicate)'), [item]);
+        if (!truthy(held)) return bool(false);
+      }
       return bool(true);
     }),
 
@@ -238,8 +246,8 @@ export function stdList(): Map<string, Value> {
       filter: 'Keep only the elements a predicate says true to.',
       reduce: 'Fold the list down to a single value.',
       find: 'The first element matching a predicate. Some(x), or None.',
-      any: 'True if the predicate holds for at least one element.',
-      all: 'True if the predicate holds for every element.',
+      any: 'True if any element is truthy, or matches the predicate if one is given.',
+      all: 'True if every element is truthy, or matches the predicate if one is given.',
       count: 'How many elements match a predicate.',
       len: 'How many elements the list has.',
       isEmpty: 'True if the list has no elements.',

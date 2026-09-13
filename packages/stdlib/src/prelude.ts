@@ -103,8 +103,8 @@ export function preludeExtras(): Map<string, Value> {
   define(alias(take(L, 'reverse'), 'reversed', 'A reversed copy of a list.'));
   define(alias(take(L, 'enumerate'), 'enumerate', 'Pair each element with its index: [[0, a], [1, b]].'));
   define(alias(take(L, 'zip'), 'zip', 'Pair up two lists, stopping at the shorter one.'));
-  define(alias(take(L, 'any'), 'any', 'True if the predicate holds for at least one element.'));
-  define(alias(take(L, 'all'), 'all', 'True if the predicate holds for every element.'));
+  define(alias(take(L, 'any'), 'any', 'True if any element is truthy, or matches the predicate if one is given.'));
+  define(alias(take(L, 'all'), 'all', 'True if every element is truthy, or matches the predicate if one is given.'));
 
   // --- numbers ---------------------------------------------------------------
   define(alias(take(M, 'abs'), 'abs', 'Distance from zero.'));

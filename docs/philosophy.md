@@ -24,7 +24,7 @@ be archaeology.
 ### 2. Behaviour is pinned by an executable conformance suite
 
 `tests/conformance/` holds one `.lm` file and one exact expected-output file per
-behaviour. 65 of them today. They are byte-compared, run on three Node
+behaviour. 66 of them today. They are byte-compared, run on three Node
 versions and three operating systems, and they are what makes the specification
 enforceable rather than aspirational.
 

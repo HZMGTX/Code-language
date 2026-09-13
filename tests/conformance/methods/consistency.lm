@@ -1,0 +1,19 @@
+// len() works the same way on every container, as a method and as a function.
+print("abc".len())
+print([1, 2].len())
+print({ a: 1, b: 2 }.len())
+print(len("abc"))
+print(len([1, 2]))
+print(len({ a: 1, b: 2 }))
+
+// any and all read the elements directly when given no predicate.
+print(any([false, true]))
+print(all([true, true]))
+print(any([false, false]))
+print(all([true, false]))
+print(any([], fn(n) { n > 0 }))
+print(all([], fn(n) { n > 0 }))
+
+// With a predicate they behave as before.
+print(any([1, 2, 3], fn(n) { n > 2 }))
+print(all([1, 2, 3], fn(n) { n > 0 }))

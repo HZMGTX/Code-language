@@ -26,6 +26,21 @@ The first working version. Everything below runs today.
 - Modules: `import`/`export`, `std/*` modules and relative `.lm` files
 - No async colouring — I/O is awaited implicitly
 
+### Fixed
+
+- `"abc".len()` raised while `[1, 2].len()` worked. `std/str` had no `len`, so
+  strings were the one container without the method. They now agree.
+- `any` and `all` required a predicate, so `any([true, false])` — the form a
+  Python programmer reaches for first — was an error. The predicate is now
+  optional and the elements are tested directly without one.
+- `docs/tour.md` documented `for [k, v] in { a: 1 }`, which does not parse: in a
+  loop header a `{` starts the body, so the map needs parentheses. The example
+  is corrected and the rule is now explained where it bites.
+- The prelude table in `docs/stdlib.md` still listed ten names when there were
+  thirty-eight. It is generated from a live interpreter now, so it cannot go
+  stale again, and the core built-ins carry documentation so `help()` is
+  complete.
+
 ### Static checks
 
 Programs are now checked before they run, so a mistake is reported whether or
@@ -103,7 +118,7 @@ unrelated; a confident wrong suggestion costs more than none.
 ### Project
 
 - Zero runtime dependencies
-- 191 tests and 65 conformance fixtures, green on Node 20/22/24 across Linux,
+- 199 tests and 66 conformance fixtures, green on Node 20/22/24 across Linux,
   macOS and Windows
 - Specification, tour, standard-library reference and design rationale
 - Proprietary licence; every package marked private, enforced by CI

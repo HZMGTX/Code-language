@@ -1480,16 +1480,31 @@ export function native(
   name: string,
   params: readonly string[],
   call: (args: readonly Value[], ctx: CallCtx) => Value | Promise<Value>,
+  doc?: string,
 ): NativeValue {
-  return { k: 'native', name, params: params.map((p) => ({ name: p })), call };
+  return {
+    k: 'native',
+    name,
+    params: params.map((p) => ({ name: p })),
+    ...(doc === undefined ? {} : { doc }),
+    call,
+  };
 }
 
 /** Define a native function that accepts any number of positional arguments. */
 export function variadic(
   name: string,
   call: (args: readonly Value[], ctx: CallCtx) => Value | Promise<Value>,
+  doc?: string,
 ): NativeValue {
-  return { k: 'native', name, params: [], variadic: true, call };
+  return {
+    k: 'native',
+    name,
+    params: [],
+    variadic: true,
+    ...(doc === undefined ? {} : { doc }),
+    call,
+  };
 }
 
 /**
@@ -1500,10 +1515,14 @@ function installBuiltins(globals: Env): void {
   const define = (value: NativeValue): void => globals.declare(value.name, value, false);
 
   define(
-    variadic('print', (args, ctx) => {
-      ctx.host.writeOut(args.map((a) => display(a)).join(' ') + '\n');
-      return NIL;
-    }),
+    variadic(
+      'print',
+      (args, ctx) => {
+        ctx.host.writeOut(args.map((a) => display(a)).join(' ') + '\n');
+        return NIL;
+      },
+      'Write values to the output, separated by spaces, followed by a newline.',
+    ),
   );
 
   define(
@@ -1519,12 +1538,12 @@ function installBuiltins(globals: Env): void {
         default:
           return ctx.panic('len() needs a Str, List or Map, got ' + typeName(value));
       }
-    }),
+    }, 'How many characters, elements or entries a value has.'),
   );
 
-  define(native('type', ['value'], (args) => str(typeName(args[0] ?? NIL))));
+  define(native('type', ['value'], (args) => str(typeName(args[0] ?? NIL)), "The value's type name, as a Str."));
 
-  define(native('str', ['value'], (args) => str(display(args[0] ?? NIL))));
+  define(native('str', ['value'], (args) => str(display(args[0] ?? NIL)), 'The value rendered as a Str.'));
 
   define(
     native('num', ['value'], (args) => {
@@ -1535,10 +1554,10 @@ function installBuiltins(globals: Env): void {
         return value.v.trim() !== '' && !Number.isNaN(parsed) ? enumOk(num(parsed)) : enumErr(str('`' + value.v + '` is not a number'));
       }
       return enumErr(str('cannot convert ' + typeName(value) + ' to Num'));
-    }),
+    }, 'Parse a Str as a number. Ok(n), or Err if it is not one.'),
   );
 
-  define(native('bool', ['value'], (args) => bool(truthy(args[0] ?? NIL))));
+  define(native('bool', ['value'], (args) => bool(truthy(args[0] ?? NIL)), 'The value as a Bool: everything except nil and false is true.'));
 
   define(
     native('assert', ['condition', 'message'], (args, ctx) => {
@@ -1547,20 +1566,20 @@ function installBuiltins(globals: Env): void {
       if (truthy(condition)) return NIL;
       const text = message !== undefined && message.k === 'str' ? message.v : 'assertion failed';
       return ctx.panic(text);
-    }),
+    }, 'Stop with a message unless the condition is true. The whole of a test framework.'),
   );
 
   define(
     native('panic', ['message'], (args, ctx) => {
       const message = args[0] ?? NIL;
       return ctx.panic(message.k === 'str' ? message.v : display(message));
-    }),
+    }, 'Stop the program with a located error.'),
   );
 
   // Result and Option constructors, available without an import.
-  define(native('Ok', ['value'], (args) => enumOk(args[0] ?? NIL)));
-  define(native('Err', ['error'], (args) => enumErr(args[0] ?? NIL)));
-  define(native('Some', ['value'], (args) => enumValue('Option', 'Some', [args[0] ?? NIL])));
+  define(native('Ok', ['value'], (args) => enumOk(args[0] ?? NIL), 'A Result that succeeded, carrying a value.'));
+  define(native('Err', ['error'], (args) => enumErr(args[0] ?? NIL), 'A Result that failed, carrying an error.'));
+  define(native('Some', ['value'], (args) => enumValue('Option', 'Some', [args[0] ?? NIL]), 'An Option that holds a value.'));
   globals.declare('None', NONE, false);
 
   // The enum types themselves, so `Result.Ok` and `match` on them read naturally.

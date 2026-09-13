@@ -4,4 +4,4 @@ error[RT027]: Str has no method `nope`
 1 | print("abc".nope())
   |       ^^^^^^^^^^ not available here
   |
-  = note: available on Str: chars, contains, endsWith, indexOf, isEmpty, lines, lower, padEnd, padStart, repeat, replace, reverse, slice, split, startsWith, toNum, trim, upper
+  = note: available on Str: chars, contains, endsWith, indexOf, isEmpty, len, lines, lower, padEnd, padStart, repeat, replace, reverse, slice, split, startsWith, toNum, trim, upper

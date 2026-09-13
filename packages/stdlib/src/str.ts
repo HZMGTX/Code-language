@@ -90,6 +90,8 @@ export function stdStr(): Map<string, Value> {
 
     fn('reverse', ['s'], (a, c) => str([...expectStr(arg(a, 0), c, 'reverse(s)')].reverse().join(''))),
 
+    fn('len', ['s'], (a, c) => num([...expectStr(arg(a, 0), c, 'len(s)')].length)),
+
     fn('isEmpty', ['s'], (a, c) => bool(expectStr(arg(a, 0), c, 'isEmpty(s)').length === 0)),
 
     /** Parse a number, as a Result so failure is explicit rather than silent. */
@@ -117,6 +119,7 @@ export function stdStr(): Map<string, Value> {
       padStart: 'Pad on the left until the string reaches a width.',
       padEnd: 'Pad on the right until the string reaches a width.',
       reverse: 'The characters in the opposite order.',
+      len: 'How many characters the string has.',
       isEmpty: 'True if the string has no characters.',
       toNum: 'Parse as a number. Ok(n), or Err if it is not one.',
     },

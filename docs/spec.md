@@ -257,7 +257,7 @@ method can therefore never change what an existing lookup returns.
 `x.f(a)` calls `f(x, a)`. Every standard-library function takes its subject
 first, so these three are the same expression:
 
-```lumen
+```text
 x.f(a)        f(x, a)        x |> f(a)
 ```
 
@@ -343,7 +343,7 @@ return to, it is `RT001`.
 
 ## 5. Statements
 
-```lumen
+```text
 while condition { ... }
 for pattern in iterable { ... }
 break

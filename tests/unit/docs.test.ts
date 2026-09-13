@@ -6,13 +6,13 @@
  * tests compare the documents against the running language.
  */
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
 
 import { createInterpreter } from '@lumen-lang/stdlib';
-import type { Host } from '@lumen-lang/core';
+import { LumenError, parse, type Host } from '@lumen-lang/core';
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 
@@ -84,4 +84,51 @@ describe('the specification matches the implementation', () => {
     }
     assert.deepEqual([...new Set(missing)], [], 'documented npm scripts that do not exist');
   });
+});
+
+describe('every documented code sample is real Lumen', () => {
+  // A ```lumen fence is a promise that what follows is the language. Fragments
+  // may refer to names defined elsewhere in the prose — that is ordinary
+  // documentation style and not checked — but everything so fenced must at
+  // least parse. Anything that is not Lumen (a signature listing, a grammar
+  // sketch) belongs in a plain ```text fence instead.
+  //
+  // This exists because docs/tour.md once shipped an example that could not
+  // parse: `for [k, v] in { a: 1 }` reads the brace as the loop body.
+  const files = [
+    ...readdirSync(ROOT).filter((f) => f.endsWith('.md')),
+    ...readdirSync(ROOT + 'docs').filter((f) => f.endsWith('.md')).map((f) => 'docs/' + f),
+  ].sort();
+
+  it('finds the documentation', () => {
+    assert.ok(files.length >= 8, 'expected at least 8 markdown files, found ' + files.length);
+  });
+
+  for (const file of files) {
+    const text = read(file);
+    const blocks = [...text.matchAll(/```lumen\n([\s\S]*?)```/g)];
+    if (blocks.length === 0) continue;
+
+    it(file + ' (' + blocks.length + ' samples)', () => {
+      const broken: string[] = [];
+      for (const block of blocks) {
+        const code = block[1] as string;
+        const line = text.slice(0, block.index).split('\n').length;
+        try {
+          parse(code, file);
+        } catch (error) {
+          const why = error instanceof LumenError
+            ? (error.diagnostics[0]?.code ?? '?') + ': ' + (error.diagnostics[0]?.message ?? '')
+            : String(error);
+          broken.push('  ' + file + ' line ~' + line + ' — ' + why + '\n    ' + (code.split('\n')[0] ?? ''));
+        }
+      }
+      assert.deepEqual(
+        broken,
+        [],
+        'these ```lumen samples do not parse:\n' + broken.join('\n') +
+          '\n(if a block is not Lumen code, fence it as ```text instead)',
+      );
+    });
+  }
 });
