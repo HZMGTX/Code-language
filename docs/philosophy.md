@@ -166,5 +166,17 @@ watched for:
 - The specification drifting from the implementation with no one reconciling it.
 - Diagnostics degrading into bare messages with no span or suggestion.
 - The core reaching for a host API directly, rather than through `Host`.
+- The host showing through the surface. This one has already happened once:
+  `let valueOf = 1` was a syntax error, because the keyword table was a
+  JavaScript object literal and every name on `Object.prototype` answered a
+  lookup in it. `toString`, `constructor`, `hasOwnProperty` and `__proto__`
+  were unusable too, `stringify` quietly dropped a `__proto__` key, and
+  importing a module by one of those names crashed the interpreter. None of it
+  was visible from inside the implementation, where those names never come up;
+  it was visible immediately from outside, the moment a program wanted a
+  function called `valueOf`. Lookups keyed by something a program wrote use a
+  `Map` now, and objects built from program data are created without a
+  prototype. The lesson worth keeping is the one about where the bug was found:
+  writing programs in the language, not reading the code that implements it.
 
 Each of those is checkable, and the first is checked automatically.

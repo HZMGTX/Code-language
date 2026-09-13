@@ -58,7 +58,8 @@ function normalize(result: Value): { status: number; headers: Record<string, str
   const statusValue = result.entries.get('status');
   const bodyValue = result.entries.get('body');
   const headerValue = result.entries.get('headers');
-  const headers: Record<string, string> = {};
+  // Keys come from the handler, so build without a prototype to write into.
+  const headers = Object.create(null) as Record<string, string>;
   if (headerValue !== undefined && headerValue.k === 'map') {
     for (const [key, value] of headerValue.entries) {
       headers[key] = value.k === 'str' ? value.v : display(value);

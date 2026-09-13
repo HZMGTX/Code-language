@@ -1,0 +1,101 @@
+// Data in, report out: parse JSON, group it, total it, write the summary back.
+//
+//   lumen run examples/inventory.lm
+//
+// This is the shape most real scripts have — read something, reshape it, say
+// something about it — and it is where a language either gets out of the way or
+// does not. Note that nothing below tests whether a step worked: `?` does that,
+// and a failure anywhere lands in `main` as a value with its reason attached.
+
+import { parse, stringify } from "std/json"
+import { read, write, remove } from "std/fs"
+
+let catalogue = "[
+  { \"sku\": \"LM-1\", \"name\": \"Desk lamp\",   \"category\": \"lighting\", \"price\": 34.5, \"stock\": 12 },
+  { \"sku\": \"LM-2\", \"name\": \"Floor lamp\",  \"category\": \"lighting\", \"price\": 89.0, \"stock\": 0  },
+  { \"sku\": \"CH-1\", \"name\": \"Oak chair\",   \"category\": \"seating\",  \"price\": 120.0, \"stock\": 4 },
+  { \"sku\": \"CH-2\", \"name\": \"Stool\",       \"category\": \"seating\",  \"price\": 45.0,  \"stock\": 23 },
+  { \"sku\": \"CH-3\", \"name\": \"Armchair\",    \"category\": \"seating\",  \"price\": 310.0, \"stock\": 0 },
+  { \"sku\": \"TB-1\", \"name\": \"Side table\",  \"category\": \"tables\",   \"price\": 75.0,  \"stock\": 7 },
+  { \"sku\": \"TB-2\", \"name\": \"Dining table\",\"category\": \"tables\",   \"price\": 540.0, \"stock\": 2 }
+]"
+
+fn money(n) { "£${str(round(n * 100) / 100)}" }
+
+// Group by any key at all: the caller says which, so this works on categories,
+// suppliers, or whatever the next column turns out to be.
+fn groupBy(items, key) {
+  var groups = {}
+  for item in items {
+    let k = item[key]
+    groups[k] = if groups[k] == nil { [item] } else { groups[k].push(item) }
+  }
+  groups
+}
+
+fn valueOf(items) { items.map(fn(i) { i.price * i.stock }).sum() }
+
+fn summarize(items) {
+  let byCategory = groupBy(items, "category")
+  {
+    products: len(items),
+    units:    items.map(fn(i) { i.stock }).sum(),
+    value:    valueOf(items),
+    outOfStock: items.filter(fn(i) { i.stock == 0 }).map(fn(i) { i.sku }),
+    categories: byCategory.keys().sorted().map(fn(name) {
+      let group = byCategory[name]
+      { name: name, products: len(group), value: valueOf(group) }
+    }),
+  }
+}
+
+fn report(path) {
+  // Each `?` is a failure that never had to be written out: bad JSON, an
+  // unwritable path, a file that vanished between writing and reading.
+  let items = parse(catalogue)?
+  let summary = summarize(items)
+
+  print("Stock on hand")
+  print("  ${"category".padEnd(12)}${"lines".padStart(6)}${"value".padStart(12)}")
+  print("  ${"-".repeat(30)}")
+  for c in summary.categories {
+    print("  ${c.name.padEnd(12)}${str(c.products).padStart(6)}${money(c.value).padStart(12)}")
+  }
+  print("  ${"total".padEnd(12)}${str(summary.products).padStart(6)}${money(summary.value).padStart(12)}")
+
+  print("")
+  print("Dearest line in each category")
+  let byCategory = groupBy(items, "category")
+  for name in byCategory.keys().sorted() {
+    let dearest = byCategory[name].sortBy(fn(i) { -i.price }).first()
+    match dearest {
+      Some(i) => print("  ${name.padEnd(12)}${i.name.padEnd(14)}${money(i.price).padStart(9)}"),
+      None    => print("  ${name.padEnd(12)}(empty)"),
+    }
+  }
+
+  print("")
+  if summary.outOfStock.isEmpty() {
+    print("Nothing is out of stock.")
+  } else {
+    print("Out of stock: ${summary.outOfStock.join(", ")}")
+  }
+
+  // Round-trip the summary through a file, because that is what a script of
+  // this shape usually does next.
+  write(path, stringify(summary, indent: 2))?
+  let written = parse(read(path)?)?
+  assert(written.value == summary.value, "the summary changed on the way through JSON")
+
+  print("")
+  print("Wrote ${len(read(path)?)} bytes of JSON to ${path} and read it back unchanged.")
+  remove(path)?
+  Ok(summary.products)
+}
+
+fn main() {
+  match report("build/inventory-summary.json") {
+    Ok(n)    => print("Summarised ${n} products."),
+    Err(why) => print("Could not produce the report: ${why}"),
+  }
+}

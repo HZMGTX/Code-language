@@ -239,7 +239,7 @@ function makeHelp(methodsOf: (type: string) => string[], preludeNames: () => str
 
       // A module path given as a string, e.g. help("std/list").
       if (subject.k === 'str' && STD_MODULE_NAMES.includes(subject.v)) {
-        const factory = STD_MODULES[subject.v];
+        const factory = STD_MODULES.get(subject.v);
         out.push(subject.v);
         out.push('  import { ... } from "' + subject.v + '"');
         if (factory !== undefined) {

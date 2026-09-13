@@ -30,6 +30,17 @@ const isIdentStart = (c: string): boolean =>
   (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c === '_';
 const isIdentPart = (c: string): boolean => isIdentStart(c) || isDigit(c);
 
+/** The letter after `0` in `0x1f`, `0b1010`, `0o17`, and what it admits. */
+const RADIX_PREFIXES: ReadonlyMap<string, { radix: number; test: (c: string) => boolean }> =
+  new Map([
+    ['x', { radix: 16, test: isHex }],
+    ['X', { radix: 16, test: isHex }],
+    ['b', { radix: 2, test: (c: string) => c === '0' || c === '1' }],
+    ['B', { radix: 2, test: (c: string) => c === '0' || c === '1' }],
+    ['o', { radix: 8, test: (c: string) => c >= '0' && c <= '7' }],
+    ['O', { radix: 8, test: (c: string) => c >= '0' && c <= '7' }],
+  ]);
+
 export class Lexer {
   private i = 0;
   private line: number;
@@ -236,7 +247,7 @@ export class Lexer {
   private scanIdent(start: Pos): void {
     while (isIdentPart(this.peek())) this.advance();
     const text = this.source.slice(start.offset - this.baseOffset, this.i);
-    const kw = KEYWORDS[text];
+    const kw = KEYWORDS.get(text);
     this.push(kw ?? 'ident', text, start);
   }
 
@@ -248,17 +259,8 @@ export class Lexer {
    * `0`, `..`, `10` rather than `0.` followed by a stray `.`.
    */
   private scanNumber(start: Pos): void {
-    const radixPrefixes: Record<string, { radix: number; test: (c: string) => boolean }> = {
-      x: { radix: 16, test: isHex },
-      X: { radix: 16, test: isHex },
-      b: { radix: 2, test: (c) => c === '0' || c === '1' },
-      B: { radix: 2, test: (c) => c === '0' || c === '1' },
-      o: { radix: 8, test: (c) => c >= '0' && c <= '7' },
-      O: { radix: 8, test: (c) => c >= '0' && c <= '7' },
-    };
-
-    if (this.peek() === '0' && radixPrefixes[this.peek(1)] !== undefined) {
-      const spec = radixPrefixes[this.peek(1)];
+    if (this.peek() === '0') {
+      const spec = RADIX_PREFIXES.get(this.peek(1));
       if (spec !== undefined) {
         this.advance();
         this.advance();

@@ -101,7 +101,17 @@ export interface Token {
   readonly parts?: readonly TemplatePart[];
 }
 
-export const KEYWORDS: Readonly<Record<string, TokenKind>> = {
+/**
+ * The reserved words, as a `Map` rather than an object literal.
+ *
+ * An object literal inherits `Object.prototype`, so `KEYWORDS['valueOf']`
+ * would answer with a JavaScript function and the lexer would take it for a
+ * keyword — which is how `let valueOf = 1` came to be a syntax error. A `Map`
+ * has no inherited keys, so a Lumen identifier is only ever compared against
+ * the words written below.
+ */
+export const KEYWORDS: ReadonlyMap<string, TokenKind> = new Map<string, TokenKind>(
+  Object.entries({
   let: 'let',
   var: 'var',
   fn: 'fn',
@@ -127,7 +137,8 @@ export const KEYWORDS: Readonly<Record<string, TokenKind>> = {
   not: 'not',
   async: 'async',
   await: 'await',
-};
+  } as const),
+);
 
 /**
  * Multi-character operators, longest first. The lexer walks this list in order,

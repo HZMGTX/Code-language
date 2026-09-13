@@ -18,18 +18,28 @@ import { stdMath } from './math.js';
 import { stdStr } from './str.js';
 import { stdWeb } from './web.js';
 
-/** Every standard module, keyed by the path you `import` it from. */
-export const STD_MODULES: Readonly<Record<string, () => Map<string, Value>>> = {
-  'std/core': stdCore,
-  'std/str': stdStr,
-  'std/list': stdList,
-  'std/map': stdMap,
-  'std/math': stdMath,
-  'std/json': stdJson,
-  'std/fs': stdFs,
-  'std/http': stdHttp,
-  'std/web': stdWeb,
-  'std/ai': stdAi,
-};
+/**
+ * Every standard module, keyed by the path you `import` it from.
+ *
+ * A `Map`, because the key comes from the program: looking `constructor` up in
+ * an object literal answers with a JavaScript function, and `import { x } from
+ * "constructor"` then crashed the interpreter instead of saying there is no
+ * such module.
+ */
+export const STD_MODULES: ReadonlyMap<string, () => Map<string, Value>> = new Map<
+  string,
+  () => Map<string, Value>
+>([
+  ['std/core', stdCore],
+  ['std/str', stdStr],
+  ['std/list', stdList],
+  ['std/map', stdMap],
+  ['std/math', stdMath],
+  ['std/json', stdJson],
+  ['std/fs', stdFs],
+  ['std/http', stdHttp],
+  ['std/web', stdWeb],
+  ['std/ai', stdAi],
+]);
 
-export const STD_MODULE_NAMES: readonly string[] = Object.keys(STD_MODULES).sort();
+export const STD_MODULE_NAMES: readonly string[] = [...STD_MODULES.keys()].sort();

@@ -35,8 +35,8 @@ function signature(name, value) {
 
 const sections = [];
 
-for (const moduleName of Object.keys(STD_MODULES).sort()) {
-  const exports = STD_MODULES[moduleName]();
+for (const moduleName of [...STD_MODULES.keys()].sort()) {
+  const exports = STD_MODULES.get(moduleName)();
   const names = [...exports.keys()].sort();
   sections.push('### `' + moduleName + '`\n');
   sections.push('```text');

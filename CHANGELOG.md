@@ -63,6 +63,17 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   (parentheses), and parses the struct literal anyway so nothing after it
   cascades. `if ready {}` is untouched: an empty brace pair in a header is far
   more likely a body than a struct.
+- **Six ordinary identifiers were syntax errors.** `let valueOf = 1` failed
+  with `expected an identifier, found function valueOf() { [native code] }`,
+  and so did `toString`, `constructor`, `hasOwnProperty`, `__proto__` and
+  `isPrototypeOf`. The keyword table was an object literal, so looking a name
+  up in it answered with whatever JavaScript's `Object.prototype` carries. It
+  is a `Map` now, which has no inherited keys. Three more leaks of the same
+  kind went with it: `stringify` silently dropped a `__proto__` key, an
+  `import` of one of those names crashed the interpreter instead of reporting
+  an unknown module, and HTTP header maps were built on objects that could be
+  written through. A language whose pitch is that the host is invisible cannot
+  have the host's method names showing through its syntax.
 - **`std/fs` leaked Node's error text.** `ENOENT: no such file or directory,
   open '/x'` names an errno, a syscall and a quoting style that vary by
   platform and version — so the same Lumen program said different things on
@@ -81,7 +92,12 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   actually write rather than a feature demonstration, and each is run by CI.
   The calculator is a recursive-descent parser for arithmetic written in
   Lumen; the adventure plays itself when there is nothing on stdin, so running
-  it in CI exercises the whole game rather than its first room.
+  it in CI exercises the whole game rather than its first room. `guestbook` is
+  one file that is both a site and a script — `lumen serve` serves its routes,
+  `lumen run` calls the same handler with requests written by hand and asserts
+  that what a visitor typed reaches the page as text rather than as a tag.
+  `inventory` parses JSON, groups and totals it, writes the summary back out
+  and reads it in again.
 
 ## [0.1.0] — 2026-09-13
 

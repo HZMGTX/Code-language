@@ -37,7 +37,10 @@ export function toJson(value: Value): unknown {
     case 'map':
     case 'struct': {
       const source = value.k === 'map' ? value.entries : value.fields;
-      const out: Record<string, unknown> = {};
+      // `Object.create(null)`, not `{}`: assigning to `out.__proto__` on an
+      // ordinary object sets the prototype instead of storing a key, so a map
+      // with that key came back from `stringify` silently missing it.
+      const out = Object.create(null) as Record<string, unknown>;
       for (const [key, item] of source) out[key] = toJson(item);
       return out;
     }

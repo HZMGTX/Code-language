@@ -18,7 +18,9 @@ function headersToMap(headers: Headers): Value {
 }
 
 function mapToHeaders(value: Value): Record<string, string> {
-  const out: Record<string, string> = {};
+  // Keys come from the program, so `__proto__` must be a header, not a write
+  // to the prototype.
+  const out = Object.create(null) as Record<string, string>;
   if (value.k !== 'map') return out;
   for (const [key, item] of value.entries) {
     out[key] = item.k === 'str' ? item.v : String(item.k === 'num' ? item.v : '');

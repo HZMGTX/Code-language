@@ -102,7 +102,7 @@ export function createNodeResolver(): ModuleResolver {
 
   return {
     async resolve(spec: string, fromFile: string): Promise<ResolvedModule | undefined> {
-      const factory = STD_MODULES[spec];
+      const factory = STD_MODULES.get(spec);
       if (factory !== undefined) {
         let exports = instantiated.get(spec);
         if (exports === undefined) {
