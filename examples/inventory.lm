@@ -20,7 +20,9 @@ let catalogue = "[
   { \"sku\": \"TB-2\", \"name\": \"Dining table\",\"category\": \"tables\",   \"price\": 540.0, \"stock\": 2 }
 ]"
 
-fn money(n) { "£${str(round(n * 100) / 100)}" }
+// fixed keeps the pennies: £414 and £414.00 are the same number, not the
+// same figure in a column of them.
+fn money(n) { "£${fixed(n, 2)}" }
 
 // Group by any key at all: the caller says which, so this works on categories,
 // suppliers, or whatever the next column turns out to be.
@@ -28,7 +30,7 @@ fn groupBy(items, key) {
   var groups = {}
   for item in items {
     let k = item[key]
-    groups[k] = if groups[k] == nil { [item] } else { groups[k].push(item) }
+    groups[k] = groups.getOr(k, []).push(item)
   }
   groups
 }

@@ -1,0 +1,31 @@
+// `fixed` exists because rounding is not formatting: `round(n * 100) / 100`
+// gives back a number, and 4.5 is the same number as 4.50 but not the same
+// figure in a column of money.
+
+print(fixed(4.5, 2))
+print(fixed(3.14159))          // two places by default
+print(fixed(2, 0))
+print(fixed(0.5, 0))           // rounds, and says so with no decimals
+print(fixed(1234.5678, 3))
+
+// It is a method too, because every std function takes its subject first.
+print((4.5).fixed(2))
+print(2.pow(10))
+print((0 - 7).abs())
+print((2.7).round())
+print((9).sqrt())
+
+// Width is a separate job, composed rather than built in.
+print(fixed(4.5, 2).padStart(8, "."))
+
+// A key nobody has seen counts as whatever you say it does.
+let m = { a: 1 }
+print(m.getOr("a", 0))
+print(m.getOr("zz", 0))
+var counts = {}
+for w in ["a", "b", "a"] { counts[w] = counts.getOr(w, 0) + 1 }
+print(counts)
+
+// Numbering a printed list from one is as common as indexing from zero.
+print(enumerate(["x", "y"]))
+print(enumerate(["x", "y"], start: 1))

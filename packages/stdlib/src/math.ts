@@ -1,6 +1,6 @@
 /** `std/math` — numeric helpers and constants. */
 
-import { num, type Value } from '@lumen-lang/core';
+import { num, str, type Value } from '@lumen-lang/core';
 import { arg, expectNum, fn, moduleOf } from './support.js';
 
 export function stdMath(): Map<string, Value> {
@@ -61,6 +61,29 @@ export function stdMath(): Map<string, Value> {
       const high = expectNum(arg(a, 2), c, 'clamp high');
       if (low > high) c.panic('clamp low (' + low + ') is above high (' + high + ')');
       return num(Math.min(high, Math.max(low, n)));
+    }),
+
+    /**
+     * A number as text with exactly `places` decimals — `£${fixed(4.5, 2)}`
+     * gives `£4.50`.
+     *
+     * `round(n * 100) / 100` rounds the value but cannot make `3.5` print as
+     * `3.50`, because the trailing zero is not part of the number. Money,
+     * percentages and any column of figures need it, so this is the one piece
+     * of number formatting worth having before a full format-specifier
+     * syntax exists.
+     */
+    fn('fixed', ['n', { name: 'places', defaultValue: num(2) }], (a, c) => {
+      const n = expectNum(arg(a, 0), c, 'fixed(n)');
+      const places = expectNum(arg(a, 1), c, 'fixed places');
+      if (!Number.isInteger(places) || places < 0 || places > 20) {
+        return c.panic(
+          'fixed needs a whole number of places from 0 to 20, got ' + places,
+          ['that is the range a double can actually distinguish'],
+        );
+      }
+      if (!Number.isFinite(n)) return str(String(n));
+      return str(n.toFixed(places));
     }),
 
     /** Uniform in `[0, 1)`. Not cryptographically secure. */

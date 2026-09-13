@@ -27,6 +27,7 @@ import {
   expectFn,
   expectInt,
   expectList,
+  expectNum,
   expectStr,
   fn,
   moduleOf,
@@ -236,9 +237,12 @@ export function stdList(): Map<string, Value> {
     }),
 
     /** `[a, b]` becomes `[[0, a], [1, b]]`. */
-    fn('enumerate', ['xs'], (a, c) => {
+    fn('enumerate', ['xs', { name: 'start', defaultValue: num(0) }], (a, c) => {
       const xs: ListValue = expectList(arg(a, 0), c, 'enumerate(xs)');
-      return list(xs.items.map((item, i) => list([num(i), item])));
+      // `start` because numbering a printed list from 1 is at least as common
+      // as indexing one from 0, and rewriting `i + 1` at every use is worse.
+      const start = expectNum(arg(a, 1), c, 'enumerate start');
+      return list(xs.items.map((item, i) => list([num(start + i), item])));
     }),
     ),
     {

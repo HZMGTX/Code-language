@@ -42,6 +42,19 @@ export function stdMap(): Map<string, Value> {
       return found === undefined ? None : Some(found);
     }),
 
+    /**
+     * The value at `key`, or `fallback` when there is none.
+     *
+     * `m[key]` gives `nil` for a missing key, which a counter then has to test
+     * for on every single increment. This is the form that makes
+     * `counts[word] = counts.getOr(word, 0) + 1` one line.
+     */
+    fn('getOr', ['m', 'key', 'fallback'], (a, c) => {
+      const m = expectMap(arg(a, 0), c, 'getOr(m)');
+      const key = expectStr(arg(a, 1), c, 'getOr key');
+      return m.entries.get(key) ?? arg(a, 2);
+    }),
+
     fn('has', ['m', 'key'], (a, c) =>
       bool(expectMap(arg(a, 0), c, 'has(m)').entries.has(expectStr(arg(a, 1), c, 'has key'))),
     ),

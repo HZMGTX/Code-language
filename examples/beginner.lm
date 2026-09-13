@@ -56,7 +56,7 @@ fn main() {
     let g = grade(s.mark)
     print("  ${s.name.padEnd(18)} ${str(s.mark).padEnd(4)} ${bar(s.mark)} ${g}")
     // A key that was never set reads as nil, so the first sighting starts at 1.
-    tally[g] = if tally[g] == nil { 1 } else { tally[g] + 1 }
+    tally[g] = tally.getOr(g, 0) + 1   // a letter nobody has seen counts as zero
   }
 
   print("")

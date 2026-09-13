@@ -617,7 +617,7 @@ always shadows the prelude one, so defining your own `sum` is safe.
 | Output and inspection | `print` `help` `type` `len` |
 | Conversion | `str` `num` `bool` |
 | Sequences | `map` `filter` `reduce` `sum` `sorted` `reversed` `enumerate` `zip` `any` `all` `range` `join` `split` |
-| Numbers | `abs` `round` `floor` `ceil` `min` `max` |
+| Numbers | `abs` `round` `floor` `ceil` `fixed` `min` `max` |
 | Errors | `Ok` `Err` `Some` `None` `Result` `Option` `assert` `panic` |
 | Console | `input` |
 

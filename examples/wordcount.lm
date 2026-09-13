@@ -32,11 +32,12 @@ fn wordsOf(text) {
     .filter(fn(word) { !word.isEmpty() })
 }
 
-// A Map is the natural tally. A key that has never been set reads as nil, so
-// the first sighting of a word starts it at one.
+// A Map is the natural tally, and `getOr` is what makes it one line: a word
+// nobody has seen counts as zero, so the first sighting is an increment like
+// any other.
 fn tallyOf(words) {
   var counts = {}
-  for word in words { counts[word] = if counts[word] == nil { 1 } else { counts[word] + 1 } }
+  for word in words { counts[word] = counts.getOr(word, 0) + 1 }
   counts
 }
 

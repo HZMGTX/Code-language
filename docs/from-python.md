@@ -111,7 +111,7 @@ does not end the statement.
 | `d["a"]` | `d["a"]` or `d.a` |
 | `d["missing"]` → `KeyError` | `d["missing"]` → `nil` |
 | `d.get("a")` | `d.get("a")` → `Some(1)` / `None` |
-| `d.get("a", 0)` | no default form — see below |
+| `d.get("a", 0)` | `d.getOr("a", 0)` |
 | `"a" in d` | `d.has("a")` |
 | `d["b"] = 2` | `d["b"] = 2` |
 | `del d["a"]` | `d.remove("a")` — returns a new map, `d` is unchanged |
@@ -120,17 +120,17 @@ does not end the statement.
 | `for k, v in d.items():` | `for [k, v] in d { }` |
 | `{k: v for ...}` | build pairs, then `fromEntries` |
 
-There is no `d.get(key, default)`, so a counter needs the missing case spelled
-out:
+`getOr` is the form a counter wants — a key nobody has seen counts as zero, so
+the first sighting is an increment like any other:
 
 ```lumen
 var counts = {}
-for w in ["a", "b", "a"] {
-  if counts[w] == nil { counts[w] = 0 }
-  counts[w] = counts[w] + 1
-}
+for w in ["a", "b", "a"] { counts[w] = counts.getOr(w, 0) + 1 }
 print(counts)                    // {a: 2, b: 1}
 ```
+
+`get` returns an `Option` for when absence is the interesting case; `getOr` is
+for when it is not.
 
 Dict comprehensions go through `fromEntries`:
 
@@ -465,12 +465,9 @@ what class hierarchies are usually used for.
 A comparison that only flatters its own side is not worth reading. These are
 places where you will miss Python, with no consolation offered:
 
-- **Format specifiers.** There is no `f"{x:>8.2f}"`. Width comes from `padStart`
-  and `padEnd`; fixing the number of decimal places has no direct support at all.
-  `round(n * 100) / 100` rounds the value, but `3.5` still prints as `3.5`, not
-  `3.50`.
-- **`dict.get(key, default)`.** No default form, so counters and accumulators
-  need an explicit `nil` check.
+- **Format specifiers.** There is no `f"{x:>8.2f}"` in one piece. The parts are
+  there — `fixed(x, 2)` for the decimals, `padStart(8)` for the width — but
+  they have to be written separately: `fixed(x, 2).padStart(8)`.
 - **`*args` and `**kwargs`.** Not available.
 - **Slice syntax.** `xs[1:3]` and `xs[::-1]` are `xs.slice(1, 3)` and
   `xs.reversed()` — fine, but longer.
@@ -479,7 +476,6 @@ places where you will miss Python, with no consolation offered:
 - **Comprehensions.** For nested or dict comprehensions especially,
   `.filter().map()` plus `fromEntries` is more machinery than Python needs.
 - **Arbitrary-precision integers.** See above.
-- **`enumerate(xs, start=1)`.** No `start` argument.
 - **The ecosystem.** PyPI holds hundreds of thousands of packages. Lumen has ten
   standard modules and no package manager at all. For anything outside what ships
   in the box, Python is not in competition with Lumen; it has already won.

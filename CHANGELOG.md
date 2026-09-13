@@ -128,6 +128,22 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   nested lists all work, and a `let` binding among them is refused as it would
   be anywhere else. `docs/from-python.md` listed "no tuple assignment and no
   swapping" under what Python does better; that line is gone.
+- **`fixed(n, places)`**, in the prelude: a number as text with exactly that
+  many decimals. `round(n * 100) / 100` rounds the value but cannot make `4.5`
+  print as `4.50`, because the trailing zero is not part of the number — so a
+  column of money or percentages had no way to line up. Every example that
+  printed a figure was working around this; four of them are now a line
+  shorter. Width stays a separate job: `fixed(x, 2).padStart(8)`.
+- **`Num` methods.** `2.pow(10)`, `(2.7).round()`, `(9).sqrt()`,
+  `(4.5).fixed(2)` — the `std/math` functions whose first argument is the
+  number itself. Listed explicitly rather than taken wholesale, because
+  `random()` takes no number and `PI` is not a function.
+- **`getOr(m, key, fallback)`** on maps. `m[key]` gives `nil` for a missing
+  key, which a counter then has to test for on every increment;
+  `counts[word] = counts.getOr(word, 0) + 1` is the line people actually want.
+  `get` still returns an `Option`, for when absence is the interesting case.
+- **`enumerate(xs, start: 1)`.** Numbering a printed list from one is at least
+  as common as indexing from zero, and writing `i + 1` at every use is worse.
 - **`std/web.form(req)`** reads the fields a form submitted, whichever way the
   page sent them: the query string for `method="get"`, the urlencoded body for
   `method="post"`. A handler no longer has to know which, and percent- and

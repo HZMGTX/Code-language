@@ -101,7 +101,7 @@ export function preludeExtras(): Map<string, Value> {
   define(alias(take(L, 'sum'), 'sum', 'Add up a list of numbers.'));
   define(alias(take(L, 'sort'), 'sorted', 'A sorted copy of a list. The original is untouched.'));
   define(alias(take(L, 'reverse'), 'reversed', 'A reversed copy of a list.'));
-  define(alias(take(L, 'enumerate'), 'enumerate', 'Pair each element with its index: [[0, a], [1, b]].'));
+  define(alias(take(L, 'enumerate'), 'enumerate', 'Pair each element with its index: [[0, a], [1, b]]. Pass start: 1 to count from one.'));
   define(alias(take(L, 'zip'), 'zip', 'Pair up two lists, stopping at the shorter one.'));
   define(alias(take(L, 'any'), 'any', 'True if any element is truthy, or matches the predicate if one is given.'));
   define(alias(take(L, 'all'), 'all', 'True if every element is truthy, or matches the predicate if one is given.'));
@@ -111,6 +111,7 @@ export function preludeExtras(): Map<string, Value> {
   define(alias(take(M, 'round'), 'round', 'Round to the nearest whole number.'));
   define(alias(take(M, 'floor'), 'floor', 'Round down to a whole number.'));
   define(alias(take(M, 'ceil'), 'ceil', 'Round up to a whole number.'));
+  define(alias(take(M, 'fixed'), 'fixed', 'A number as text with a fixed number of decimals: fixed(4.5, 2) is "4.50".'));
 
   define({
     k: 'native',
@@ -271,6 +272,18 @@ function makeHelp(methodsOf: (type: string) => string[], preludeNames: () => str
  * reach for. Two names for one function is a small cost; making someone guess
  * which of `sort` and `sorted` this language chose is a larger one.
  */
+/**
+ * The `std/math` functions whose first parameter is the number itself, which
+ * is what makes `n.round()` and `2.pow(10)` mean anything.
+ *
+ * Listed rather than taken wholesale: `random()` takes no number at all, and
+ * `PI` and `E` are values, so neither belongs on a receiver.
+ */
+const NUM_METHODS = [
+  'abs', 'ceil', 'clamp', 'cos', 'exp', 'fixed', 'floor', 'log',
+  'max', 'min', 'pow', 'round', 'sign', 'sin', 'sqrt', 'tan', 'trunc',
+];
+
 export function methodTables(): Record<string, Map<string, Value>> {
   const listMethods = stdList();
   const sort = listMethods.get('sort');
@@ -278,10 +291,18 @@ export function methodTables(): Record<string, Map<string, Value>> {
   if (sort !== undefined) listMethods.set('sorted', sort);
   if (reverse !== undefined) listMethods.set('reversed', reverse);
 
+  const math = stdMath();
+  const numMethods = new Map<string, Value>();
+  for (const name of NUM_METHODS) {
+    const found = math.get(name);
+    if (found !== undefined) numMethods.set(name, found);
+  }
+
   return {
     Str: stdStr(),
     List: listMethods,
     Map: stdMap(),
+    Num: numMethods,
   };
 }
 

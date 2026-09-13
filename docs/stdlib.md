@@ -25,8 +25,9 @@ with the same name always shadows the prelude one.
 | `assert(condition, message)` | Stop with a message unless the condition is true. The whole of a test framework. |
 | `bool(value)` | The value as a Bool: everything except nil and false is true. |
 | `ceil(n)` | Round up to a whole number. |
-| `enumerate(xs)` | Pair each element with its index: [[0, a], [1, b]]. |
+| `enumerate(xs, start = ...)` | Pair each element with its index: [[0, a], [1, b]]. Pass start: 1 to count from one. |
 | `filter(xs, predicate)` | Keep the elements a predicate says true to. |
+| `fixed(n, places = ...)` | A number as text with a fixed number of decimals: fixed(4.5, 2) is "4.50". |
 | `floor(n)` | Round down to a whole number. |
 | `help(subject = ...)` | Describe a value, a function, or a module. Call help() alone for an overview. |
 | `input(prompt = ...)` | Read one line from the console. Some(text), or None at end of input. |
@@ -68,6 +69,15 @@ signature:
    ever raises for an ordinary failure.
 
 ## Notes on particular modules
+
+### Numbers as text
+
+`fixed(n, places)` gives a number as text with exactly that many decimals:
+`fixed(4.5, 2)` is `"4.50"`, which `round(n * 100) / 100` cannot produce
+because the trailing zero is not part of the number. It is what a column of
+money or percentages needs, and it is in the prelude.
+
+For width, compose: `fixed(x, 2).padStart(8)`.
 
 ### `std/list` and `std/map`
 
@@ -248,7 +258,7 @@ at(xs, index)
 contains(xs, value)
 count(xs, predicate)
 drop(xs, n)
-enumerate(xs)
+enumerate(xs, start = ...)
 filter(xs, predicate)
 find(xs, predicate)
 first(xs)
@@ -278,6 +288,7 @@ zip(xs, ys)
 entries(m)
 fromEntries(pairs)
 get(m, key)
+getOr(m, key, fallback)
 has(m, key)
 isEmpty(m)
 keys(m)
@@ -298,6 +309,7 @@ ceil(n)
 clamp(n, low, high)
 cos(n)
 exp(n)
+fixed(n, places = ...)
 floor(n)
 log(n, base = ...)
 max(a, b)
