@@ -6,6 +6,7 @@
  * does a few things and explains itself.
  */
 
+import { checkFiles } from './commands/check.js';
 import { runFile } from './commands/run.js';
 import { dumpAst, dumpTokens } from './commands/inspect.js';
 import { startRepl } from './commands/repl.js';
@@ -23,6 +24,7 @@ Usage
   lumen run <file.lm>      run a program
   lumen serve <file.lm>    run a program that starts a web server
   lumen repl               start an interactive session
+  lumen check [path]       check every .lm under path without running it
   lumen test [path]        run every *_test.lm under path (default: .)
   lumen tokens <file.lm>   show the token stream
   lumen ast <file.lm>      show the parsed syntax tree
@@ -45,7 +47,7 @@ function usageError(message: string): never {
 
 /** Every word `lumen` accepts in the first position. */
 const COMMANDS = [
-  'run', 'serve', 'repl', 'test', 'tokens', 'ast', 'help', 'version',
+  'run', 'serve', 'repl', 'check', 'test', 'tokens', 'ast', 'help', 'version',
 ] as const;
 
 /**
@@ -93,6 +95,10 @@ async function main(argv: readonly string[]): Promise<void> {
       await runFile(file);
       return;
     }
+
+    case 'check':
+      await checkFiles(rest[0] ?? '.');
+      return;
 
     case 'test':
       await runTests(rest[0] ?? '.');

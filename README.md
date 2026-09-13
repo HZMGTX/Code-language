@@ -169,10 +169,16 @@ lumen <file.lm>          run a program
 lumen run <file.lm>      run a program
 lumen serve <file.lm>    run a program that starts a web server
 lumen repl               start an interactive session
+lumen check [path]       check every .lm under path without running it
 lumen test [path]        run every *_test.lm under path
 lumen tokens <file.lm>   show the token stream
 lumen ast <file.lm>      show the parsed syntax tree
 ```
+
+`lumen check` is the one to reach for from an editor, a pre-commit hook or a CI
+step: it parses, resolves and type-checks a whole tree in the time it takes to
+read it, and runs nothing — which matters when the program in question writes
+files or serves a port.
 
 ## Documentation
 

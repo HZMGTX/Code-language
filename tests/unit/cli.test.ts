@@ -73,6 +73,25 @@ describe('the lumen command', () => {
     assert.match(out, /cannot read/);
   });
 
+  it('checks a tree of files without running any of them', async () => {
+    const examples = fileURLToPath(new URL('../../../examples', import.meta.url));
+    const { code, out } = await run(['check', examples]);
+    assert.equal(code, 0);
+    assert.match(out, /files checked, no problems/);
+    // `hello.lm` prints when it runs. Checking must not.
+    assert.doesNotMatch(out, /Hello/);
+  });
+
+  it('reports a static error from check, and exits non-zero', async () => {
+    const bad = fileURLToPath(
+      new URL('../../../tests/conformance/static/unreached-typo.lm', import.meta.url),
+    );
+    const { code, out } = await run(['check', bad]);
+    assert.equal(code, 1);
+    assert.match(out, /RS001/);
+    assert.match(out, /have problems/);
+  });
+
   it('exits non-zero when the program has an error', async () => {
     const { code } = await run(['run', fileURLToPath(new URL('../../../package.json', import.meta.url))]);
     assert.notEqual(code, 0);

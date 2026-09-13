@@ -129,6 +129,12 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
 
 ### Added
 
+- **`lumen check [path]`.** Parse, resolve and type-check a whole tree without
+  running any of it. It is what an editor, a pre-commit hook or a CI step wants:
+  running a program to find out whether it has a typo is a poor trade when the
+  program writes files or serves a port. Three CI steps now use it, over
+  `examples/`, `tests/lumen/` and `bench/` — deliberately not over
+  `tests/conformance/`, where many fixtures are wrong on purpose.
 - **Destructuring bindings.** `let [lo, hi] = minMax(xs)` — the same pattern
   language `match` and `for` already used, now on the left of a `let` or `var`,
   nested patterns and `..rest` included. It is how a function returns more than

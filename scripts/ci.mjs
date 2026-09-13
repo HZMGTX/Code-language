@@ -74,6 +74,13 @@ run('build', 'npm', ['run', 'build']);
 run('typecheck (clean rebuild)', 'npm', ['run', 'typecheck']);
 run('unit and conformance tests', node, [path.join(ROOT, 'scripts', 'run-tests.mjs')]);
 run('Lumen test suite', node, [CLI, 'test', path.join(ROOT, 'tests', 'lumen')]);
+// The static checks over every Lumen program in the repository. Conformance
+// fixtures are excluded on purpose: many of them are deliberately wrong, which
+// is what they are for, and a checker that passed on those would be checking
+// nothing.
+run('examples pass the static checks', node, [CLI, 'check', path.join(ROOT, 'examples')]);
+run('Lumen test files pass the static checks', node, [CLI, 'check', path.join(ROOT, 'tests', 'lumen')]);
+run('benchmarks pass the static checks', node, [CLI, 'check', path.join(ROOT, 'bench')]);
 run('examples', node, [path.join(ROOT, 'scripts', 'run-examples.mjs')]);
 run('generated stdlib docs are current', node, [path.join(ROOT, 'scripts', 'gen-stdlib-docs.mjs'), '--check']);
 run('every package stays private', node, [path.join(ROOT, 'scripts', 'check-private.mjs')]);
