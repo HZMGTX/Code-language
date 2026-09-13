@@ -245,6 +245,13 @@ class Checker {
 
   private stmt(stmt: Stmt): void {
     switch (stmt.kind) {
+      case 'DestructureDecl':
+        // Checking the value is worth doing for its own sake. What the pattern
+        // pulls out of it is `Any`, as everything a pattern binds is — the
+        // same treatment loop bindings get.
+        this.typeOf(stmt.value);
+        return;
+
       case 'LetDecl': {
         const declared = this.toTy(stmt.type);
         const actual = this.typeOf(stmt.value);

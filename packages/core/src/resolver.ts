@@ -281,6 +281,11 @@ class Resolver {
         this.declare(stmt.name, stmt.span, stmt.mutable, stmt.mutable ? 'var' : 'let');
         return;
 
+      case 'DestructureDecl':
+        this.expr(stmt.value);
+        this.pattern(stmt.pattern, stmt.mutable);
+        return;
+
       case 'FnDecl':
         this.fnBody(stmt.params, stmt.body);
         return;
@@ -489,8 +494,11 @@ class Resolver {
           'RS005',
           'cannot assign to `' + target.name + '`',
           target.span,
-          'declared with `' + (binding.kind === 'let' ? 'let' : binding.kind) + '`',
-          ['values bound with `let` never change; use `var` if it needs to'],
+          // Read it as a sentence: "declared with `let`", "bound by a pattern",
+          // "a parameter". A kind spliced in raw reads as `pattern binding`
+          // inside backticks, which looks like syntax nobody wrote.
+          describeBinding(binding.kind),
+          [adviceFor(binding.kind)],
         );
       }
       return;
@@ -593,28 +601,63 @@ class Resolver {
 
   // ---------------------------------------------------------------- patterns
 
-  private pattern(pattern: Pattern): void {
+  /**
+   * Declare everything a pattern binds.
+   *
+   * `mutable` is for `var [a, b] = pair`; match arms and loop bindings are
+   * immutable, which is why it defaults that way.
+   */
+  private pattern(pattern: Pattern, mutable = false): void {
+    const kind = mutable ? 'var' : 'pattern binding';
     switch (pattern.kind) {
       case 'PWildcard':
         return;
       case 'PBinding':
-        this.declare(pattern.name, pattern.span, false, 'pattern binding');
+        this.declare(pattern.name, pattern.span, mutable, kind);
         return;
       case 'PLiteral':
         return; // always a literal; nothing to resolve
       case 'PEnum':
-        for (const sub of pattern.args) this.pattern(sub);
+        for (const sub of pattern.args) this.pattern(sub, mutable);
         return;
       case 'PStruct':
-        for (const field of pattern.fields) this.pattern(field.pattern);
+        for (const field of pattern.fields) this.pattern(field.pattern, mutable);
         return;
       case 'PList':
-        for (const item of pattern.items) this.pattern(item);
+        for (const item of pattern.items) this.pattern(item, mutable);
         if (pattern.rest !== undefined) {
-          this.declare(pattern.rest, pattern.span, false, 'pattern binding');
+          this.declare(pattern.rest, pattern.span, mutable, kind);
         }
         return;
     }
+  }
+}
+
+/** What to suggest instead, which depends on where the binding came from. */
+function adviceFor(kind: string): string {
+  switch (kind) {
+    case 'parameter':
+    case 'pattern binding':
+    case 'import':
+      // `var` cannot be written at any of these, so the advice that works for
+      // `let` would send the reader to a keyword they cannot use here.
+      return 'copy it into a `var` of its own if it needs to change';
+    default:
+      return 'values bound with `let` never change; use `var` if it needs to';
+  }
+}
+
+/** How to name a binding's origin in a diagnostic label. */
+function describeBinding(kind: string): string {
+  switch (kind) {
+    case 'pattern binding':
+      return 'bound by a pattern, so it never changes';
+    case 'parameter':
+      return 'a parameter, which the caller supplies';
+    case 'import':
+      return 'imported from another module';
+    default:
+      return 'declared with `' + kind + '`';
   }
 }
 

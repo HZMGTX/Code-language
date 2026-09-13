@@ -1,0 +1,7 @@
+error[RT047]: the pattern does not fit [1, 2]
+ --> destructure-mismatch.lm:4:5
+  |
+4 | let [a, b, c] = [1, 2]
+  |     ^^^^^^^^^ cannot be taken apart this way
+  |
+  = note: use `match` when a value may or may not have this shape

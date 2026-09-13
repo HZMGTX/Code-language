@@ -287,6 +287,22 @@ export class Interpreter {
         env.declare(stmt.name, value, stmt.mutable);
         return NIL;
       }
+      case 'DestructureDecl': {
+        const value = await this.evaluate(stmt.value, env);
+        // The same matcher `match` and `for` use. A `let` has no second arm to
+        // fall through to, so a pattern that does not fit is an error here
+        // rather than a miss.
+        if (!(await this.matchPattern(stmt.pattern, value, env, stmt.mutable))) {
+          this.fail(
+            'RT047',
+            'the pattern does not fit ' + inspect(value),
+            stmt.pattern.span,
+            'cannot be taken apart this way',
+            ['use `match` when a value may or may not have this shape'],
+          );
+        }
+        return NIL;
+      }
       case 'FnDecl':
         // Already hoisted, but re-declare so a nested redefinition takes effect.
         env.declare(stmt.name, this.makeFunction(stmt, env, unit), false);
@@ -813,13 +829,24 @@ export class Interpreter {
   }
 
   /** Try a pattern against a value, binding names into `env` on success. */
-  private async matchPattern(pattern: Pattern, value: Value, env: Env): Promise<boolean> {
+  /**
+   * Match `value` against `pattern`, declaring its bindings into `env`.
+   *
+   * `mutable` exists for `var [a, b] = pair`; every other caller — match arms,
+   * loop bindings — binds immutably, which is why it defaults that way.
+   */
+  private async matchPattern(
+    pattern: Pattern,
+    value: Value,
+    env: Env,
+    mutable = false,
+  ): Promise<boolean> {
     switch (pattern.kind) {
       case 'PWildcard':
         return true;
 
       case 'PBinding':
-        env.declare(pattern.name, value, false);
+        env.declare(pattern.name, value, mutable);
         return true;
 
       case 'PLiteral': {
@@ -837,7 +864,7 @@ export class Interpreter {
           const sub = pattern.args[i];
           const item = value.values[i];
           if (sub === undefined || item === undefined) return false;
-          if (!(await this.matchPattern(sub, item, env))) return false;
+          if (!(await this.matchPattern(sub, item, env, mutable))) return false;
         }
         return true;
       }
@@ -847,7 +874,7 @@ export class Interpreter {
         for (const field of pattern.fields) {
           const fieldValue = value.fields.get(field.name);
           if (fieldValue === undefined) return false;
-          if (!(await this.matchPattern(field.pattern, fieldValue, env))) return false;
+          if (!(await this.matchPattern(field.pattern, fieldValue, env, mutable))) return false;
         }
         return true;
       }
@@ -862,7 +889,7 @@ export class Interpreter {
           const sub = pattern.items[i];
           const item = value.items[i];
           if (sub === undefined || item === undefined) return false;
-          if (!(await this.matchPattern(sub, item, env))) return false;
+          if (!(await this.matchPattern(sub, item, env, mutable))) return false;
         }
         if (pattern.rest !== undefined) {
           env.declare(pattern.rest, list(value.items.slice(fixed)), false);

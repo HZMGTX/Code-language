@@ -360,6 +360,23 @@ export class Parser {
   private parseLet(): Stmt {
     const start = this.advance(); // let | var
     const mutable = start.kind === 'var';
+
+    // `let [a, b] = pair` takes the pattern that `match` and `for` already
+    // use, so returning two things needs no special machinery.
+    if (this.at('[')) {
+      const pattern = this.parsePattern();
+      this.expect('=', 'in a `' + start.kind + '` declaration');
+      this.skipNewlines();
+      const value = this.parseExpr();
+      return {
+        kind: 'DestructureDecl',
+        pattern,
+        mutable,
+        value,
+        span: this.spanFrom(start),
+      };
+    }
+
     const name = this.expect('ident', 'after `' + start.kind + '`');
     let type: TypeExpr | undefined;
     if (this.eat(':')) type = this.parseTypeExpr();

@@ -136,7 +136,23 @@ count += 1
 ```
 
 An inner scope may shadow an outer name. Assigning to a `let` binding is
-error `RT029`.
+error `RT029` (`RS005` when the static checker gets there first).
+
+The left side may be a list pattern, which is how a function returns more than
+one thing:
+
+```lumen
+fn minMax(xs) { [min(xs), max(xs)] }
+
+let [lo, hi] = minMax([3, 1, 4, 1, 5])
+let [first, ..rest] = [1, 2, 3]
+var [x, y] = [0, 0]              // `var` makes both mutable
+```
+
+It is the same pattern language `match` and `for` use, nested patterns and
+`_` included. A `let` has no second arm to fall through to, so a pattern that
+does not fit the value is `RT047` rather than a miss — use `match` when a value
+may or may not have the shape you expect.
 
 ### 3.2 Functions
 
@@ -550,6 +566,7 @@ different meaning. Selected codes:
 | `RT027` | No such method on this type |
 | `RT045` | Call depth exceeded — recursion with no reachable base case |
 | `RT046` | An arithmetic result that would be `NaN` |
+| `RT047` | A destructuring `let` whose pattern does not fit the value |
 
 The parser reports multiple errors per run, suppressing duplicates and bounding
 cascades at 25. It also refuses source nested more than 250 levels deep

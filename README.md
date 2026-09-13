@@ -189,7 +189,7 @@ lumen ast <file.lm>      show the parsed syntax tree
 
 ## Examples
 
-Fifteen runnable programs, each executed by CI on every change. `lumen run
+Sixteen runnable programs, each executed by CI on every change. `lumen run
 examples/<name>.lm` runs any of them.
 
 | File | What it shows |
@@ -206,6 +206,7 @@ examples/<name>.lm` runs any of them.
 | `calculator.lm` | A recursive-descent parser for arithmetic, written in Lumen |
 | `adventure.lm` | `input()`, a world in a `Map`, and a game that plays itself |
 | `inventory.lm` | JSON in, report out — parse, group, total, write, read back |
+| `sudoku.lm` | Backtracking search, and a solution that checks itself |
 | `website.lm` | A real site: routing, HTML, JSON, 404s (`lumen serve`) |
 | `guestbook.lm` | A form, escaping, and one file that is both site and script |
 | `ai_agent.lm` | An AI call that works with no key, via the mock provider |

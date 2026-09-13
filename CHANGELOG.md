@@ -92,6 +92,13 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
 - **A long source line buried the caret it was pointing at.** A diagnostic on a
   minified or generated line printed the whole line, pushing the `^` off the
   screen. Lines past 120 characters are now shown as a window around the caret.
+- **`RS005` gave advice that could not be followed.** Assigning to a parameter
+  said "use `var` if it needs to", but a parameter cannot be declared `var`.
+  The label and the note now depend on where the binding came from: a parameter
+  reads as "a parameter, which the caller supplies", with advice to copy it
+  into a `var` of its own. It also no longer splices a binding kind into
+  backticks, which rendered as ``declared with `pattern binding` `` — syntax
+  nobody ever wrote.
 - **The REPL could not be escaped from a half-written line.** Typing `1 +` put
   it into continuation mode, and every line after that — `:quit` included — was
   swallowed as more of the same expression. A blank line abandons it now.
@@ -108,6 +115,13 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
 
 ### Added
 
+- **Destructuring bindings.** `let [lo, hi] = minMax(xs)` — the same pattern
+  language `match` and `for` already used, now on the left of a `let` or `var`,
+  nested patterns and `..rest` included. It is how a function returns more than
+  one thing without a wrapper struct. A pattern that does not fit is `RT047`,
+  because a `let` has no second arm to fall through to. Found by writing
+  `let [i, values] = mostConstrained(grid)` in an example and discovering the
+  language could not say it.
 - **`std/web.form(req)`** reads the fields a form submitted, whichever way the
   page sent them: the query string for `method="get"`, the urlencoded body for
   `method="post"`. A handler no longer has to know which, and percent- and

@@ -329,6 +329,7 @@ export interface PList extends NodeBase {
 
 export type Stmt =
   | LetDecl
+  | DestructureDecl
   | FnDecl
   | StructDecl
   | EnumDecl
@@ -352,6 +353,21 @@ export interface LetDecl extends NodeBase {
   readonly name: string;
   readonly mutable: boolean;
   readonly type: TypeExpr | undefined;
+  readonly value: Expr;
+}
+
+/**
+ * `let [a, b] = pair` — a binding whose left side is a pattern.
+ *
+ * Separate from `LetDecl` because the overwhelmingly common case is one name,
+ * and giving that case a plain `name` keeps every consumer of it simple. The
+ * pattern language is the same one `match` and `for` use, so a destructuring
+ * `let` needed no new matching rules.
+ */
+export interface DestructureDecl extends NodeBase {
+  readonly kind: 'DestructureDecl';
+  readonly pattern: Pattern;
+  readonly mutable: boolean;
   readonly value: Expr;
 }
 
