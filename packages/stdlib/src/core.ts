@@ -11,22 +11,58 @@ import { NIL, bool, inspect, list, map, num, str, type Value } from '@lumen-lang
 import { None, Some, arg, expectNum, expectStr, fn, moduleOf } from './support.js';
 
 /** Deep copy, so mutating the result cannot affect the original. */
-function clone(value: Value): Value {
+/**
+ * A deep copy, preserving shape.
+ *
+ * `copies` maps each container already cloned to its copy, which does two things
+ * at once. A value that contains itself can be cloned at all — without the map,
+ * `a.push(a)` followed by `clone(a)` was a stack overflow, reported as "a
+ * function is probably recursing without a base case" when no function of the
+ * reader's was involved. And a value shared in two places stays shared once,
+ * rather than becoming two copies: `[inner, inner]` clones to a list whose two
+ * elements are still one list, which is what copying a *value* should mean.
+ *
+ * `inspect` already prints `[1, [...]]` for a self-containing list, so the
+ * language had decided such a value is a real one; crashing on it was the
+ * inconsistency.
+ */
+function clone(value: Value, copies = new Map<Value, Value>()): Value {
+  const already = copies.get(value);
+  if (already !== undefined) return already;
+
   switch (value.k) {
-    case 'list':
-      return list(value.items.map((item) => clone(item)));
+    case 'list': {
+      // The copy is registered before its contents are filled in, because the
+      // contents may refer back to it. This is the whole trick.
+      const items: Value[] = [];
+      const copy = list(items);
+      copies.set(value, copy);
+      for (const item of value.items) items.push(clone(item, copies));
+      return copy;
+    }
     case 'map': {
       const entries = new Map<string, Value>();
-      for (const [key, item] of value.entries) entries.set(key, clone(item));
-      return map(entries);
+      const copy = map(entries);
+      copies.set(value, copy);
+      for (const [key, item] of value.entries) entries.set(key, clone(item, copies));
+      return copy;
     }
     case 'struct': {
       const fields = new Map<string, Value>();
-      for (const [key, item] of value.fields) fields.set(key, clone(item));
-      return { k: 'struct', typeName: value.typeName, fields };
+      const copy: Value = { k: 'struct', typeName: value.typeName, fields };
+      copies.set(value, copy);
+      for (const [key, item] of value.fields) fields.set(key, clone(item, copies));
+      return copy;
     }
-    case 'enum':
-      return { ...value, values: value.values.map((item) => clone(item)) };
+    case 'enum': {
+      // An enum's payload is readonly, so it cannot be filled in after the fact
+      // — but it also cannot be reassigned, so a cycle can only reach it through
+      // a list, map or struct, each of which is registered above.
+      const values = value.values.map((item) => clone(item, copies));
+      const copy: Value = { ...value, values };
+      copies.set(value, copy);
+      return copy;
+    }
     default:
       // Scalars and functions are already immutable or shared by design.
       return value;

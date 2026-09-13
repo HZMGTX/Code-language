@@ -108,6 +108,35 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
 
 ### Fixed
 
+- **A value that contains itself no longer crashes four operations.** `print` has
+  always shown `a.push(a)` as `[1, [...]]`, so the language had already decided
+  such a value is real — but `==`, `clone`, `stringify` and set membership each
+  overflowed the stack on one, reported as "a function is probably recursing
+  without a base case" when no function of the reader's was involved. Lists, maps
+  and structs are mutable, so building one takes a single line, deliberately or by
+  accident.
+
+  Each now does the right thing for what it is. `==` records the pairs it is
+  comparing and calls a lined-up cycle equal, which is both the standard reading
+  and the one that terminates. `clone` registers each copy before filling it in,
+  so a cyclic value clones to a copy with its own cycle — and a value shared twice
+  inside another stays one value in the copy rather than becoming two, because
+  copying a value should not change its shape. `std/set` emits a back-reference to
+  where the cycle closes, so two cycles built the same way key the same way.
+
+  `stringify` is the one that has to refuse — JSON has no syntax for "the value we
+  are already inside" — so it says so and names the path where the cycle closes
+  (`$[2]`) rather than failing somewhere inside the host's own serialiser.
+
+  One limit is stated rather than hidden: `==` calls `a = [a]` equal to
+  `b = [[b]]`, since nothing distinguishes them however far they unroll, while
+  `std/set` keys them differently and can hold both. Agreeing there needs a
+  canonical form for infinite trees.
+
+  `clone` being a **deep** copy is now documented, too. It always was; the
+  reference listed the signature and said nothing, which is the one thing anybody
+  needs to know about a clone.
+
 - **The README was telling three lies, and now cannot.** It claimed "207 tests, 74
   conformance fixtures" when there were 799 and 116; it said type annotations were
   "parsed but not yet enforced", which stopped being true when TY001 landed; and it

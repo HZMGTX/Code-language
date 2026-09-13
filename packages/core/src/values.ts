@@ -205,10 +205,57 @@ export function typeName(v: Value): string {
   }
 }
 
-/** Structural equality. Functions and modules compare by identity. */
-export function valuesEqual(a: Value, b: Value): boolean {
+/**
+ * Structural equality. Functions and modules compare by identity.
+ *
+ * `pairs` records which two containers are already being compared, so a cyclic
+ * value can be compared at all: `inspect` prints `[1, [...]]` for a list that
+ * contains itself, so the language has already decided such a value is a real
+ * one, and answering it with a stack overflow would be the odd thing.
+ *
+ * Assuming a pair equal while it is still being checked is the standard reading
+ * of equality on cyclic structures: two values are equal when nothing about them
+ * distinguishes them, and a cycle that lines up distinguishes nothing. It also
+ * terminates, which the alternative does not.
+ */
+export function valuesEqual(a: Value, b: Value, pairs = new Set<string>()): boolean {
   if (a === b) return true;
   if (a.k !== b.k) return false;
+
+  // Only containers can recur, so only they need the bookkeeping.
+  const recursive = a.k === 'list' || a.k === 'map' || a.k === 'struct' || a.k === 'enum';
+  let pairKey = '';
+  if (recursive) {
+    pairKey = String(identityOf(a)) + ':' + String(identityOf(b));
+    if (pairs.has(pairKey)) return true;
+    pairs.add(pairKey);
+  }
+  try {
+    return compareShape(a, b, pairs);
+  } finally {
+    if (recursive) pairs.delete(pairKey);
+  }
+}
+
+/**
+ * A stable number per container, for the pair bookkeeping above.
+ *
+ * A `WeakMap` rather than anything on the value itself, so a `Value` stays a
+ * plain tagged object with no hidden fields, and nothing is kept alive by being
+ * compared once.
+ */
+const identities = new WeakMap<object, number>();
+let nextIdentity = 0;
+
+function identityOf(value: object): number {
+  const seen = identities.get(value);
+  if (seen !== undefined) return seen;
+  nextIdentity += 1;
+  identities.set(value, nextIdentity);
+  return nextIdentity;
+}
+
+function compareShape(a: Value, b: Value, pairs: Set<string>): boolean {
   switch (a.k) {
     case 'nil':
       return true;
@@ -223,7 +270,7 @@ export function valuesEqual(a: Value, b: Value): boolean {
       if (a.items.length !== other.items.length) return false;
       return a.items.every((item, i) => {
         const rhs = other.items[i];
-        return rhs !== undefined && valuesEqual(item, rhs);
+        return rhs !== undefined && valuesEqual(item, rhs, pairs);
       });
     }
     case 'map': {
@@ -231,7 +278,7 @@ export function valuesEqual(a: Value, b: Value): boolean {
       if (a.entries.size !== other.entries.size) return false;
       for (const [key, value] of a.entries) {
         const rhs = other.entries.get(key);
-        if (rhs === undefined || !valuesEqual(value, rhs)) return false;
+        if (rhs === undefined || !valuesEqual(value, rhs, pairs)) return false;
       }
       return true;
     }
@@ -240,7 +287,7 @@ export function valuesEqual(a: Value, b: Value): boolean {
       if (a.typeName !== other.typeName || a.fields.size !== other.fields.size) return false;
       for (const [key, value] of a.fields) {
         const rhs = other.fields.get(key);
-        if (rhs === undefined || !valuesEqual(value, rhs)) return false;
+        if (rhs === undefined || !valuesEqual(value, rhs, pairs)) return false;
       }
       return true;
     }
@@ -250,7 +297,7 @@ export function valuesEqual(a: Value, b: Value): boolean {
       if (a.values.length !== other.values.length) return false;
       return a.values.every((value, i) => {
         const rhs = other.values[i];
-        return rhs !== undefined && valuesEqual(value, rhs);
+        return rhs !== undefined && valuesEqual(value, rhs, pairs);
       });
     }
     default:

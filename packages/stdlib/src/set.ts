@@ -67,8 +67,24 @@ function identity(value: object): number {
  * Every string is written with its length first (`s3:abc`), so no value can
  * forge another's key by containing a delimiter: without it, the one-element
  * list `["a,b"]` and the two-element `["a", "b"]` would both key as `l[a,b]`.
+ *
+ * `path` carries the containers currently being keyed. A value that contains
+ * itself gets a back-reference to how far up the cycle closes (`^0` for "this
+ * one"), so `a.push(a)` followed by `size([a])` answers rather than overflowing
+ * the stack. Two cyclic values built the same way therefore key the same way.
+ *
+ * There is one narrow limit, and it is stated rather than hidden: `==` calls two
+ * cyclic values equal when nothing distinguishes them however far you unroll, so
+ * `a = [a]` equals `b = [[b]]`. Their back-references sit at different depths, so
+ * they key differently and a set can hold both. Agreeing there needs a canonical
+ * form for infinite trees, which is a real algorithm and not one this module is
+ * going to carry for a value nobody builds on purpose.
  */
-function key(value: Value): string {
+function key(value: Value, path: readonly Value[] = []): string {
+  const at = path.indexOf(value);
+  if (at !== -1) return '^' + String(path.length - 1 - at);
+  const inner = [...path, value];
+
   switch (value.k) {
     case 'nil':
       return 'nil';
@@ -81,18 +97,24 @@ function key(value: Value): string {
     case 'str':
       return 's' + String(value.v.length) + ':' + value.v;
     case 'list':
-      return 'l' + String(value.items.length) + '[' + value.items.map(key).join(',') + ']';
+      return (
+        'l' + String(value.items.length) +
+        '[' + value.items.map((item) => key(item, inner)).join(',') + ']'
+      );
     case 'map':
-      return 'm' + entriesKey(value);
+      return 'm' + entriesKey(value, inner);
     case 'struct': {
       const fields = [...value.fields.entries()]
         .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
-        .map(([name, v]) => 's' + String(name.length) + ':' + name + '=' + key(v));
+        .map(([name, v]) => 's' + String(name.length) + ':' + name + '=' + key(v, inner));
       return 'S' + String(value.typeName.length) + ':' + value.typeName + '{' + fields.join(',') + '}';
     }
     case 'enum': {
       const name = value.enumName + '.' + value.variant;
-      return 'E' + String(name.length) + ':' + name + '(' + value.values.map(key).join(',') + ')';
+      return (
+        'E' + String(name.length) + ':' + name +
+        '(' + value.values.map((v) => key(v, inner)).join(',') + ')'
+      );
     }
     default:
       // Functions, natives, modules and type objects: reference identity.
@@ -101,10 +123,10 @@ function key(value: Value): string {
 }
 
 /** A map's entries, sorted by name, so insertion order cannot change the key. */
-function entriesKey(value: MapValue): string {
+function entriesKey(value: MapValue, path: readonly Value[]): string {
   const parts = [...value.entries.entries()]
     .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
-    .map(([name, v]) => 's' + String(name.length) + ':' + name + '=' + key(v));
+    .map(([name, v]) => 's' + String(name.length) + ':' + name + '=' + key(v, path));
   return '{' + parts.join(',') + '}';
 }
 

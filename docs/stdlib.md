@@ -90,6 +90,14 @@ still the program's once a filename has been seen.
 `now()` is milliseconds since 1970. Under the test harness it is `0`, so a
 golden file cannot depend on the clock.
 
+`clone(value)` is a **deep** copy: nested lists, maps, structs and enum payloads
+are copied too, so nothing in the copy is shared with the original. Two things
+follow, and both are deliberate. A value that appears twice inside another stays
+one value in the copy rather than becoming two — copying a value should not change
+its shape. And a value that contains itself can be cloned, giving a copy with its
+own cycle. Numbers, strings and functions are returned as they are, having nothing
+to copy.
+
 ### `std/set`
 
 A set is a `List` with no duplicates — there is no separate `Set` type — so every
@@ -165,6 +173,11 @@ be running it.
 
 `stringify` renders structs as objects and enums as their variant name (or
 `{variant, values}` when they carry a payload).
+
+A value that contains itself cannot be written as JSON at all — there is no
+syntax for "the value we are already inside" — so `stringify` refuses and names
+where the cycle closes. It is the only operation that has to: `print`, `==`,
+`clone` and set membership all handle a cyclic value.
 
 `Option` is the exception: `Some(v)` becomes `v` and `None` becomes `null`. An
 optional field is the commonest thing in a JSON document and JSON already spells

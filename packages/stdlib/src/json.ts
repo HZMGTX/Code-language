@@ -46,7 +46,22 @@ function fromJson(input: unknown): Value {
  * limit rather than this function's: there is no second null to map the other
  * one to.
  */
-export function toJson(value: Value): unknown {
+/**
+ * Thrown when a value contains itself.
+ *
+ * JSON has no way to write a cycle — there is no syntax for "the object we are
+ * already inside" — so unlike `clone` and `==`, which were taught to cope, this
+ * one has to refuse. It carries the path to where the cycle closes, because
+ * "somewhere in this structure" is not an answer anybody can act on.
+ */
+class CyclicValue extends Error {
+  constructor(readonly path: string) {
+    super('cyclic value at ' + path);
+  }
+}
+
+export function toJson(value: Value, open = new Set<Value>(), at = '$'): unknown {
+  if (open.has(value)) throw new CyclicValue(at);
   switch (value.k) {
     case 'nil':
       return null;
@@ -55,7 +70,12 @@ export function toJson(value: Value): unknown {
     case 'str':
       return value.v;
     case 'list':
-      return value.items.map((item) => toJson(item));
+      open.add(value);
+      try {
+        return value.items.map((item, i) => toJson(item, open, at + '[' + String(i) + ']'));
+      } finally {
+        open.delete(value);
+      }
     case 'map':
     case 'struct': {
       const source = value.k === 'map' ? value.entries : value.fields;
@@ -63,7 +83,12 @@ export function toJson(value: Value): unknown {
       // ordinary object sets the prototype instead of storing a key, so a map
       // with that key came back from `stringify` silently missing it.
       const out = Object.create(null) as Record<string, unknown>;
-      for (const [key, item] of source) out[key] = toJson(item);
+      open.add(value);
+      try {
+        for (const [key, item] of source) out[key] = toJson(item, open, at + '.' + key);
+      } finally {
+        open.delete(value);
+      }
       return out;
     }
     case 'enum':
@@ -71,11 +96,24 @@ export function toJson(value: Value): unknown {
       // `enum Option { A, B }` should keep the tagged form, and somebody's own
       // `enum Option { Some(Num), None }` wants this one anyway.
       if (value.enumName === 'Option' && (value.variant === 'Some' || value.variant === 'None')) {
-        return value.variant === 'None' ? null : toJson(value.values[0] ?? NIL);
+        if (value.variant === 'None') return null;
+        open.add(value);
+        try {
+          return toJson(value.values[0] ?? NIL, open, at);
+        } finally {
+          open.delete(value);
+        }
       }
-      return value.values.length === 0
-        ? value.variant
-        : { variant: value.variant, values: value.values.map((v) => toJson(v)) };
+      if (value.values.length === 0) return value.variant;
+      open.add(value);
+      try {
+        return {
+          variant: value.variant,
+          values: value.values.map((v, i) => toJson(v, open, at + '.' + value.variant + '[' + String(i) + ']')),
+        };
+      } finally {
+        open.delete(value);
+      }
     default:
       return undefined;
   }
@@ -98,7 +136,18 @@ export function stdJson(): Map<string, Value> {
 
     fn('stringify', ['value', { name: 'indent', defaultValue: num(0) }], (a, c) => {
       const indent = expectNum(arg(a, 1), c, 'stringify indent');
-      const data = toJson(arg(a, 0));
+      let data: unknown;
+      try {
+        data = toJson(arg(a, 0));
+      } catch (error) {
+        if (error instanceof CyclicValue) {
+          return c.panic('cannot convert a value that contains itself to JSON', [
+            'the cycle closes at ' + error.path + ', where `$` is the value you passed',
+            'JSON has no way to write "the value we are already inside"',
+          ]);
+        }
+        throw error;
+      }
       if (data === undefined) {
         return c.panic('cannot convert ' + typeName(arg(a, 0)) + ' to JSON');
       }

@@ -1,0 +1,47 @@
+// A value that contains itself is a real value: `print` has always shown one as
+// `[1, [...]]`, so everything else has to cope with it rather than overflow the
+// stack. This is what each thing does.
+import { clone } from "std/core"
+import { size, has } from "std/set"
+
+var a = [1]
+a.push(a)
+
+// Printing: a back-reference rather than an infinite expansion.
+print(a)
+print(a.len())
+print(a[1][1][1][0])
+
+// Equality terminates, and says what it should. Two cycles built the same way
+// are equal; two built differently are not.
+var b = [1]
+b.push(b)
+var c = [2]
+c.push(c)
+print([a == a, a == b, a == c])
+
+// Cloning gives a copy with its own cycle, independent of the original.
+let copy = clone(a)
+print(copy)
+print(copy[1][1][0])
+copy.push(99)
+print([a.len(), copy.len()])
+
+// Sharing survives a clone rather than being duplicated: these two elements are
+// one list, and still are afterwards.
+let inner = [1]
+let shared = clone([inner, inner])
+shared[0].push(2)
+print(shared)
+
+// Set membership works, and follows `==`.
+print([size([a]), size([a, b]), size([a, c])])
+print(has([a], b))
+
+// Structs that point at each other.
+struct Node { name: Str, next: Any }
+var n1 = Node { name: "a", next: nil }
+var n2 = Node { name: "b", next: n1 }
+n1.next = n2
+print(n1.next.next.name)
+print(n1 == n1)

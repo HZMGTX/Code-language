@@ -134,6 +134,29 @@ are tracked, so `"${ pick("}") }"` is read correctly.
 
 ## 2. Values and types
 
+### 2.0 A value may contain itself
+
+Lists, maps and structs are mutable, so `a.push(a)` builds a value that contains
+itself. That is a real value, not an error, and every operation on one either
+answers or says why it cannot:
+
+| Operation | On a cyclic value |
+|---|---|
+| `print`, `inspect` | a back-reference: `[1, [...]]` |
+| `==` | terminates; two cycles built the same way are equal |
+| `clone` | a copy with its own cycle, sharing nothing with the original |
+| `std/set` membership | works, and follows `==` |
+| `stringify` | **refuses**, naming where the cycle closes |
+
+`stringify` is the only refusal, and it has to be: JSON has no way to write "the
+value we are already inside".
+
+One narrow limit, stated rather than hidden. `==` calls two cyclic values equal
+when nothing distinguishes them however far they are unrolled, so `a = [a]` equals
+`b = [[b]]`; `std/set` keys them differently and can hold both. Agreeing there
+needs a canonical form for infinite trees, which is not carried for a value nobody
+builds on purpose.
+
 | Type | Description |
 |---|---|
 | `Nil` | The single value `nil` |

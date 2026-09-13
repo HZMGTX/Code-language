@@ -1,0 +1,8 @@
+error[RT035]: cannot convert a value that contains itself to JSON
+ --> cyclic-json.lm:6:7
+  |
+6 | print(stringify(a))
+  |       ^^^^^^^^^^^^
+  |
+  = note: the cycle closes at $[2], where `$` is the value you passed
+  = note: JSON has no way to write "the value we are already inside"
