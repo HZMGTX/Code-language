@@ -1,0 +1,7 @@
+error[TY002]: this function returns Num but is giving back Str
+ --> implicit-return.lm:7:3
+  |
+7 |   "not a number"
+  |   ^^^^^^^^^^^^^^ expected Num
+  |
+  = note: a function's value is the value of its last statement

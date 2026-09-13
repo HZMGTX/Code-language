@@ -334,8 +334,36 @@ class Checker {
     this.returnTy = this.toTy(ret);
     for (const param of params) this.scope.declare(param.name, this.toTy(param.type));
     this.block(body);
+    this.checkImplicitReturn(body);
     this.scope = savedScope;
     this.returnTy = savedReturn;
+  }
+
+  /**
+   * A function's value is the value of its last statement, and `return` is the
+   * exception rather than the rule — so checking only `return` statements left
+   * the declared return type unenforced on almost every function anyone
+   * writes. `fn f() -> Num { "text" }` was accepted.
+   *
+   * Only a final `ExprStmt` is checked. A body ending in a loop or a
+   * declaration yields nil, and complaining about that would be complaining
+   * about a function whose value nobody uses, which is not a type error.
+   */
+  private checkImplicitReturn(body: Block): void {
+    if (this.returnTy.k === 'any') return;
+    const last = body.stmts[body.stmts.length - 1];
+    if (last === undefined || last.kind !== 'ExprStmt') return;
+
+    const actual = this.typeOf(last.expr);
+    if (!accepts(this.returnTy, actual)) {
+      this.report(
+        'TY002',
+        'this function returns ' + showTy(this.returnTy) + ' but is giving back ' + showTy(actual),
+        last.expr.span,
+        'expected ' + showTy(this.returnTy),
+        ["a function's value is the value of its last statement"],
+      );
+    }
   }
 
   // ------------------------------------------------------------- expressions

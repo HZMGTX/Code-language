@@ -41,6 +41,16 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
 
 ### Fixed
 
+- **A declared return type was unenforced on almost every function.** `TY002`
+  only ever looked at `return` statements — but a Lumen function's value is the
+  value of its last statement, and `return` is the exception rather than the
+  rule, so `fn f() -> Num { "text" }` was accepted without comment. It is
+  checked now. Silence is kept where silence is right: an unannotated helper is
+  `Any` and stays uncomplained-about, and a body ending in a loop or a
+  declaration yields `nil` and is left alone, since that is a function whose
+  value nobody uses rather than a type error. Verified against every Lumen
+  program in the repository — 24 files, none newly flagged.
+
 - **A function body may name declarations that come later.** `fn greet() {
   name }` followed by `let name = "world"` runs correctly and always has, but
   the resolver rejected it with `RS001` — the one failure a static check must

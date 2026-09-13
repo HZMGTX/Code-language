@@ -526,6 +526,12 @@ valid program:
 - **Exhaustiveness is only checked when it can be proved.** Every arm must name
   variants of one enum the resolver can see. A `match` whose arms mix patterns,
   or whose enum cannot be determined, is left to `RT020` at run time.
+- **A declared return type is checked against the function's value**, which is
+  the value of its last statement — `return` as well, but `return` is the
+  exception rather than the rule. A body whose last statement is a loop or a
+  declaration yields `nil` and is left alone: that is a function whose value
+  nobody uses, not a type error, and rejecting it would need an analysis of
+  whether every path returns something, which is not what this pass does.
 - **A guarded arm covers nothing.** `Light.Amber if hurry => ...` does not make
   a `match` exhaustive, because the guard may be false.
 - **A function body may name declarations that come later.** A body does not

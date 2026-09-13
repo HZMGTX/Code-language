@@ -1,0 +1,10 @@
+// A function's value is the value of its last statement, and `return` is the
+// exception rather than the rule — so a declared return type has to be checked
+// against the last expression, or it is unenforced on nearly every function
+// anyone writes.
+
+fn wrong() -> Num {
+  "not a number"
+}
+
+print(wrong())
