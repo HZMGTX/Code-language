@@ -33,9 +33,19 @@ export function stdMath(): Map<string, Value> {
       return num(Math.log(n) / Math.log(base));
     }),
 
-    fn('pow', ['base', 'exponent'], (a, c) =>
-      num(Math.pow(expectNum(arg(a, 0), c, 'pow base'), expectNum(arg(a, 1), c, 'pow exponent'))),
-    ),
+    fn('pow', ['base', 'exponent'], (a, c) => {
+      const base = expectNum(arg(a, 0), c, 'pow base');
+      const exponent = expectNum(arg(a, 1), c, 'pow exponent');
+      // A negative base with a fractional exponent has no real answer. IEEE
+      // 754 says NaN; Lumen says so out loud, as `sqrt` and `log` already do.
+      if (base < 0 && !Number.isInteger(exponent)) {
+        return c.panic(
+          'pow(' + base + ', ' + exponent + ') has no real answer',
+          ['a negative base needs a whole-number exponent'],
+        );
+      }
+      return num(Math.pow(base, exponent));
+    }),
 
     fn('min', ['a', 'b'], (a, c) =>
       num(Math.min(expectNum(arg(a, 0), c, 'min a'), expectNum(arg(a, 1), c, 'min b'))),

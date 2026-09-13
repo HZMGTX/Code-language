@@ -74,6 +74,14 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   an unknown module, and HTTP header maps were built on objects that could be
   written through. A language whose pitch is that the host is invisible cannot
   have the host's method names showing through its syntax.
+- **Two values that both printed `NaN` compared unequal — sometimes.** `a == a`
+  was true and `a == b` false for two identical computations, because equality
+  short-circuits on object identity and `NaN === NaN` is false underneath. That
+  leaked the host's object identity into a language where numbers have none.
+  Rather than patch equality, `NaN` is no longer a Lumen value at all: any
+  arithmetic that would produce one is `RT046`, and `pow(-8, 0.5)` reports that
+  it has no real answer, as `sqrt(-1)` and `log(0)` already did. `Infinity` is
+  untouched — it means something, is equal to itself, and orders consistently.
 - **`std/fs` leaked Node's error text.** `ENOENT: no such file or directory,
   open '/x'` names an errno, a syscall and a quoting style that vary by
   platform and version — so the same Lumen program said different things on

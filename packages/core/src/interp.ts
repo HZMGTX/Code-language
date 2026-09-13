@@ -701,7 +701,9 @@ export class Interpreter {
     if (op === '!=') return bool(!valuesEqual(left, right));
 
     if (op === '+') {
-      if (left.k === 'num' && right.k === 'num') return num(left.v + right.v);
+      if (left.k === 'num' && right.k === 'num') {
+        return this.checked(left.v + right.v, op, left.v, right.v, span);
+      }
       if (left.k === 'str' && right.k === 'str') return str(left.v + right.v);
       if (left.k === 'list' && right.k === 'list') return list([...left.items, ...right.items]);
       return this.fail(
@@ -734,13 +736,13 @@ export class Interpreter {
       }
       switch (op) {
         case '-':
-          return num(left.v - right.v);
+          return this.checked(left.v - right.v, op, left.v, right.v, span);
         case '*':
-          return num(left.v * right.v);
+          return this.checked(left.v * right.v, op, left.v, right.v, span);
         case '/':
-          return num(left.v / right.v);
+          return this.checked(left.v / right.v, op, left.v, right.v, span);
         default:
-          return num(left.v % right.v);
+          return this.checked(left.v % right.v, op, left.v, right.v, span);
       }
     }
 
@@ -754,6 +756,35 @@ export class Interpreter {
       'not comparable',
       ['`<`, `<=`, `>` and `>=` work on two Nums or two Strs'],
     );
+  }
+
+  /**
+   * Arithmetic that refuses to produce a value nobody can use.
+   *
+   * `Infinity - Infinity` is NaN in IEEE 754, and NaN in Lumen would be a
+   * value that displays as `NaN`, is not equal to another value that displays
+   * as `NaN`, and is neither less than nor greater than anything. Lumen
+   * already declines to produce nonsense quietly — `1 / 0` and `sqrt(-1)` are
+   * errors rather than Infinity and NaN — so this is the same rule applied
+   * where it was still missing.
+   *
+   * Infinity itself is left alone: it means "larger than we can say", it
+   * compares consistently, and it is equal to itself.
+   */
+  private checked(result: number, op: string, left: number, right: number, span: Span): Value {
+    if (Number.isNaN(result) && !Number.isNaN(left) && !Number.isNaN(right)) {
+      return this.fail(
+        'RT046',
+        'the result of ' + display(num(left)) + ' ' + op + ' ' + display(num(right)) + ' is undefined',
+        span,
+        'no number answers this',
+        [
+          'this comes from infinities cancelling, which usually means an earlier ' +
+            'result overflowed',
+        ],
+      );
+    }
+    return num(result);
   }
 
   private async evalMatch(

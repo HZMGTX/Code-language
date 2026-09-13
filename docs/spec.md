@@ -96,6 +96,21 @@ are tracked, so `"${ pick("}") }"` is read correctly.
 
 `type(x)` returns this name as a `Str`.
 
+A `Num` is an IEEE 754 double, with one restriction: **`NaN` is not a Lumen
+value.** Any arithmetic that would produce one is `RT046`, and the standard
+library reports the cases it can reach — `sqrt(-1)`, `log(0)`, `pow(-8, 0.5)` —
+rather than returning one. A NaN would print as `NaN`, compare unequal to
+another value printing as `NaN`, and be neither less than nor greater than
+anything; that is not a value a program can reason about.
+
+`Infinity` is a value, and is left as it is: it means "larger than can be
+said", it is equal to itself, and it orders consistently against every finite
+number. It has no literal, so it arises only from overflow.
+
+A `Str` is a sequence of Unicode **code points**, not UTF-16 units. `len("😀")`
+is 1, `"😀".chars()` has one element, and slicing never splits a character in
+half.
+
 ### 2.1 Truthiness
 
 **Only `nil` and `false` are falsy.** `0`, `""` and `[]` are all true. This is
@@ -212,7 +227,9 @@ short-circuit.
 Mixing types is `RT016` — to build a string from mixed values, use
 interpolation.
 
-Division or remainder by zero is `RT018`, not `Infinity` or `NaN`.
+Division or remainder by zero is `RT018`, not `Infinity` or `NaN`. An operation
+whose result would be `NaN` — `Infinity - Infinity`, `Infinity * 0`,
+`Infinity / Infinity` — is `RT046`. Overflow to `Infinity` is not an error.
 
 ### 4.3 Comparison
 
@@ -531,6 +548,7 @@ different meaning. Selected codes:
 | `RT044` | One parameter supplied both positionally and by name |
 | `RT027` | No such method on this type |
 | `RT045` | Call depth exceeded — recursion with no reachable base case |
+| `RT046` | An arithmetic result that would be `NaN` |
 
 The parser reports multiple errors per run, suppressing duplicates and bounding
 cascades at 25.
