@@ -3,11 +3,10 @@
 //   lumen run examples/beginner.lm
 //
 // Read it top to bottom, then change something: add a student, lower the pass
-// mark, widen the bars. Everything here is the prelude plus method syntax, and
-// `x.f(a)` is only another way of writing `f(x, a)` — there is no object model
-// to learn first.
+// mark, widen the bars. It is all prelude functions and method calls, and
+// `x.f(a)` is only ever another way of writing `f(x, a)`.
 
-// Marks as somebody actually types them: ragged spacing, inconsistent capitals.
+// Marks as somebody actually types them: ragged spacing, careless capitals.
 // Tidying that up in code is kinder than asking people to type carefully.
 let raw = "Ada Lovelace, 91
   grace hopper ,78
@@ -15,15 +14,12 @@ Alan Turing, 64
 katherine johnson , 99
 Edsger Dijkstra, 47"
 
-// A struct fixes the shape of one row. Misspell a field later and Lumen says
-// so, instead of quietly handing back nothing.
-struct Student {
-  name: Str,
-  mark: Num,
-}
+// A struct fixes the shape of one row, so a misspelt field is something Lumen
+// tells you about rather than a nil you discover much later.
+struct Student { name: Str, mark: Num }
 
 // "  grace hopper " becomes "Grace Hopper". Each method works on whatever the
-// previous one produced, so the chain runs in reading order.
+// one before it produced, so the chain runs in reading order.
 fn titleCase(name) {
   name.trim().split(" ")
     .map(fn(word) { word.slice(0, 1).upper() + word.slice(1) })
@@ -32,9 +28,9 @@ fn titleCase(name) {
 
 fn parse(line) {
   let parts = line.split(",")
-  // Nothing is ever thrown in Lumen. toNum hands back Ok(number) or Err(why),
-  // and match makes you say what happens either way — so one unreadable mark
-  // cannot take the whole report down with it.
+  // Nothing is ever thrown in Lumen. toNum gives back Ok(number) or Err(why),
+  // and match makes you answer both — so one unreadable mark cannot take the
+  // whole report down with it.
   let mark = match parts[1].trim().toNum() {
     Ok(n)  => n,
     Err(_) => 0,
@@ -43,7 +39,7 @@ fn parse(line) {
 }
 
 // passMark has a default, so grade(m) reads cleanly everywhere and grade(m, 40)
-// is still there for the one paper that is marked differently.
+// is still there for the paper that is marked differently.
 fn grade(mark, passMark = 50) {
   match mark {
     m if m >= 90       => "excellent",
@@ -53,23 +49,18 @@ fn grade(mark, passMark = 50) {
   }
 }
 
-// Bars are easier to compare at a glance than a column of numbers.
-fn bar(mark, width = 20) {
-  "#".repeat(round(mark / 100 * width))
-}
+fn bar(mark, width = 20) { "#".repeat(round(mark / 100 * width)) }
 
 fn main() {
   let students = raw.lines().map(parse)
 
   print("Marks")
   for s in students {
-    print("  ${s.name.padEnd(18)} ${"${s.mark}".padEnd(4)} ${bar(s.mark).padEnd(21)} ${grade(s.mark)}")
+    print("  ${s.name.padEnd(18)} ${str(s.mark).padEnd(4)} ${bar(s.mark).padEnd(21)} ${grade(s.mark)}")
   }
 
-  // A map counts how many of each grade there were. A missing key is nil, so a
-  // grade is only ever seen for the first time once. Test against nil rather
-  // than the count itself: in Lumen 0 is a true value, so `if tally[g]` would
-  // happily walk straight past a genuine zero.
+  // A map counts how many of each grade there were. A key that was never set
+  // reads as nil, which is why the first sighting has to start the count at 0.
   var tally = {}
   for s in students {
     let g = grade(s.mark)
@@ -79,15 +70,12 @@ fn main() {
 
   print("")
   print("Grades")
-  for [name, count] in tally {
-    print("  ${name.padEnd(10)} ${count}")
-  }
+  for [name, count] in tally { print("  ${name.padEnd(10)} ${count}") }
 
   let marks = students.map(fn(s) { s.mark })
   let best = students.filter(fn(s) { s.mark >= 90 }).map(fn(s) { s.name }).join(", ")
 
   print("")
   print("${len(students)} students, average ${round(marks.sum() / len(marks) * 10) / 10}")
-  print("Highest ${max(marks)}, lowest ${min(marks)}")
-  print("Top of the class: ${best}")
+  print("Highest ${max(marks)}, lowest ${min(marks)}, top of the class ${best}")
 }

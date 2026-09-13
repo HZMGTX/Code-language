@@ -30,6 +30,8 @@ npm run build
 | `npm run binary` | Build `build/lumen`, the native standalone executable (needs bun) |
 | `npm run binary:all` | Cross-compile the native binary for all five targets |
 | `npm run dist` | Build both: bundle, then binary |
+| `npm run ci` | Run every check CI runs, locally |
+| `npm run ci:full` | The same, plus building and proving the native binary (needs bun) |
 | `npm run clean` | Delete all build output |
 
 To get a real `lumen` on your PATH:
@@ -222,12 +224,28 @@ Both must print exactly what `npm run lumen -- run` prints for the same program.
 ## Before you push
 
 ```bash
+npm run ci          # or ci:full, if you have bun and want the binary checked too
+```
+
+That runs the same checks as `.github/workflows/ci.yml`, in the same order, and
+exits non-zero on the first failure. Individually, if you prefer:
+
+```bash
 npm run typecheck
 npm test
 npm run examples
 node scripts/check-private.mjs
 node scripts/gen-stdlib-docs.mjs --check
 ```
+
+**If GitHub Actions never reports on your pull request**, that is not this
+repository's doing. A private repository whose Actions are disabled, or whose
+account has no Actions minutes available, produces runs that end in
+`startup_failure` with a zero-second duration and no job — GitHub never reads
+the workflow file at all, so a valid workflow looks identical to a broken one.
+Check Settings → Actions → General, and the account's billing and spending
+limit. `npm run ci` is the local stand-in meanwhile, and it is the reason that
+stand-in exists.
 
 CI runs all of these, and two things you cannot easily run locally: the
 Lumen-language suite (`lumen test tests/lumen`) on every supported platform, and
