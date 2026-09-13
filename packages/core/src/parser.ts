@@ -855,6 +855,20 @@ export class Parser {
       const operand = this.parseUnary();
       return { kind: 'AwaitExpr', operand, span: this.spanFrom(start) };
     }
+    // `return`, `break` and `continue` are also expressions. They produce no
+    // value, so this is not about composing them — it is so a `match` arm or
+    // an `if` branch can leave, which is where wanting them is common.
+    if (this.atAny('return', 'break', 'continue')) {
+      const word = this.advance();
+      const jump = word.kind as 'return' | 'break' | 'continue';
+      // A value binds as loosely as possible: `return a + b` returns the sum.
+      // Everything that can close an expression ends it instead.
+      const value =
+        jump === 'return' && !this.atAny('newline', ';', ',', ')', ']', '}', 'eof')
+          ? this.parseExpr()
+          : undefined;
+      return { kind: 'JumpExpr', jump, value, span: this.spanFrom(start) };
+    }
     return this.parsePostfix();
   }
 

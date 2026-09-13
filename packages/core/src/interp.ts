@@ -598,6 +598,15 @@ export class Interpreter {
       case 'AwaitExpr':
         // Lumen awaits I/O implicitly, so `await` simply yields its operand.
         return await this.evaluate(expr.operand, env);
+
+      case 'JumpExpr': {
+        // The same signals the statement forms raise, so a `return` inside a
+        // match arm and a `return` on its own line are one mechanism.
+        if (expr.jump === 'break') throw new BreakSignal();
+        if (expr.jump === 'continue') throw new ContinueSignal();
+        const value = expr.value === undefined ? NIL : await this.evaluate(expr.value, env);
+        throw new ReturnSignal(value);
+      }
     }
   }
 

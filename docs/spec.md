@@ -355,6 +355,32 @@ return value
 pairs), or a range. Anything else is `RT004`. The binding is a full pattern, so
 `for [k, v] in someMap { ... }` destructures.
 
+`return`, `break` and `continue` are also expressions, and mean the same thing
+there as they do on a line of their own. They produce no value — they leave —
+so they compose with anything:
+
+```lumen
+fn parseAll(lines) {
+  var out = []
+  for line in lines {
+    let n = match line.toNum() {
+      Ok(n)  => n,
+      Err(_) => continue,          // skip this line
+    }
+    out.push(n)
+  }
+  Ok(out)
+}
+```
+
+A `return` in expression position takes its value at the lowest precedence, so
+`return a + b` returns the sum; a comma, a closing bracket or the end of the
+line ends it. `break` and `continue` never take one.
+
+`break` and `continue` outside a loop are `RS006`. A function boundary counts:
+a `break` inside a lambda cannot leave the loop the lambda was written in,
+because by the time it runs that loop may already have finished.
+
 ---
 
 ## 6. Type annotations
@@ -438,6 +464,7 @@ program uses can be resolved without running it.
 | `RS003` | A `match` arm can never be reached |
 | `RS004` | A name is declared twice in the same scope |
 | `RS005` | A binding introduced with `let` is assigned to |
+| `RS006` | `break` or `continue` appears outside a loop |
 
 The value is that a mistake is reported whether or not execution reaches it: a
 typo on a branch that never runs is still a typo.
@@ -450,6 +477,11 @@ valid program:
   or whose enum cannot be determined, is left to `RT020` at run time.
 - **A guarded arm covers nothing.** `Light.Amber if hurry => ...` does not make
   a `match` exhaustive, because the guard may be false.
+- **A function body may name declarations that come later.** A body does not
+  run where it is written, so `fn greet() { name }` followed by `let name =
+  "world"` is accepted, and mutual recursion needs no forward declaration.
+  Statement-level code, which does run where it is written, is unchanged: using
+  a name before its `let` is still `RS001`.
 
 `_` may be re-declared freely; it is the conventional throwaway name. Shadowing
 an outer binding in an inner scope is not an error, and never will be.

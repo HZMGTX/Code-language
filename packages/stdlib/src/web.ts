@@ -18,6 +18,21 @@ import { NIL, bool, display, map, num, str, type Value } from '@lumen-lang/core'
 import { toJson } from './json.js';
 import { arg, expectFn, expectInt, expectStr, fn, moduleOf } from './support.js';
 
+/**
+ * Whether this process was started as a server — `lumen serve` rather than
+ * `lumen run`. The CLI sets it; nothing else does.
+ *
+ * It exists so one file can be both a site and a script: serve the routes when
+ * asked to serve, and print a sample of what they return when asked to run.
+ * That keeps a website testable from the command line without a request.
+ */
+let serveMode = false;
+
+/** Called by the CLI for `lumen serve`. */
+export function setServeMode(on: boolean): void {
+  serveMode = on;
+}
+
 function response(status: number, contentType: string, body: string): Value {
   return map(
     new Map<string, Value>([
@@ -134,6 +149,46 @@ export function stdWeb(): Map<string, Value> {
 
     fn('escape', ['text'], (a, c) => str(escapeHtml(expectStr(arg(a, 0), c, 'escape(text)')))),
 
+    /**
+     * The fields a form submitted, whichever way it was sent.
+     *
+     * A `<form method="get">` arrives as a query string and a
+     * `<form method="post">` as a urlencoded body; this reads both the same
+     * way, so a handler does not have to care which the page used. Anything
+     * else — a JSON body, a file upload — comes back empty, and `req.body` is
+     * still there to parse yourself.
+     */
+    fn('form', ['req'], (a, c) => {
+      const request = arg(a, 0);
+      if (request.k !== 'map') {
+        return c.panic('form(req) needs a request map', ['got ' + display(request)]);
+      }
+      const method = request.entries.get('method');
+      const verb = method?.k === 'str' ? method.v.toUpperCase() : 'GET';
+
+      if (verb === 'GET' || verb === 'HEAD') {
+        const query = request.entries.get('query');
+        return query !== undefined && query.k === 'map' ? query : map(new Map<string, Value>());
+      }
+
+      // Only a urlencoded body is a form. Guessing at any other content type
+      // would quietly return nonsense for a JSON post.
+      const headers = request.entries.get('headers');
+      const contentType =
+        headers?.k === 'map' ? headers.entries.get('content-type') : undefined;
+      const kind = contentType?.k === 'str' ? contentType.v : '';
+      if (!kind.toLowerCase().startsWith('application/x-www-form-urlencoded')) {
+        return map(new Map<string, Value>());
+      }
+
+      const body = request.entries.get('body');
+      const fields = new Map<string, Value>();
+      if (body?.k === 'str') {
+        for (const [key, value] of new URLSearchParams(body.v)) fields.set(key, str(value));
+      }
+      return map(fields);
+    }),
+
     /** Wrap body HTML in a complete, responsive document. */
     fn(
       'page',
@@ -212,6 +267,7 @@ export function stdWeb(): Map<string, Value> {
       },
     ),
 
-    fn('isServer', [], () => bool(true)),
+    /** True when started with `lumen serve`, false under `lumen run`. */
+    fn('isServer', [], () => bool(serveMode)),
   );
 }

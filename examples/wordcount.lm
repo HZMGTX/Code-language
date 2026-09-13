@@ -68,5 +68,5 @@ fn main() {
 
   print("")
   print("${len(words)} words, ${counts.len()} of them different.")
-  print("The ten above are ${share}% of the passage; ${once} words appear exactly once.")
+  print("The ${top.len()} above are ${share}% of the passage; ${once} words appear exactly once.")
 }

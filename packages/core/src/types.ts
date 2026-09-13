@@ -458,6 +458,13 @@ class Checker {
       case 'AwaitExpr':
         this.typeOf(expr.operand);
         return ANY;
+
+      case 'JumpExpr':
+        // A jump never yields a value, so it is compatible with any type an
+        // arm beside it produces. Checking the returned expression is still
+        // worth doing for its own sake.
+        if (expr.value !== undefined) this.typeOf(expr.value);
+        return ANY;
     }
   }
 

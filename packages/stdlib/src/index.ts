@@ -18,6 +18,7 @@ import { STD_MODULES, STD_MODULE_NAMES } from './modules.js';
 import { makeHelp, methodTables, preludeExtras } from './prelude.js';
 
 export { toJson } from './json.js';
+export { setServeMode } from './web.js';
 export { STD_MODULES, STD_MODULE_NAMES } from './modules.js';
 
 /** A `Host` backed by the Node process: stdout, stderr, env, and the clock. */
@@ -25,6 +26,41 @@ export function createNodeHost(): Host {
   // Created on first use and reused, so a program that calls input() in a loop
   // does not stack up readline interfaces on the same stdin.
   let console_: readline.Interface | undefined;
+  // Lines that have arrived but nobody has asked for yet, and the readers
+  // waiting for a line that has not arrived. Exactly one of these is ever
+  // non-empty.
+  //
+  // A piped stdin delivers every line at once, well before the program asks
+  // for the second one. Reading with `question` per call would drop the rest
+  // on the floor, so the lines are queued as they arrive instead, and
+  // `printf 'a\nb\n' | lumen run script.lm` reads both.
+  const pending: string[] = [];
+  const waiting: ((line: string | undefined) => void)[] = [];
+  let ended = false;
+
+  const interactive = process.stdin.isTTY === true;
+
+  function openConsole(): readline.Interface {
+    if (console_ !== undefined) return console_;
+    const iface = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+      terminal: interactive,
+    });
+    iface.on('line', (line: string): void => {
+      const next = waiting.shift();
+      if (next === undefined) pending.push(line);
+      else next(line);
+    });
+    // End of input resolves every outstanding read to undefined rather than
+    // hanging, so a script that runs out of lines ends cleanly.
+    iface.once('close', (): void => {
+      ended = true;
+      for (const resolve of waiting.splice(0)) resolve(undefined);
+    });
+    console_ = iface;
+    return iface;
+  }
 
   return {
     writeOut: (text: string): void => {
@@ -36,26 +72,21 @@ export function createNodeHost(): Host {
     getEnv: (name: string): string | undefined => process.env[name],
     now: (): number => Date.now(),
     readLine: async (prompt: string): Promise<string | undefined> => {
-      if (console_ === undefined) {
-        console_ = readline.createInterface({ input: process.stdin, output: process.stdout });
+      const iface = openConsole();
+      // At a terminal readline owns the line it is editing, so it has to be
+      // the one to write the prompt; piped, it is only text going past.
+      if (interactive) {
+        iface.setPrompt(prompt);
+        iface.prompt();
+      } else {
+        process.stdout.write(prompt);
       }
-      const iface = console_;
+
+      const queued = pending.shift();
+      if (queued !== undefined) return queued;
+      if (ended) return undefined;
       return await new Promise<string | undefined>((resolve) => {
-        let settled = false;
-        // End of input resolves to undefined rather than hanging, so a piped
-        // script that runs out of lines ends cleanly.
-        const onClose = (): void => {
-          if (settled) return;
-          settled = true;
-          resolve(undefined);
-        };
-        iface.once('close', onClose);
-        iface.question(prompt, (answer) => {
-          if (settled) return;
-          settled = true;
-          iface.removeListener('close', onClose);
-          resolve(answer);
-        });
+        waiting.push(resolve);
       });
     },
   };

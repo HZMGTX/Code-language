@@ -1,0 +1,80 @@
+// A Caesar cipher: shift every letter along the alphabet, leave the rest alone.
+//
+//   lumen run examples/caesar.lm
+//
+// Lumen has no character type, so a character here is just a one-letter Str,
+// and that is enough: `chars` cuts a string into them, `indexOf` on an alphabet
+// turns one into a number, and slicing turns the number back into a letter.
+
+let alphabet = "abcdefghijklmnopqrstuvwxyz"
+let capitals = alphabet.upper()
+
+// The dull little words that a shift of the right size tends to reveal.
+let common = ["the", "and", "of", "to", "in", "is", "it", "at", "a", "that",
+              "for", "was", "on", "with", "as", "be", "but", "not", "we", "you"]
+
+// Step `by` places along `letters` from position `at`, wrapping past the end.
+fn rotate(letters, at, by) {
+  let landing = (at + by) % 26
+  letters.slice(landing, landing + 1)
+}
+
+fn shiftChar(ch, by) {
+  let letters = if capitals.contains(ch) { capitals } else { alphabet }
+  // indexOf gives -1 for anything its subject does not hold, so spaces and
+  // punctuation fall straight through untouched. That is what keeps the
+  // ciphertext readable as text, and what makes it breakable further down.
+  let at = letters.indexOf(ch)
+  if at < 0 { ch } else { rotate(letters, at, by) }
+}
+
+// One function both ways: decoding is a shift by the rest of the circle. Keys
+// are folded into 0..26 first, so caesar(t, -3) and caesar(t, 23) are one call.
+fn caesar(text, by) {
+  let key = ((by % 26) + 26) % 26
+  text.chars().map(fn(ch) { shiftChar(ch, key) }).join("")
+}
+
+// Blank the punctuation out rather than deleting it, or "dawn, and" would come
+// back as one word.
+fn wordsOf(text) {
+  text.lower().chars().map(fn(ch) { if alphabet.contains(ch) { ch } else { " " } })
+    .join("").split(" ").filter(fn(word) { !word.isEmpty() })
+}
+
+// How English a reading looks. Crude, but it only has to beat 25 rivals.
+fn score(text) { wordsOf(text).count(fn(word) { common.contains(word) }) }
+
+fn main() {
+  let plain  = "Attack at dawn, and bring the whole fleet with you."
+  let key    = 7
+  let secret = caesar(plain, key)
+
+  print("Caesar cipher")
+  print("  ${"plain".padEnd(9)}${plain}")
+  print("  ${"shift ${key}".padEnd(9)}${secret}")
+  print("  ${"back".padEnd(9)}${caesar(secret, -key)}")
+
+  // Encoding and decoding are one operation pointed two ways, for every key.
+  for k in range(26) {
+    assert(caesar(caesar(plain, k), -k) == plain, "round trip failed for key ${k}")
+  }
+  print("  ${"checked".padEnd(9)}all 26 keys survive the round trip")
+  print("")
+
+  // An attacker has the ciphertext and nothing else. Twenty-six keys is no work
+  // at all, so the only question left is which reading is English.
+  let ranked = range(26).sortBy(fn(k) { -score(caesar(secret, -k)) })
+
+  print("Brute force: the three best of twenty-six readings")
+  print("  key  hits  reading")
+  for k in ranked.take(3) {
+    let guess = caesar(secret, -k)
+    print("  ${str(k).padStart(3)}  ${str(score(guess)).padStart(4)}  ${guess}")
+  }
+
+  let best = ranked[0]
+  assert(best == key, "brute force picked ${best}, not ${key}")
+  print("")
+  print("Recovered key ${best}, from the ciphertext alone.")
+}

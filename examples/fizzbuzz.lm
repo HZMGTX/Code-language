@@ -14,6 +14,12 @@ fn fizzbuzz(n) {
   }
 }
 
+// One tally row. Numbers are right-aligned in their own column so the eye can
+// compare the counts down the page instead of reading each one separately.
+fn row(label, n) {
+  "  ${label.padEnd(10)} ${str(n).padStart(3)}"
+}
+
 fn main() {
   // range(1, 101) counts 1 to 100: the end is excluded, the way a slice is.
   let answers = range(1, 101).map(fizzbuzz)
@@ -29,7 +35,9 @@ fn main() {
   print("")
   print("Tally")
   for word in words {
-    print("  ${word.padEnd(10)} ${answers.count(fn(a) { a == word })}")
+    print(row(word, answers.count(fn(a) { a == word })))
   }
-  print("  ${"number".padEnd(10)} ${answers.count(fn(a) { !words.contains(a) })}")
+  // Whatever none of the three rules claimed came through as its own digits, so
+  // these four rows partition 1-100 rather than overlapping.
+  print(row("number", answers.count(fn(a) { !words.contains(a) })))
 }

@@ -1,0 +1,7 @@
+// A break that cannot reach a loop is caught before the program runs. The
+// lambda is the interesting case: it is written inside the for, but it does
+// not run there, so the loop it appears to be in may be long finished.
+
+for x in [1, 2, 3] {
+  [x].map(fn(y) { break })
+}

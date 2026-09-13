@@ -31,7 +31,7 @@ async function freePort(): Promise<number> {
 }
 
 const SERVER_SOURCE = (port: number): string => `
-import { serve, page, json, notFound, escape } from "std/web"
+import { serve, page, json, notFound, escape, form, isServer } from "std/web"
 
 fn handle(req) {
   if req.path == "/" {
@@ -40,6 +40,10 @@ fn handle(req) {
     json({ ok: true, method: req.method })
   } else if req.path == "/echo" {
     json({ body: req.body, name: req.query.name })
+  } else if req.path == "/form" {
+    json(form(req))
+  } else if req.path == "/mode" {
+    json({ serving: isServer() })
   } else if req.path == "/boom" {
     panic("deliberate failure")
   } else {
@@ -110,6 +114,34 @@ describe('web server', () => {
   it('exposes the request body and query string', async () => {
     const res = await fetch(base + '/echo?name=ada', { method: 'POST', body: 'payload' });
     assert.deepEqual(await res.json(), { body: 'payload', name: 'ada' });
+  });
+
+  it('reads a GET form out of the query string', async () => {
+    const res = await fetch(base + '/form?name=ada&city=London');
+    assert.deepEqual(await res.json(), { name: 'ada', city: 'London' });
+  });
+
+  it('reads a POST form out of a urlencoded body, decoding as it goes', async () => {
+    const res = await fetch(base + '/form', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ name: 'Ada Lovelace', note: 'a+b & c' }).toString(),
+    });
+    assert.deepEqual(await res.json(), { name: 'Ada Lovelace', note: 'a+b & c' });
+  });
+
+  it('treats a body that is not a form as no form at all', async () => {
+    const res = await fetch(base + '/form', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{"name":"ada"}',
+    });
+    assert.deepEqual(await res.json(), {});
+  });
+
+  it('reports that it is serving, not running', async () => {
+    const res = await fetch(base + '/mode');
+    assert.deepEqual(await res.json(), { serving: true });
   });
 
   it('returns 404 with the handler body', async () => {

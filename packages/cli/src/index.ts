@@ -10,6 +10,7 @@ import { runFile } from './commands/run.js';
 import { dumpAst, dumpTokens } from './commands/inspect.js';
 import { startRepl } from './commands/repl.js';
 import { runTests } from './commands/test.js';
+import { setServeMode } from '@lumen-lang/stdlib';
 import { VERSION, reportError } from './support.js';
 
 const USAGE = `Lumen ${VERSION} — one language for scripts, servers, websites, and AI.
@@ -64,6 +65,10 @@ async function main(argv: readonly string[]): Promise<void> {
     case 'serve': {
       const file = rest[0];
       if (file === undefined) usageError('`' + first + '` needs a file');
+      // The two commands run the same program; the difference is what the
+      // program is told. `isServer()` from std/web reports which was used, so
+      // one file can serve its routes and also print them for inspection.
+      setServeMode(first === 'serve');
       await runFile(file);
       return;
     }

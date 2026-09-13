@@ -187,6 +187,27 @@ lumen ast <file.lm>      show the parsed syntax tree
 | [ROADMAP.md](ROADMAP.md) | What is not done yet, stated plainly |
 | [DEVELOPING.md](DEVELOPING.md) | Building, testing, and adding to the language |
 
+## Examples
+
+Thirteen runnable programs, each executed by CI on every change. `lumen run
+examples/<name>.lm` runs any of them.
+
+| File | What it shows |
+|---|---|
+| `hello.lm` | The smallest complete program |
+| `beginner.lm` | The first hour: variables, lists, loops, functions |
+| `tour.lm` | Structs, enums, `match`, pipelines — the language in one file |
+| `fizzbuzz.lm` | `match` with guards, read as a table of rules |
+| `wordcount.lm` | `Str` and `Map` methods carrying a whole program |
+| `stats.lm` | Mean, median, variance, and a bar chart drawn in text |
+| `caesar.lm` | Strings as lists of characters; breaking the cipher by score |
+| `matrix.lm` | Lists of lists: transpose, identity, multiplication |
+| `bank.lm` | `Result` and `?` where failure is the interesting part |
+| `calculator.lm` | A recursive-descent parser for arithmetic, written in Lumen |
+| `adventure.lm` | `input()`, a world in a `Map`, and a game that plays itself |
+| `website.lm` | A real site: routing, HTML, JSON, 404s (`lumen serve`) |
+| `ai_agent.lm` | An AI call that works with no key, via the mock provider |
+
 ## Repository layout
 
 ```

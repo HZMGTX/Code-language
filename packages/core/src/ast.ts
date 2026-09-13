@@ -61,6 +61,7 @@ export type Expr =
   | RangeExpr
   | TryExpr
   | AwaitExpr
+  | JumpExpr
   | BlockExpr;
 
 export interface NumberLit extends NodeBase {
@@ -247,6 +248,26 @@ export interface TryExpr extends NodeBase {
 export interface AwaitExpr extends NodeBase {
   readonly kind: 'AwaitExpr';
   readonly operand: Expr;
+}
+
+/**
+ * `return`, `break` or `continue` written where a value is expected.
+ *
+ * These never produce a value — they leave. Allowing them in expression
+ * position is what lets a `match` arm bail out:
+ *
+ *     match parse(line) {
+ *       Ok(n)  => n,
+ *       Err(e) => return Err(e),
+ *     }
+ *
+ * The statement forms are parsed separately and mean exactly the same thing.
+ */
+export interface JumpExpr extends NodeBase {
+  readonly kind: 'JumpExpr';
+  readonly jump: 'return' | 'break' | 'continue';
+  /** Only ever set for `return`, and only when a value was written. */
+  readonly value: Expr | undefined;
 }
 
 /**

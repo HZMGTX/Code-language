@@ -5,6 +5,66 @@ All notable changes to Lumen are recorded here. The format follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html) — with the
 stability policy in [docs/spec.md](docs/spec.md) §10.
 
+## [Unreleased]
+
+### Language
+
+- **`return`, `break` and `continue` are expressions.** They produce no value —
+  they leave — so they can now appear wherever a value is expected, which is
+  what lets a `match` arm bail out:
+
+  ```lumen
+  match line.toNum() {
+    Ok(n)  => n,
+    Err(_) => continue,
+  }
+  ```
+
+  Previously this was `PA010: expected an expression, found 'return'`, and
+  since `match` is the main way to branch in an expression-oriented language,
+  that was a hole in the middle of it. The statement forms are unchanged and
+  mean exactly the same thing.
+
+### Fixed
+
+- **A function body may name declarations that come later.** `fn greet() {
+  name }` followed by `let name = "world"` runs correctly and always has, but
+  the resolver rejected it with `RS001` — the one failure a static check must
+  not have. It also ruled out mutual recursion, since the second of two
+  functions is never declared yet when the first names it. Lookups from inside
+  a function body now see what the enclosing scope is going to declare;
+  statement-level code, which really does run where it is written, is
+  unchanged. A typo is still caught, and can now suggest a name from further
+  down the file.
+- **`break` and `continue` outside a loop said `internal error [object
+  Object]`.** They are now `RS006`, reported before the program runs, with a
+  note pointing at `return`. A function boundary counts: a `break` inside a
+  lambda cannot leave the loop the lambda was written in.
+- **Piped input dropped every line after the first.** A pipe delivers all its
+  lines at once, well before a program asks for the second one, and the host
+  read one and let the rest fall on the floor — so `printf 'a\nb\n' | lumen
+  run script.lm` saw only `a`. Lines are queued as they arrive now. Reading at
+  a terminal is unchanged.
+- **`isServer()` always returned `true`,** whether the file was started with
+  `lumen serve` or `lumen run`, which made it useless for the thing its name
+  promises. `serve` and `run` are now genuinely different, and `isServer()`
+  says which one you are in — so one file can serve its routes and also print
+  them for inspection.
+
+### Added
+
+- **`std/web.form(req)`** reads the fields a form submitted, whichever way the
+  page sent them: the query string for `method="get"`, the urlencoded body for
+  `method="post"`. A handler no longer has to know which, and percent- and
+  plus-encoding are decoded on the way through. A request carrying anything
+  else comes back empty, with `req.body` still there to parse.
+- **Eight worked examples** — `fizzbuzz`, `wordcount`, `bank`, `calculator`,
+  `stats`, `caesar`, `matrix` and `adventure`. Each is a program someone might
+  actually write rather than a feature demonstration, and each is run by CI.
+  The calculator is a recursive-descent parser for arithmetic written in
+  Lumen; the adventure plays itself when there is nothing on stdin, so running
+  it in CI exercises the whole game rather than its first room.
+
 ## [0.1.0] — 2026-09-13
 
 The first working version. Everything below runs today.

@@ -12,6 +12,7 @@
  *   RS003  a `match` arm that cannot be reached
  *   RS004  a name declared twice in the same scope
  *   RS005  assignment to a binding introduced with `let`
+ *   RS006  `break` or `continue` outside a loop
  *
  * The guiding rule is **no false positives**. A check that rejects a valid
  * program is worse than one that misses an invalid one, so anything the
@@ -142,6 +143,12 @@ class Resolver {
   private scope: Scope;
   /** Greater than zero while walking a function body, whose execution is deferred. */
   private deferred = 0;
+  /**
+   * How many loops enclose the statement being walked. Reset across a function
+   * boundary: a `break` inside a lambda cannot leave the loop the lambda was
+   * written in, because by the time it runs the loop may be long finished.
+   */
+  private loops = 0;
 
   constructor(options: ResolveOptions) {
     const root = new Scope(undefined);
@@ -288,19 +295,27 @@ class Resolver {
 
       case 'WhileStmt':
         this.expr(stmt.condition);
+        this.loops += 1;
         this.block(stmt.body);
+        this.loops -= 1;
         return;
 
       case 'ForStmt':
         this.expr(stmt.iterable);
         this.pushScope();
         this.pattern(stmt.binding);
+        this.loops += 1;
         this.block(stmt.body);
+        this.loops -= 1;
         this.popScope();
         return;
 
       case 'BreakStmt':
+        this.checkJump('break', stmt.span);
+        return;
+
       case 'ContinueStmt':
+        this.checkJump('continue', stmt.span);
         return;
 
       case 'ExprStmt':
@@ -333,9 +348,24 @@ class Resolver {
     // The body gets its own scope so a local may shadow a parameter, and runs
     // when called rather than where it is written.
     this.deferred += 1;
+    const enclosingLoops = this.loops;
+    this.loops = 0;
     this.block(body);
+    this.loops = enclosingLoops;
     this.deferred -= 1;
     this.popScope();
+  }
+
+  /** `break` and `continue` only mean something inside a loop. */
+  private checkJump(word: 'break' | 'continue', span: Span): void {
+    if (this.loops > 0) return;
+    this.report(
+      'RS006',
+      '`' + word + '` is not inside a loop',
+      span,
+      'nothing to ' + (word === 'break' ? 'break out of' : 'continue'),
+      ['`' + word + '` only works inside a `while` or `for`; to leave a function, use `return`'],
+    );
   }
 
   // -------------------------------------------------------------- expressions
@@ -436,6 +466,11 @@ class Resolver {
       case 'TryExpr':
       case 'AwaitExpr':
         this.expr(expr.operand);
+        return;
+
+      case 'JumpExpr':
+        if (expr.jump !== 'return') this.checkJump(expr.jump, expr.span);
+        if (expr.value !== undefined) this.expr(expr.value);
         return;
     }
   }

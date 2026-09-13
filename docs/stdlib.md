@@ -114,6 +114,25 @@ serve(handler: handle, port: 3000)
 `serve` never returns — a web server that exited on its own would be a bug.
 Always use `escape` on anything a visitor supplied.
 
+`form(req)` reads the fields a form submitted, whichever way the page sent
+them: the query string for `method="get"`, the urlencoded body for
+`method="post"`. A handler that uses it does not have to know which, and a
+request carrying anything else — JSON, a file upload — comes back empty with
+`req.body` still there to parse.
+
+```lumen
+fn handle(req) {
+  let fields = form(req)
+  let name = if fields.has("name") { fields["name"] } else { "world" }
+  page(title: "Hello", body: "<p>hello, ${escape(name)}</p>")
+}
+```
+
+`isServer()` says whether the file was started with `lumen serve` or with
+`lumen run`. Branching on it lets one file be both a site and a script — serve
+the routes when asked to serve, and print what they return when asked to run —
+which is how a website stays testable from the command line.
+
 ### `std/ai`
 
 Which provider runs is decided in this order:
@@ -309,6 +328,7 @@ upper(s)
 
 ```text
 escape(text)
+form(req)
 html(body, status = ...)
 isServer()
 json(value, status = ...)

@@ -1,0 +1,121 @@
+// A four-room text adventure: the smallest thing that needs input(), structs,
+// maps and match all at once.
+//
+//   lumen run examples/adventure.lm
+//   printf 'north take east\n' | lumen run examples/adventure.lm
+//
+// input() returns Some(line) while there is something to read and None at the
+// end of it, so the game never has to ask whether a person is really there.
+// With no stdin at all — piped from nothing, or run by a test — it plays
+// itself along a winning route rather than stopping at the first room.
+
+// exits maps a direction to the key of the room it opens onto; item is "" when
+// there is nothing here worth carrying.
+struct Room { name: Str, blurb: Str, exits: Map, item: Str }
+
+let commands = "north south east west, look, take, bag, quit"
+let short = { n: "north", s: "south", e: "east", w: "west", i: "bag" }
+
+// The world is one map and an exit is just a key into it, so adding a room is
+// an entry here plus one exit that reaches it. Nothing else has to change.
+let world = {
+  hall: Room {
+    name: "Great Hall", item: "", exits: { north: "library", east: "kitchen" },
+    blurb: "Banners rot on the walls, and a cold draught runs north." },
+  library: Room {
+    name: "Library", item: "brass key", exits: { south: "hall", east: "tower" },
+    blurb: "Shelves sag under books nobody has opened this century." },
+  kitchen: Room {
+    name: "Kitchen", item: "stale loaf", exits: { west: "hall", north: "tower" },
+    blurb: "Someone boiled something here, a very long time ago." },
+  tower: Room {
+    name: "Tower Door", item: "", exits: { west: "library", south: "kitchen" },
+    blurb: "The stairs stop at a door with a small brass lock." },
+}
+
+fn describe(room, carried) {
+  print("")
+  print(room.name)
+  print("  ${room.blurb}")
+  print("  exits: ${room.exits.keys().sorted().join(", ")}")
+  if room.item != "" && !carried.contains(room.item) { print("  lying here: ${room.item}") }
+}
+
+// The shortest route that wins: the key is in the library and the lock is east
+// of it. Played back when there is nobody to type, so that running this file
+// with no input still shows the game working rather than only its first room.
+let walkthrough = ["north", "take", "bag", "east"]
+
+fn main() {
+  var here = "hall"
+  var playing = true
+  var moves = 0
+  let carried = []   // let fixes the binding, not the contents: push still works
+
+  // step assigns to here, playing and moves directly, because a closure captures
+  // its surroundings by reference — there is no state to thread through returns.
+  fn step(cmd) {
+    let room = world[here]
+    match cmd {
+      "quit" => playing = false,
+      "look" => describe(room, carried),
+      "help" => print("  ${commands}"),
+      "bag"  => print("  carrying: ${if carried.isEmpty() { "nothing" } else { carried.join(", ") }}"),
+      "take" => if room.item != "" && !carried.contains(room.item) {
+        carried.push(room.item)
+        print("  taken: ${room.item}")
+      } else { print("  nothing here to take.") },
+      // A guarded arm, so an unknown word still falls through to the last one.
+      dir if room.exits.has(dir) => {
+        here = room.exits[dir]
+        moves += 1
+        describe(world[here], carried)
+        // The only way out is to stand at the door holding what opens it.
+        if here == "tower" && carried.contains("brass key") {
+          print("  The lock turns. Beyond it: daylight, and the road home.")
+          playing = false
+        }
+      },
+      dir if ["north", "south", "east", "west"].contains(dir) => print("  no way ${dir}."),
+      other => print("  I don't know how to ${other}."),
+    }
+  }
+
+  print("THE COLD TOWER")
+  print(commands)
+  describe(world[here], carried)
+
+  while playing {
+    print("")
+    match input("> ") {
+      // A line may carry several commands, so "north take east" plays three
+      // turns; one command per line works just as well.
+      Some(line) => {
+        for word in line.trim().lower().split(" ").filter(fn(w) { w != "" }) {
+          if playing { step(if short.has(word) { short[word] } else { word }) }
+        }
+      },
+      // Nothing to read. If that happens before a single turn has been
+      // played there was never anyone there, so play the walkthrough instead;
+      // running out of lines partway through a real session just stops.
+      None => {
+        if moves == 0 {
+          print("(nothing on stdin, so the game plays itself)")
+          for word in walkthrough {
+            if playing {
+              print("")
+              print("> ${word}")
+              step(word)
+            }
+          }
+        } else {
+          print("(nothing left to read)")
+        }
+        playing = false
+      },
+    }
+  }
+
+  print("")
+  print("Moves: ${moves}   Bag: ${if carried.isEmpty() { "empty" } else { carried.join(", ") }}")
+}

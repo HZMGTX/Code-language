@@ -1,0 +1,7 @@
+error[RS006]: `break` is not inside a loop
+ --> break-outside-loop.lm:6:19
+  |
+6 |   [x].map(fn(y) { break })
+  |                   ^^^^^ nothing to break out of
+  |
+  = note: `break` only works inside a `while` or `for`; to leave a function, use `return`
