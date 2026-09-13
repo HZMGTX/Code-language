@@ -236,7 +236,7 @@ rather than a silent double wrap. `mapErr` is what adds context to a failure as
 it travels up: `read(path).mapErr(fn(e) { "loading config: ${e}" })`.
 
 `or` is a keyword, and callable here only because a keyword after a `.` can be
-nothing but a name (spec §1.3).
+nothing but a name (spec §1.4).
 
 ### `std/fs` and `std/http`
 

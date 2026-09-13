@@ -7,6 +7,7 @@
  */
 
 import { checkFiles } from './commands/check.js';
+import { formatFiles } from './commands/fmt.js';
 import { runFile } from './commands/run.js';
 import { dumpAst, dumpTokens } from './commands/inspect.js';
 import { startRepl } from './commands/repl.js';
@@ -25,6 +26,7 @@ Usage
   lumen serve <file.lm>    run a program that starts a web server
   lumen repl               start an interactive session
   lumen check [path]       check every .lm under path without running it
+  lumen fmt [path]         normalise indentation in place (--check to only ask)
   lumen test [path]        run every *_test.lm under path (default: .)
   lumen tokens <file.lm>   show the token stream
   lumen ast <file.lm>      show the parsed syntax tree
@@ -47,7 +49,7 @@ function usageError(message: string): never {
 
 /** Every word `lumen` accepts in the first position. */
 const COMMANDS = [
-  'run', 'serve', 'repl', 'check', 'test', 'tokens', 'ast', 'help', 'version',
+  'run', 'serve', 'repl', 'check', 'fmt', 'test', 'tokens', 'ast', 'help', 'version',
 ] as const;
 
 /**
@@ -99,6 +101,17 @@ async function main(argv: readonly string[]): Promise<void> {
     case 'check':
       await checkFiles(rest[0] ?? '.');
       return;
+
+    case 'fmt': {
+      // `--check` may come before or after the path: both orders are things
+      // people type, and rejecting one of them teaches nothing.
+      const flags = rest.filter((a) => a.startsWith('-'));
+      for (const flag of flags) {
+        if (flag !== '--check') usageError('unknown option `' + flag + '` for `fmt`');
+      }
+      await formatFiles(rest.find((a) => !a.startsWith('-')) ?? '.', flags.includes('--check'));
+      return;
+    }
 
     case 'test':
       await runTests(rest[0] ?? '.');

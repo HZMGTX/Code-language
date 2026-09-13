@@ -10,31 +10,11 @@ import { promises as fsp } from 'node:fs';
 import * as path from 'node:path';
 
 import { LumenError, checkModule, parse } from '@lumen-lang/core';
-import { displayPath, newInterpreter, useColor } from '../support.js';
-
-async function collect(target: string, found: string[]): Promise<void> {
-  let stat;
-  try {
-    stat = await fsp.stat(target);
-  } catch {
-    return;
-  }
-  if (stat.isFile()) {
-    if (target.endsWith('_test.lm')) found.push(target);
-    return;
-  }
-  if (!stat.isDirectory()) return;
-  const entries = await fsp.readdir(target, { withFileTypes: true });
-  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
-    if (entry.name === 'node_modules' || entry.name.startsWith('.')) continue;
-    await collect(path.join(target, entry.name), found);
-  }
-}
+import { collectFiles, displayPath, newInterpreter, useColor } from '../support.js';
 
 export async function runTests(target: string): Promise<void> {
   const root = path.resolve(target);
-  const files: string[] = [];
-  await collect(root, files);
+  const files = await collectFiles(root, '_test.lm');
 
   if (files.length === 0) {
     process.stdout.write('no `*_test.lm` files found under ' + root + '\n');

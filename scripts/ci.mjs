@@ -84,6 +84,8 @@ run('examples pass the static checks', node, [CLI, 'check', path.join(ROOT, 'exa
 run('Lumen test files pass the static checks', node, [CLI, 'check', path.join(ROOT, 'tests', 'lumen')]);
 run('benchmarks pass the static checks', node, [CLI, 'check', path.join(ROOT, 'bench')]);
 run('examples', node, [path.join(ROOT, 'scripts', 'run-examples.mjs')]);
+// `--check` writes nothing: CI reports the files and the author runs `lumen fmt`.
+run('every .lm file is formatted', node, [CLI, 'fmt', '--check', ROOT]);
 run('generated stdlib docs are current', node, [path.join(ROOT, 'scripts', 'gen-stdlib-docs.mjs'), '--check']);
 // Not "do the documented examples parse" — "does what they say happens happen".
 run('documented examples produce what they claim', node, [path.join(ROOT, 'scripts', 'check-doc-output.mjs')]);

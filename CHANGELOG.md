@@ -153,6 +153,37 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
 
 ### Added
 
+- **`lumen fmt`, a formatter that only touches indentation.** `lumen fmt [path]`
+  rewrites leading whitespace in place; `lumen fmt --check [path]` writes
+  nothing, names the files that need it, and exits non-zero, which is what CI
+  and a pre-commit hook want.
+
+  The scope is the interesting decision. It does not move line breaks — a line
+  break ends a statement in Lumen, so moving one changes what the program means
+  — and it does not touch spacing inside a line, so a table lined up by hand
+  stays lined up. Two rules do the work: a level is added by **a line** that
+  leaves a bracket open rather than by each bracket, so `print(match c {`
+  indents its body once and not twice; and each open bracket remembers the
+  indentation of the line that opened it, so a `}` closing mid-line returns to
+  the right place, which a depth counter cannot do. Column alignment is
+  recognised rather than overruled — a row starting at the column of the first
+  element above it is kept there, and shifts with that line if the line moves.
+
+  It is specified in [docs/spec.md](docs/spec.md) §1.3 rather than left to the
+  implementation, and three properties are asserted for every one of the 125
+  `.lm` files in the repository, and for ten randomly mangled variants of each:
+  only whitespace changes, the token stream comes out identical, and running it
+  twice is running it once. The second is the one that matters, because
+  whitespace inside a multi-line string is part of its value — which is why a
+  line beginning inside a string, an interpolation or a block comment is emitted
+  byte for byte, and why a file that does not lex is returned unmodified.
+
+  Every file in the repository was already formatted when the tool was finished,
+  which is the result worth reporting: the rules were derived from what the code
+  already did rather than imposed on it. Flattening all 125 files to the left
+  margin and reformatting restores 114 of them byte for byte; the other 11 use
+  column alignment, which flattening destroys for good.
+
 - **Variadic functions.** `fn shout(..parts)` collects every remaining
   positional argument into a `List`, empty if there are none — the same `..`
   a list pattern already used, in the one place a function shape needed it.

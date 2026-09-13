@@ -170,6 +170,7 @@ lumen run <file.lm>      run a program
 lumen serve <file.lm>    run a program that starts a web server
 lumen repl               start an interactive session
 lumen check [path]       check every .lm under path without running it
+lumen fmt [path]         normalise indentation in place (--check to only ask)
 lumen test [path]        run every *_test.lm under path
 lumen tokens <file.lm>   show the token stream
 lumen ast <file.lm>      show the parsed syntax tree
@@ -179,6 +180,21 @@ lumen ast <file.lm>      show the parsed syntax tree
 step: it parses, resolves and type-checks a whole tree in the time it takes to
 read it, and runs nothing — which matters when the program in question writes
 files or serves a port.
+
+`lumen fmt` fixes indentation and leaves every other decision to you. It does
+not move line breaks — a newline ends a statement in Lumen, so moving one
+changes what the program means — and it does not touch spacing inside a line, so
+a table you lined up by hand stays lined up. It does understand column
+alignment: a row that starts at the column of the first element above it is
+kept there, and moves with that line if it shifts.
+
+That is a smaller job than most formatters take on, and it is deliberate. A tool
+that rewrites your source has exactly one thing it must never do, and three
+properties are checked against every Lumen file in the repository, plus a
+thousand deliberately mangled variants of them: only whitespace changes, the
+token stream comes out identical, and running it twice is running it once.
+`lumen fmt --check` writes nothing and exits non-zero, which is the form CI
+wants.
 
 ## Documentation
 

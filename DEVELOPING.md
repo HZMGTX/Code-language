@@ -132,6 +132,33 @@ cat tests/conformance/expressions/my-feature.expected
 Step 3 is not optional. `test:update` records whatever the implementation
 currently does, bugs included. A golden file you have not read is not a test.
 
+### The formatter's invariants
+
+`tests/unit/format.test.ts` is the one test file worth understanding before you
+touch `packages/core/src/format.ts`. A formatter rewrites source, so the
+question is never whether the output looks nice — it is whether the tool can
+damage anything. Three properties are asserted for every `.lm` file in the
+repository:
+
+1. **only whitespace changes** — strip the indentation from both texts and they
+   are identical
+2. **the token stream is identical** — both are lexed and compared token by
+   token, kind, text and payload, which is what catches the one case a
+   whitespace-only edit can still change meaning: whitespace inside a multi-line
+   string is part of its value
+3. **formatting twice is formatting once** — the output is a fixed point
+
+Then all three again over ten randomly mangled variants of each file (flush
+left, random indentation, tabs), on a fixed seed. If you change a rule, expect
+this to be where you find out.
+
+A fourth property is asserted separately and is the one that says the rules are
+right rather than merely safe: **every file in the repository is already
+formatted.** A rule that disagreed with a hundred and twenty-five hand-written
+files would be a rule about the formatter's taste, not about Lumen. When you add
+a rule, run `lumen fmt --check .` before and after — if it starts wanting to
+reformat files, the rule is wrong, not the files.
+
 ### Determinism
 
 Fixtures run against a fixed world: the clock returns `0`, the environment is a

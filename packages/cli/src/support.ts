@@ -21,6 +21,41 @@ export function newInterpreter(): Interpreter {
   return createInterpreter();
 }
 
+/**
+ * Every file under `target` whose name ends with `suffix`, sorted.
+ *
+ * `check`, `test` and `fmt` all walk a tree the same way, and they must agree
+ * about it: a file one of them skips and another visits is a file that can fail
+ * in CI without failing locally. `node_modules` and dot-directories are
+ * somebody else's business.
+ *
+ * A `target` that does not exist yields nothing rather than raising, so each
+ * command words its own "nothing found" message.
+ */
+export async function collectFiles(target: string, suffix: string): Promise<string[]> {
+  const found: string[] = [];
+  const walk = async (at: string): Promise<void> => {
+    let stat;
+    try {
+      stat = await fsp.stat(at);
+    } catch {
+      return;
+    }
+    if (stat.isFile()) {
+      if (at.endsWith(suffix)) found.push(at);
+      return;
+    }
+    if (!stat.isDirectory()) return;
+    const entries = await fsp.readdir(at, { withFileTypes: true });
+    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+      if (entry.name === 'node_modules' || entry.name.startsWith('.')) continue;
+      await walk(path.join(at, entry.name));
+    }
+  };
+  await walk(path.resolve(target));
+  return found;
+}
+
 export async function readSource(file: string): Promise<{ file: string; source: string }> {
   const resolved = path.resolve(file);
   try {

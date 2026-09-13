@@ -21,7 +21,7 @@ import {
   pos,
   span,
 } from './diagnostics.js';
-import { KEYWORDS, OPERATORS, type TemplatePart, type Token, type TokenKind } from './token.js';
+import { type Comment, KEYWORDS, OPERATORS, type TemplatePart, type Token, type TokenKind } from './token.js';
 
 const isDigit = (c: string): boolean => c >= '0' && c <= '9';
 const isHex = (c: string): boolean =>
@@ -48,6 +48,14 @@ export class Lexer {
   private readonly baseOffset: number;
   private readonly tokens: Token[] = [];
   private readonly diagnostics: Diagnostic[] = [];
+  /**
+   * Where the comments were.
+   *
+   * The parser has no use for them — a comment cannot change what a program
+   * means — but `lumen fmt` cannot re-indent a line without knowing whether it
+   * is inside one, so they are recorded rather than thrown away.
+   */
+  readonly comments: Comment[] = [];
 
   /**
    * @param origin Where this source begins in the enclosing file. Supplied when
@@ -148,9 +156,14 @@ export class Lexer {
         sawNewline = true;
         this.advance();
       } else if (c === '/' && this.peek(1) === '/') {
+        const start = this.here();
         while (!this.atEnd() && this.peek() !== '\n') this.advance();
+        this.comments.push({ span: span(start, this.here()), block: false });
       } else if (c === '/' && this.peek(1) === '*') {
-        if (this.skipBlockComment()) sawNewline = true;
+        const start = this.here();
+        const spanned = this.skipBlockComment();
+        this.comments.push({ span: span(start, this.here()), block: true });
+        if (spanned) sawNewline = true;
       } else {
         return sawNewline;
       }
@@ -502,4 +515,19 @@ export class Lexer {
 /** Convenience wrapper around {@link Lexer}. */
 export function lex(source: string, file = '<input>', origin?: Pos): Token[] {
   return new Lexer(source, file, origin).lex();
+}
+
+/**
+ * As `lex`, plus where the comments were.
+ *
+ * Only `lumen fmt` needs this: it has to know which lines sit inside a block
+ * comment, because re-indenting one of those would change the comment's text.
+ */
+export function lexWithComments(
+  source: string,
+  file = '<input>',
+): { tokens: Token[]; comments: readonly Comment[] } {
+  const lexer = new Lexer(source, file);
+  const tokens = lexer.lex();
+  return { tokens, comments: lexer.comments };
 }

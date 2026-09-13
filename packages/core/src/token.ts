@@ -101,6 +101,13 @@ export interface Token {
   readonly parts?: readonly TemplatePart[];
 }
 
+/** Where a comment was, for the formatter. Comments never reach the parser. */
+export interface Comment {
+  readonly span: Span;
+  /** True for `/* ... *\/`, which may span lines. */
+  readonly block: boolean;
+}
+
 /**
  * The reserved words, as a `Map` rather than an object literal.
  *

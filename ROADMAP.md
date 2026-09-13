@@ -17,6 +17,7 @@ decisions, not oversights.
 | **Performance** | A tree-walking interpreter in which every evaluation is a promise. `npm run bench` measures it. Profiling the `while` benchmark puts roughly **37% of non-library ticks in promise machinery** alone (`RunMicrotasks`, `AsyncFunctionAwait*`, `FulfillPromise`, `EnqueueMicrotask`, `PerformPromiseThen`), which is what the v0.3 work below is aimed at. |
 | **`await` is inert** | Accepted and evaluates to its operand. I/O is awaited implicitly. |
 | **No package manager** | Imports are `std/*` modules or relative `.lm` paths. |
+| **`lumen fmt` only fixes indentation** | It rewrites leading whitespace and nothing else: it never moves a line break, and never changes spacing inside a line. Reflowing a long line is the part most formatters do and this one does not, because a line break ends a statement in Lumen (spec §1.1) and moving one changes what the program means. Widening it needs the parser, not the lexer — the formatter would have to know that a break is inside an expression before it could move it. See §1.3 for what it does guarantee. |
 | **Distribution artifacts are not published** | There is now both a single-file bundle (`npm run bundle` -> `build/lumen.cjs`, produced by `scripts/bundle.mjs`, a small purpose-built bundler that adds no dependency) and a native standalone binary (`npm run binary` -> `build/lumen`, compiled by bun at build time only). Neither is hosted anywhere, signed or notarised: you build them, or you use `npm link --workspace @lumen-lang/cli`. |
 | **The native binary is around 100 MB** | It embeds a JavaScript runtime, which is exactly what lets it run with no Node, npm or `node_modules` installed. The portable bundle is a couple of hundred kilobytes but needs a Node 20 or newer already present. Five targets are supported — linux-x64, linux-arm64, macos-x64, macos-arm64, windows-x64 — and nothing beyond them. |
 
@@ -83,7 +84,6 @@ created two throwaway Maps per iteration.
 - A JavaScript backend, so Lumen runs in the browser as well as on the server —
   the reason `packages/core` imports no host API
 - A language server: completion, go-to-definition, inline diagnostics
-- `lumen fmt`, a canonical formatter
 
 ## v0.5 — Depth
 

@@ -89,6 +89,11 @@ jobs:
       - name: Check the generated docs are current
         run: node scripts/gen-stdlib-docs.mjs --check
 
+      # `--check` writes nothing. It names the files and exits non-zero, so the
+      # fix is `lumen fmt .` rather than reading a diff of invisible characters.
+      - name: Check every .lm file is formatted
+        run: node packages/cli/dist/index.js fmt --check .
+
   # The whole point of the project: Lumen runs on its own. This job re-proves it
   # on every pull request, in the two ways a user can actually get it. The
   # portable bundle has to run from a directory that contains nothing but itself,

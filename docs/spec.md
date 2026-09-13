@@ -40,7 +40,41 @@ Runs of blank lines collapse into a single terminator.
 /* block, which /* nests */ correctly */
 ```
 
-### 1.3 Identifiers and keywords
+### 1.3 Indentation
+
+Indentation carries no meaning. Any amount of leading whitespace is accepted
+anywhere, and two programs that differ only in indentation are the same program.
+
+`lumen fmt` defines a canonical indentation, and defines it narrowly. It is
+specified here because a formatter that can be argued with is a formatter that
+gets turned off:
+
+- Two spaces per level. A level is added by **a line that leaves a bracket
+  open**, not by each bracket — `print(match c {` opens two and indents its body
+  once.
+- A line's closing brackets, where nothing precedes them on the line, return it
+  to the indentation of the line that opened them.
+- A line beginning `.`, `?.` or `|>` is indented one level past the line it
+  continues, unless a bracket has already indented it.
+- A line is left where it is when it starts at the column of the first element
+  after an open `(`, `[` or `{` — that is alignment, and it is the author's
+  decision. It moves with that line if the line itself moves.
+- Trailing whitespace is removed, runs of blank lines collapse to one, and the
+  file ends with exactly one newline.
+
+Nothing else changes. Line breaks are never moved — §1.1 makes a line break part
+of the program's meaning — and spacing within a line is never touched, so a set
+of match arms lined up by hand
+
+```text
+  x if x % 15 == 0 => "FizzBuzz",
+  x if x % 3 == 0  => "Fizz",
+  _                => "${n}",
+```
+
+stays as written. A file that does not lex is returned unmodified.
+
+### 1.4 Identifiers and keywords
 
 An identifier starts with a letter or `_` and continues with letters, digits or
 `_`. The reserved words are:
@@ -71,7 +105,7 @@ A **binding** name is the exception — `let`, `var`, `fn`, a parameter, a struc
 or enum name. Those have to be readable as a bare expression later, where a
 keyword really is ambiguous, so `fn f(in)` is still an error.
 
-### 1.4 Literals
+### 1.5 Literals
 
 | Form | Examples |
 |---|---|
@@ -87,7 +121,7 @@ All numbers are IEEE-754 doubles. `_` may separate digits anywhere between them.
 A `.` is only part of a number when a digit follows, so `0..10` is a range, not
 a malformed float.
 
-### 1.5 Strings
+### 1.6 Strings
 
 Strings are double-quoted and may span lines. Escapes are `\n` `\t` `\r` `\0`
 `\\` `\"` `\$` `\u{...}`, and a backslash before a line break swallows that

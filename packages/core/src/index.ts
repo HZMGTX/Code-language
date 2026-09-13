@@ -29,12 +29,15 @@ export {
   OPERATORS,
   describe,
   describeToken,
+  type Comment,
   type TemplatePart,
   type Token,
   type TokenKind,
 } from './token.js';
 
-export { Lexer, lex } from './lexer.js';
+export { Lexer, lex, lexWithComments } from './lexer.js';
+
+export { format } from './format.js';
 
 export { Parser, parse, parseExpression } from './parser.js';
 
