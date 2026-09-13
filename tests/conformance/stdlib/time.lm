@@ -1,0 +1,57 @@
+import { iso, date, time, parts, fromParts, parseIso, plus, startOfDay,
+         weekdayName, monthName, weekdayNames, monthNames, format, describe } from "std/time"
+
+// An instant is a Num of milliseconds since 1970, so nothing here needs a type.
+let t = fromParts(2026, 9, 13, 12, 34, 56, 789)
+print(iso(t))
+print(date(t))
+print(time(t))
+print(time(t, seconds: false))
+print(parts(t))
+print([weekdayName(t), monthName(t)])
+print(weekdayNames().len())
+print(monthNames()[0])
+
+print(format(t))
+print(format(t, "DD/MM/YYYY hh:mm"))
+print(format(t, "YYYY-MM-DD_hh-mm-ss"))
+// A template piece that would be re-read if the pass were not left to right.
+print(format(t, "SSSms"))
+// Characters that are not pieces come through exactly.
+print(format(t, "on YYYY at hh"))
+
+print(iso(startOfDay(t)))
+print(iso(plus(t, days: 1)))
+print(iso(plus(t, days: -1, hours: 2)))
+print(iso(plus(t, seconds: 0 - 56, milliseconds: 0 - 789)))
+
+// Out-of-range pieces roll over, which is how date arithmetic gets done.
+print(iso(fromParts(2026, 13, 1)))
+print(iso(fromParts(2026, 3, 0)))
+print(iso(fromParts(2024, 2, 29)))
+
+// Years 0 to 99 are a trap in the host: it reads them as 1900 + the year.
+print(iso(fromParts(0, 1, 1)))
+print(iso(fromParts(50, 1, 1)))
+print(iso(fromParts(99, 12, 32)))
+print(parts(fromParts(50, 6, 15)).year)
+
+// Two largest units, because that is how people say it.
+print([describe(0), describe(999), describe(1500), describe(90000)])
+print([describe(7323000), describe(90000000), describe(0 - 90000)])
+
+// No zone in the text means UTC, so the same input reads the same everywhere.
+print(parseIso("2026-09-13"))
+print(parseIso("2026-09-13T12:34:56Z"))
+print(parseIso("2026-09-13 12:34:56"))
+print(parseIso("2026-09-13T12:34:56+02:00"))
+print(parseIso("nope"))
+print(parseIso(""))
+
+// The round trip that matters.
+print(match parseIso(iso(t)) { Ok(v) => v == t, Err(e) => e })
+
+// Elapsed time is subtraction; the module is not involved.
+let later = plus(t, hours: 3, minutes: 5)
+print(describe(later - t))
+print(later > t)

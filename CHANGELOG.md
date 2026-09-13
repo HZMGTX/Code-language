@@ -215,6 +215,37 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
 
 ### Added
 
+- **`std/time`.** `now()` gave milliseconds and there was no way to turn one into
+  a date, which left every log line, filename and guestbook entry stuck with a
+  raw number.
+
+  An instant is a `Num` of milliseconds — no date type — so `later - earlier` is
+  the elapsed time, `<` compares two instants, and `sorted()` sorts a list of
+  them with this module uninvolved. `iso`, `date`, `time`, `parts`, `fromParts`,
+  `parseIso`, `plus`, `startOfDay`, `weekdayName`, `monthName`, `weekdayNames`,
+  `monthNames`, `format`, `describe`, `offsetMinutes`.
+
+  **Everything is UTC**, deliberately. Local time means time-zone names, which
+  means the IANA database — a few hundred kilobytes that changes several times a
+  year — and a program following the machine's zone would print different things
+  on different computers, so a golden file or a date-stamped filename would
+  depend on where it ran. `offsetMinutes(instant)` is the one door to local time:
+  what this machine believes its offset is *at that instant*, so daylight saving
+  is accounted for, and adding it leaves the assumption visible at the point it
+  is made.
+
+  `format` replaces `YYYY MM DD hh mm ss SSS` and leaves everything else exactly
+  as written, in one left-to-right pass so a substituted value cannot be re-read
+  as a placeholder. No escaping rules, at the price of not being able to write a
+  literal `MM`.
+
+  `fromParts` works around a host trap worth naming: `Date.UTC` still applies a
+  rule written for two-digit years in the nineties, reading years 0–99 as
+  1900 + the year, so `fromParts(50)` would have answered 1950. It computes four
+  hundred years later and subtracts them back, which is exact because the
+  Gregorian calendar repeats every 400 years to the day — and unlike patching the
+  year afterwards, it survives a month or day that rolls over into the next year.
+
 - **`router` and `route` in `std/web`.** A site no longer needs a chain of
   `if req.path == ...`:
 

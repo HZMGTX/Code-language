@@ -90,6 +90,64 @@ still the program's once a filename has been seen.
 `now()` is milliseconds since 1970. Under the test harness it is `0`, so a
 golden file cannot depend on the clock.
 
+### `std/set`
+
+A set is a `List` with no duplicates — there is no separate `Set` type — so every
+`std/list` function still works on one and `print` shows it as you would write
+it. Each function keeps the order of its first argument, because a program that
+prints a set has to print it in *some* order and the order you built it in is the
+only one that is stable across runs.
+
+Membership is exactly `==`, including for nested values: two structs with equal
+fields are one element, and so are two maps with the same entries inserted in a
+different order.
+
+`union`, `intersection`, `difference`, `symmetricDifference`, `isSubset` and
+`equals` index one side and walk the other, so they are linear rather than
+quadratic — which is why the module exists, since the same thing written with
+`filter` and `contains` is quadratic and quietly so. `has`, `add` and `remove`
+answer one question and still have to build that index, so they are linear too:
+no worse than `contains`, and no better.
+
+`equals` answers the question `==` cannot. `[1, 2] == [2, 1]` is `false`, which
+is right for lists; `equals([1, 2], [2, 1])` is `true`.
+
+### `std/time`
+
+An instant is a `Num` of milliseconds since 1970 — the same number `now()`
+returns. There is no date type, so `later - earlier` is the elapsed
+milliseconds, `<` compares two instants, and `sorted()` sorts a list of them
+without this module being involved.
+
+**Everything is UTC.** That is a decision, not a shortcut. Real local time needs
+time-zone names, which needs the IANA database — a dependency that changes
+several times a year — and a program that followed the machine's zone would print
+different things on different computers, which would make a golden test file or a
+date-stamped filename depend on where it ran.
+
+`offsetMinutes(instant)` is the one door to local time: what this machine
+believes its offset from UTC is *at that instant*, so daylight saving is
+accounted for. Add it to shift an instant for display, and the assumption is
+visible where it is made:
+
+```lumen
+let local = t + offsetMinutes(t) * 60000
+print("filed at ${time(local)} local")
+```
+
+`format` replaces `YYYY MM DD hh mm ss SSS` and leaves every other character
+alone. There is nothing to escape, which is the trade: a template cannot contain
+a literal `MM`, and in exchange there are no rules to get wrong.
+
+`plus` shifts by days, hours, minutes and seconds only. Months and years are not
+fixed lengths, so "one month later" has no single answer — `fromParts` with
+`month + 1` says which one you meant, and rolls over for you (month 13 is January
+of the next year; day 0 is the last day of the month before).
+
+`parseIso` reads text with no zone as UTC, for the same reason the rest of the
+module is UTC: guessing would make the same input mean different instants on
+different machines.
+
 ### `std/list` and `std/map`
 
 `first`, `last`, `at`, `find` and `map.get` return an `Option`, so "there wasn't
@@ -555,6 +613,26 @@ trimEnd(s)
 trimStart(s)
 upper(s)
 words(s)
+```
+
+### `std/time`
+
+```text
+date(instant)
+describe(milliseconds)
+format(instant, template = ...)
+fromParts(year, month = ..., day = ..., hour = ..., minute = ..., second = ..., millisecond = ...)
+iso(instant)
+monthName(instant)
+monthNames()
+offsetMinutes(instant)
+parseIso(text)
+parts(instant)
+plus(instant, days = ..., hours = ..., minutes = ..., seconds = ..., milliseconds = ...)
+startOfDay(instant)
+time(instant, seconds = ...)
+weekdayName(instant)
+weekdayNames()
 ```
 
 ### `std/web`

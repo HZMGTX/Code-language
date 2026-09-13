@@ -19,6 +19,7 @@ import { stdOption } from './option.js';
 import { stdResult } from './result.js';
 import { stdSet } from './set.js';
 import { stdStr } from './str.js';
+import { stdTime } from './time.js';
 import { stdWeb } from './web.js';
 
 /**
@@ -42,6 +43,7 @@ export const STD_MODULES: ReadonlyMap<string, () => Map<string, Value>> = new Ma
   ['std/option', stdOption],
   ['std/result', stdResult],
   ['std/set', stdSet],
+  ['std/time', stdTime],
   ['std/fs', stdFs],
   ['std/http', stdHttp],
   ['std/web', stdWeb],
