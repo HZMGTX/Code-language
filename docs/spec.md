@@ -534,6 +534,7 @@ different meaning. Selected codes:
 | `PA008` | Invalid assignment target |
 | `PA009` | Map literal in a control-flow header |
 | `PA015` | Struct literal in a control-flow header |
+| `PA016` | Source nested more than 250 levels deep |
 | `PA014` | Unmatched `}` |
 | `RT005` | Name is not defined |
 | `RT010` | `?` applied to a non-Result/Option |
@@ -551,7 +552,15 @@ different meaning. Selected codes:
 | `RT046` | An arithmetic result that would be `NaN` |
 
 The parser reports multiple errors per run, suppressing duplicates and bounding
-cascades at 25.
+cascades at 25. It also refuses source nested more than 250 levels deep
+(`PA016`), which is far past anything written by hand. That limit is what keeps
+every later walk of the tree bounded too — the resolver, the type checker,
+printing, equality — none of which can meet a tree deeper than the parser was
+willing to build.
+
+A diagnostic whose source line runs past 120 characters is shown as a window
+around the caret rather than in full, so a minified or generated line does not
+bury the thing it is pointing at.
 
 Calls are limited to 10,000 deep (`RT045`). The interpreter evaluates through
 promises rather than the host stack, so runaway recursion would otherwise

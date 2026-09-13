@@ -82,6 +82,16 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   arithmetic that would produce one is `RT046`, and `pow(-8, 0.5)` reports that
   it has no real answer, as `sqrt(-1)` and `log(0)` already did. `Infinity` is
   untouched — it means something, is equal to itself, and orders consistently.
+- **Deeply nested source crashed with a message about the wrong thing.** A
+  thousand nested parentheses exhausted the host stack, and what came out was
+  `stack overflow — a function is probably recursing without a base case`,
+  which names a cause that does not apply and nothing anyone could act on. The
+  parser now refuses to build a tree more than 250 levels deep and reports
+  `PA016` with a span. The same limit bounds every later walk of the tree, so
+  none of them can meet something deeper than the parser was willing to build.
+- **A long source line buried the caret it was pointing at.** A diagnostic on a
+  minified or generated line printed the whole line, pushing the `^` off the
+  screen. Lines past 120 characters are now shown as a window around the caret.
 - **`std/fs` leaked Node's error text.** `ENOENT: no such file or directory,
   open '/x'` names an errno, a syscall and a quoting style that vary by
   platform and version — so the same Lumen program said different things on

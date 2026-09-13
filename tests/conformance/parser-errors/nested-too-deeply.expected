@@ -1,0 +1,7 @@
+error[PA016]: nested too deeply
+ --> nested-too-deeply.lm:5:256
+  |
+5 | ...(((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((...
+  |                                            ^ more than 250 levels here
+  |
+  = note: this is usually generated source; break it into named parts

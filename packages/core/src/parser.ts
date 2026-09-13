@@ -90,11 +90,16 @@ const STMT_START: readonly TokenKind[] = [
 
 const MAX_ERRORS = 25;
 
+/** The deepest the parser will recurse before reporting `PA016`. */
+const MAX_NESTING = 250;
+
 export class Parser {
   private i = 0;
   private readonly diagnostics: Diagnostic[] = [];
   /** When > 0, `{` is a block, never a map or struct literal. */
   private noBraceLit = 0;
+  /** Current parser recursion depth. See `nested`. */
+  private depth = 0;
 
   constructor(
     private readonly tokens: readonly Token[],
@@ -557,6 +562,10 @@ export class Parser {
   }
 
   private parseBlock(): Block {
+    return this.nested(() => this.parseBlockInner());
+  }
+
+  private parseBlockInner(): Block {
     const start = this.expect('{', 'to start a block');
     const stmts: Stmt[] = [];
     const saved = this.noBraceLit;
@@ -762,7 +771,40 @@ export class Parser {
   // ------------------------------------------------------------ expressions
 
   private parseExpr(): Expr {
-    return this.parseAssign();
+    return this.nested(() => this.parseAssign());
+  }
+
+  /**
+   * Bound how deeply the parser may recurse.
+   *
+   * Without this, source nested a thousand levels deep exhausted the host's
+   * stack, and what the user saw was a bare "stack overflow — a function is
+   * probably recursing without a base case": not what happened, and nothing
+   * they could act on. A parser should not need the host's stack to still be
+   * standing in order to report an error.
+   *
+   * The limit bounds every later walk of the tree as well — the resolver, the
+   * type checker, `display`, equality — since none of them can meet a tree
+   * deeper than the parser was willing to build.
+   *
+   * 250 is far past anything written by hand and well short of where the
+   * stack gives out, which is somewhere between 500 and 1000.
+   */
+  private nested<T>(parse: () => T): T {
+    if (this.depth >= MAX_NESTING) {
+      return this.fail(
+        'PA016',
+        'nested too deeply',
+        'more than ' + String(MAX_NESTING) + ' levels here',
+        [{ message: 'this is usually generated source; break it into named parts' }],
+      );
+    }
+    this.depth += 1;
+    try {
+      return parse();
+    } finally {
+      this.depth -= 1;
+    }
   }
 
   private parseAssign(): Expr {
