@@ -42,6 +42,24 @@ let m       = { host: "localhost", port: 8080 }
 **Only `nil` and `false` are falsy.** `0`, `""` and `[]` are all true — which
 means an empty value never quietly takes the wrong branch.
 
+Something that hands back more than one value can be named in one line, and the
+same shape on the left of a plain `=` is how you swap:
+
+```lumen
+fn minMax(xs) { [min(xs), max(xs)] }
+
+let [lo, hi] = minMax([3, 1, 4, 1, 5])
+print("${lo} to ${hi}")          // 1 to 5
+
+let [first, ..rest] = [1, 2, 3]
+print(rest)                      // [2, 3]
+
+var a = 1
+var b = 2
+[a, b] = [b, a]
+print([a, b])                    // [2, 1]
+```
+
 ## Strings
 
 ```lumen
@@ -62,6 +80,16 @@ fn greet(name, greeting = "Hello") { "${greeting}, ${name}!" }
 print(greet("Ada"))                 // Hello, Ada!
 print(greet("Ada", "Yo"))           // Yo, Ada!
 print(greet(greeting: "Hi", name: "Bob"))   // Hi, Bob!   — arguments by name
+```
+
+A final `..` parameter takes every remaining argument as a list, empty if there
+are none:
+
+```lumen
+fn shout(..parts) { parts.join(" ").upper() + "!" }
+
+print(shout("hello", "there"))   // HELLO THERE!
+print(shout())                   // !
 ```
 
 Declarations are hoisted, so order does not matter and mutual recursion just
@@ -247,6 +275,24 @@ fn addBoth(a, b) {
 `Option` works the same way, with `Some` and `None`, for "there might not be
 one" rather than "this might fail".
 
+`match` is the honest answer when the two cases genuinely differ. When they do
+not — turn the value into another value, supply a default, ask which one you
+have — `std/option` and `std/result` have the shape already:
+
+```lumen
+let prices = { apple: 120 }
+
+print(prices.get("apple").map(fn(p) { fixed(p / 100, 2) }).unwrapOr("n/a"))
+print(prices.get("durian").map(fn(p) { fixed(p / 100, 2) }).unwrapOr("n/a"))
+print(Err("no file").mapErr(fn(e) { "loading config: ${e}" }))
+```
+
+```
+1.20
+n/a
+Err("loading config: no file")
+```
+
 ## Modules
 
 ```lumen
@@ -256,8 +302,13 @@ import { helper } from "./helper.lm"
 export fn publicThing() { 1 }
 ```
 
-Ten standard modules ship with the language: `core`, `str`, `list`, `map`,
-`math`, `json`, `fs`, `http`, `web`, `ai`. See [stdlib.md](stdlib.md).
+Twelve standard modules ship with the language: `core`, `str`, `list`, `map`,
+`math`, `json`, `option`, `result`, `fs`, `http`, `web`, `ai`. See
+[stdlib.md](stdlib.md).
+
+`examples/notes/` is a program in three files — a store that prints nothing, a
+renderer that knows nothing about storage, and a main that decides the order —
+with its own tests, which is what the split buys.
 
 ## A website
 

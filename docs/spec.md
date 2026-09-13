@@ -635,8 +635,8 @@ nodes is fourteen levels deep.
 ## 9. Standard library
 
 See [stdlib.md](stdlib.md) for the full reference. The modules are
-`std/core`, `std/str`, `std/list`, `std/map`, `std/math`, `std/json`, `std/fs`,
-`std/http`, `std/web` and `std/ai`.
+`std/core`, `std/str`, `std/list`, `std/map`, `std/math`, `std/json`,
+`std/option`, `std/result`, `std/fs`, `std/http`, `std/web` and `std/ai`.
 
 #### The prelude
 
