@@ -43,6 +43,19 @@ npm link --workspace @lumen-lang/cli
 ```
 
 
+### Numbers that are checked, not just written
+
+`scripts/check-counts.mjs` compares the counts on the README's front page — tests,
+conformance fixtures, examples, standard modules — against the repository, and
+also checks that every example has a row in the README's table and every module a
+mention in `docs/stdlib.md`. `--fix` rewrites the counts; the rest needs a person.
+
+It exists because those numbers were wrong. The README claimed "207 tests, 74
+conformance fixtures" when there were 799 and 116, and claimed the suite was
+"green on Node 20/22/24" on a repository where CI has never managed to start a
+run. A count written by hand goes stale the moment anybody adds a file, and a
+stale number on the front page is the cheapest kind of lie to tell.
+
 ### Documentation that is checked, not just written
 
 `docs/learn.md` states the output of each of its examples in a plain code block

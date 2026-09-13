@@ -108,6 +108,30 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
 
 ### Fixed
 
+- **The README was telling three lies, and now cannot.** It claimed "207 tests, 74
+  conformance fixtures" when there were 799 and 116; it said type annotations were
+  "parsed but not yet enforced", which stopped being true when TY001 landed; and it
+  said the suite was "green on Node 20/22/24 across Linux, macOS and Windows" on a
+  repository where GitHub Actions has never managed to start a run. The first was
+  staleness, the second a leftover, the third a claim that was never checkable.
+
+  All three are corrected, and `scripts/check-counts.mjs` — a new sixteenth CI
+  check — now compares every count against the repository, verifies that each
+  `examples/*.lm` has a row in the README's table and that each `std/*` module is
+  mentioned in the reference. `--fix` rewrites the counts. Written for the same
+  reason as `check-doc-output.mjs`: documentation that is checked rather than
+  merely written.
+
+- **ROADMAP.md contradicted itself.** One row said "type annotations are not
+  enforced" and the next said they are enforced where written — the first had been
+  left behind by the type checker landing. Another said "no methods on built-in
+  types: `len(x)`, not `x.len()`", which the method work made false a long time
+  ago; the real limit is that a `struct` you define gets no methods, since method
+  syntax is a calling convention rather than an object model and there is nowhere
+  to register one. The file's opening line also read "nothing in this file is
+  implemented today" over a table describing how v0.1 behaves *now*, which is the
+  opposite of nothing.
+
 - **`did you mean …?` no longer offers a different word as a typo.** The
   threshold allowed two edits on any name, so `nope` "meant" `type` — two of its
   four letters — and `import { nope }` "meant" `pop`. It now scales with length:

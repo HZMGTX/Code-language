@@ -1,6 +1,10 @@
 # Roadmap
 
-What is not done yet, stated plainly. Nothing in this file is implemented today.
+What is not done yet, stated plainly.
+
+The first section describes **how v0.1 behaves today** — real limits you will meet,
+not plans. Everything under `v0.2` and below is **unimplemented**: a statement of
+intent, and nothing in the shipped language depends on it.
 
 ## Known limitations in v0.1
 
@@ -9,11 +13,10 @@ decisions, not oversights.
 
 | Limitation | Detail |
 |---|---|
-| **Type annotations are not enforced** | `fn add(a: Num, b: Num) -> Num` parses and is retained, but nothing checks it. Arity, struct fields and operand types are checked at run time. |
 | **`match` exhaustiveness is checked, but only where it can be proved** | The resolver reports a missing variant (`RS002`) when every arm names variants of one enum it can see. A `match` over a value whose enum it cannot determine — a parameter with no annotation, say — still falls back to the run-time `RT020`. Closing that gap needs the type checker. |
-| **Type checking is gradual and shallow** | Annotations are enforced where written (`TY001`-`TY004`), and an unannotated `let` takes its value's type. But there is no inference for parameters or `var`, the standard library carries no signatures, method calls are unchecked, and there is no flow analysis or generics. An unannotated program is never type-checked at all, by design. |
+| **Type checking is gradual and shallow** | Annotations are enforced where written (`TY001`-`TY006`), an unannotated `let` takes its value's type, and an operator whose operands are both known is checked. But there is no inference for parameters or `var`, the standard library carries no signatures, method calls are unchecked, and there is no flow analysis or generics. An unannotated program produces no type diagnostic at all, by design — which is also the limit: `fn f(a) { a + "x" }` is reported only when it runs. |
 | **Ranges are materialised** | `0..n` builds a list, capped at 10,000,000 elements. Large spans need a `while` loop. |
-| **No methods on built-in types** | `len(x)`, not `x.len()`. Pipelines cover most of the ergonomics. |
+| **No methods on your own types** | `Str`, `List`, `Map`, `Num`, `Option` and `Result` have methods, and `str`, `inspect`, `type`, `clone` and `isNil` work on every value — but a `struct` you define gets none. `f(x)` and `x \|> f()` are how your own functions are called. Method syntax is a calling convention rather than an object model (spec §4.7), so there is nowhere to register one; traits would be the mechanism, and they are v0.2. |
 | **Performance** | A tree-walking interpreter in which every evaluation is a promise. `npm run bench` measures it. Profiling the `while` benchmark puts roughly **37% of non-library ticks in promise machinery** alone (`RunMicrotasks`, `AsyncFunctionAwait*`, `FulfillPromise`, `EnqueueMicrotask`, `PerformPromiseThen`), which is what the v0.3 work below is aimed at. |
 | **`await` is inert** | Accepted and evaluates to its operand. I/O is awaited implicitly. |
 | **No package manager** | Imports are `std/*` modules or relative `.lm` paths. |
@@ -33,7 +36,7 @@ depth: knowing the types of things nobody annotated.
 - Function-type compatibility, rather than treating every `fn` as interchangeable
 - Full `match` exhaustiveness, including values whose enum only the type checker
   can determine (the resolver already covers the cases it can prove)
-- Generics and traits, and with traits, method syntax (`x.len()`)
+- Generics and traits, and with traits, methods on your own types
 - Unused-binding warnings (the resolver already reports duplicate declarations)
 
 ## v0.3 — Speed

@@ -94,6 +94,12 @@ jobs:
       - name: Check every .lm file is formatted
         run: node packages/cli/dist/index.js fmt --check .
 
+      # The counts on the README's front page, and that every example and every
+      # standard module is actually documented. A hand-written count goes stale
+      # the moment somebody adds a file.
+      - name: Check the README matches the repository
+        run: node scripts/check-counts.mjs
+
   # The whole point of the project: Lumen runs on its own. This job re-proves it
   # on every pull request, in the two ways a user can actually get it. The
   # portable bundle has to run from a directory that contains nothing but itself,

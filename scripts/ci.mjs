@@ -89,6 +89,8 @@ run('every .lm file is formatted', node, [CLI, 'fmt', '--check', ROOT]);
 run('generated stdlib docs are current', node, [path.join(ROOT, 'scripts', 'gen-stdlib-docs.mjs'), '--check']);
 // Not "do the documented examples parse" — "does what they say happens happen".
 run('documented examples produce what they claim', node, [path.join(ROOT, 'scripts', 'check-doc-output.mjs')]);
+// The counts on the front page, and that every example and module is documented.
+run('the README matches the repository', node, [path.join(ROOT, 'scripts', 'check-counts.mjs')]);
 run('every package stays private', node, [path.join(ROOT, 'scripts', 'check-private.mjs')]);
 
 // Tier 2 of the distribution: one file, no node_modules in sight.

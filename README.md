@@ -24,10 +24,15 @@ That is a complete, working program. No build step, no framework, no dependencie
 
 **v0.1.0.** The language runs. Everything documented here works today — there is
 no aspirational syntax in this README. What is *not* done yet is listed honestly
-in [ROADMAP.md](ROADMAP.md), and the most important item is that **type
-annotations are parsed but not yet enforced**.
+in [ROADMAP.md](ROADMAP.md); the largest item is that type checking is **gradual
+and shallow**: annotations are enforced where you write them, and a program that
+writes none is never type-checked at all.
 
-- 207 tests, 74 conformance fixtures, green on Node 20/22/24 across Linux, macOS and Windows
+- **799 tests**, 116 conformance fixtures, 20 example programs, 14 standard
+  modules. `npm run ci` runs all fifteen checks locally, which is how they are
+  verified today — GitHub Actions is configured for Node 20/22/24 on Linux, macOS
+  and Windows but has never been able to start a run on this repository, so no
+  claim is made about it here.
 - **Zero runtime dependencies.** The only build-time dependencies are TypeScript
   and Node's type definitions.
 - **Ships as a standalone executable.** Running a Lumen program needs no Node,
