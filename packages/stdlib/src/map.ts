@@ -7,10 +7,21 @@
  */
 
 import { NIL, bool, list, map, num, str, type Value } from '@lumen-lang/core';
-import { None, Some, arg, expectList, expectMap, expectStr, fn, moduleOf } from './support.js';
+import {
+  None,
+  Some,
+  arg,
+  expectList,
+  expectMap,
+  expectStr,
+  fn,
+  moduleOf,
+  withDocs,
+} from './support.js';
 
 export function stdMap(): Map<string, Value> {
-  return moduleOf(
+  return withDocs(
+    moduleOf(
     fn('keys', ['m'], (a, c) =>
       list([...expectMap(arg(a, 0), c, 'keys(m)').entries.keys()].map((k) => str(k))),
     ),
@@ -75,5 +86,19 @@ export function stdMap(): Map<string, Value> {
       }
       return map(out);
     }),
+    ),
+    {
+      keys: 'The keys, in insertion order.',
+      values: 'The values, in insertion order.',
+      entries: 'The pairs, as [[key, value], ...].',
+      get: 'The value at a key. Some(v), or None if absent.',
+      has: 'True if the key is present.',
+      set: 'A copy with one key set. The original is untouched.',
+      remove: 'A copy with one key removed.',
+      merge: 'A copy of the two maps combined; the later map wins.',
+      len: 'How many entries the map has.',
+      isEmpty: 'True if the map has no entries.',
+      fromEntries: 'Build a map from [[key, value], ...].',
+    },
   );
 }

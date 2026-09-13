@@ -4,7 +4,7 @@ import { promises as fsp } from 'node:fs';
 import * as path from 'node:path';
 
 import { Interpreter, LumenError } from '@lumen-lang/core';
-import { createNodeHost, createNodeResolver } from '@lumen-lang/stdlib';
+import { createInterpreter } from '@lumen-lang/stdlib';
 
 export const VERSION = '0.1.0';
 
@@ -16,7 +16,9 @@ export function useColor(): boolean {
 }
 
 export function newInterpreter(): Interpreter {
-  return new Interpreter({ host: createNodeHost(), resolver: createNodeResolver() });
+  // The factory installs the prelude and the method tables, so the CLI, the
+  // REPL and the tests all agree on what is in scope.
+  return createInterpreter();
 }
 
 export async function readSource(file: string): Promise<{ file: string; source: string }> {

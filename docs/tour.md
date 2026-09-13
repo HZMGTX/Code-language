@@ -120,6 +120,39 @@ print(total)   // 60
 A line break before `|>` is not a statement break, so pipelines can go down the
 page.
 
+## Methods
+
+Every standard-library function takes its subject first, and `x.f(a)` simply
+means `f(x, a)`. So the same call has three spellings, and you can pick whichever
+reads best:
+
+```lumen
+x.f(a)        f(x, a)        x |> f(a)
+```
+
+That means chaining works without importing anything:
+
+```lumen
+print("  Hello World  ".trim().lower().split(" ").join("_"))   // hello_world
+print([3, 1, 2].sorted())                                       // [1, 2, 3]
+print([1, 2, 3, 4].filter(fn(n) { n % 2 == 0 }).sum())          // 6
+print({ a: 1, b: 2 }.keys())                                    // ["a", "b"]
+```
+
+`Str`, `List` and `Map` have methods. There is no object model underneath — no
+`self`, no inheritance, no dynamic dispatch — just the calling convention.
+
+If you forget what is available, ask:
+
+```lumen
+help("abc")     // Str, and every method you can call on it
+help(range)     // a signature and what it does
+```
+
+One rule worth knowing: on a map, a real key always beats a method of the same
+name, so `{ keys: "mine" }.keys` is `"mine"`. That way adding methods can never
+change what an existing lookup returns.
+
 ## Structs
 
 ```lumen
@@ -263,6 +296,8 @@ function that calls the network composes exactly like one that does not.
 
 ## Where next
 
+- [learn.md](learn.md) — a gentler, longer introduction if this went too fast
+- [from-python.md](from-python.md) — if you already know Python
 - [spec.md](spec.md) — the precise rules
 - [stdlib.md](stdlib.md) — every function
 - [../ROADMAP.md](../ROADMAP.md) — what is not built yet, stated plainly

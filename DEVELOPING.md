@@ -175,7 +175,12 @@ build/lumen-windows-x64.exe
 Those five are the whole supported set; `node scripts/build-binary.mjs
 --target=<name>` builds just one of them. Each build records a SHA-256 in
 `build/SHA256SUMS.txt`, merging with what is already there rather than replacing
-it, so the bundle's entry survives.
+it, so building one target does not erase the entries from earlier builds.
+
+`npm run bundle` writes no checksum of its own, so after `npm run dist` that
+file covers the binary only. The release workflow records `lumen.cjs` into the
+same file by hand before the binary build merges into it, which is what leaves
+every published asset covered.
 
 Expect roughly 100 MB per binary. That is the embedded runtime, not bloat in
 Lumen, and it is what buys the "needs nothing installed" property — state it
@@ -224,7 +229,10 @@ node scripts/check-private.mjs
 node scripts/gen-stdlib-docs.mjs --check
 ```
 
-CI runs exactly these.
+CI runs all of these, and two things you cannot easily run locally: the
+Lumen-language suite (`lumen test tests/lumen`) on every supported platform, and
+a `distribution` job that re-proves both tiers of the section above — the bundle
+from a directory containing nothing else, the binary with `node` unreachable.
 
 ## A note on licensing
 

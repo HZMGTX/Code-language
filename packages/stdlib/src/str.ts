@@ -1,10 +1,20 @@
 /** `std/str` — string operations. The string is always the first argument. */
 
 import { bool, list, num, str, type Value } from '@lumen-lang/core';
-import { Err, Ok, arg, expectInt, expectStr, fn, moduleOf } from './support.js';
+import {
+  Err,
+  Ok,
+  arg,
+  expectInt,
+  expectStr,
+  fn,
+  moduleOf,
+  withDocs,
+} from './support.js';
 
 export function stdStr(): Map<string, Value> {
-  return moduleOf(
+  return withDocs(
+    moduleOf(
     fn('upper', ['s'], (a, c) => str(expectStr(arg(a, 0), c, 'upper(s)').toUpperCase())),
     fn('lower', ['s'], (a, c) => str(expectStr(arg(a, 0), c, 'lower(s)').toLowerCase())),
     fn('trim', ['s'], (a, c) => str(expectStr(arg(a, 0), c, 'trim(s)').trim())),
@@ -89,5 +99,26 @@ export function stdStr(): Map<string, Value> {
       if (text === '' || Number.isNaN(parsed)) return Err(str('`' + text + '` is not a number'));
       return Ok(num(parsed));
     }),
+    ),
+    {
+      upper: 'Uppercase a string.',
+      lower: 'Lowercase a string.',
+      trim: 'Remove whitespace from both ends.',
+      split: 'Split on a separator, giving a list of pieces.',
+      lines: 'Split into a list of lines.',
+      chars: 'Split into a list of single characters.',
+      contains: 'True if the needle appears anywhere inside.',
+      startsWith: 'True if the string begins with this prefix.',
+      endsWith: 'True if the string ends with this suffix.',
+      replace: 'Replace every occurrence of one piece of text with another.',
+      slice: 'The characters from start up to (not including) end.',
+      indexOf: 'Where the needle first appears, or -1 if it never does.',
+      repeat: 'The string repeated a number of times.',
+      padStart: 'Pad on the left until the string reaches a width.',
+      padEnd: 'Pad on the right until the string reaches a width.',
+      reverse: 'The characters in the opposite order.',
+      isEmpty: 'True if the string has no characters.',
+      toNum: 'Parse as a number. Ok(n), or Err if it is not one.',
+    },
   );
 }

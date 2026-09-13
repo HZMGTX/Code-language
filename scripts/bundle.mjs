@@ -80,19 +80,25 @@ function compile() {
   if (result.error) fail('could not run tsc: ' + result.error.message);
 
   const output = (result.stdout ?? '') + (result.stderr ?? '');
-  const surprises = output
-    .split('\n')
-    .filter((line) => /error TS\d+:/.test(line))
-    .filter((line) => {
-      const code = /error (TS\d+):/.exec(line);
-      return code === null || !EXPECTED_DIAGNOSTICS.has(code[1]);
-    });
+  const diagnostics = output.split('\n').filter((line) => /error TS\d+:/.test(line));
+  const surprises = diagnostics.filter((line) => {
+    const code = /error (TS\d+):/.exec(line);
+    return code === null || !EXPECTED_DIAGNOSTICS.has(code[1]);
+  });
 
   if (surprises.length > 0) {
     fail('the CommonJS compile failed:\n' + surprises.join('\n'));
   }
-  if (result.status !== 0 && output.trim() === '') {
-    fail('tsc exited with status ' + result.status + ' and said nothing');
+  // The expected TS1378 already makes tsc exit non-zero, so a bad status only
+  // means trouble when it reported no diagnostic at all — a missing or crashed
+  // compiler, say. Report what it actually said instead of letting the next
+  // step complain about an empty build/cjs.
+  if (result.status !== 0 && diagnostics.length === 0) {
+    fail(
+      'tsc exited with status ' +
+        result.status +
+        (output.trim() === '' ? ' and said nothing' : ':\n' + output.trim()),
+    );
   }
 }
 
@@ -256,7 +262,13 @@ function bundle() {
   for (const id of ids) {
     const body = stripShebang(readFileSync(path.join(CJS_DIR, id), 'utf8'));
     const kind = factoryKind(body, id);
-    if (kind === 'async function') asyncModules += 1;
+    if (kind === 'async function') {
+      // Only the entry may await at the top level. Any other module would hand
+      // its importers a half-filled `exports` the moment it awaits, and nothing
+      // would say so — the bundle would just be quietly wrong.
+      if (id !== ENTRY) fail('`' + id + '` uses top-level await; only ' + ENTRY + ' may');
+      asyncModules += 1;
+    }
     parts.push(
       '\n__modules[' + JSON.stringify(id) + '] = ' + kind + ' (' + FACTORY_PARAMS.join(', ') + ') {\n',
       body.endsWith('\n') ? body : body + '\n',

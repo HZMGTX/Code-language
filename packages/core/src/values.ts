@@ -110,6 +110,8 @@ export interface NativeValue {
   readonly k: 'native';
   readonly name: string;
   readonly params: readonly NativeParam[];
+  /** One-line description, shown by `help()`. */
+  readonly doc?: string;
   /** When true, surplus positional arguments are collected into a list. */
   readonly variadic?: boolean;
   call(args: readonly Value[], ctx: CallCtx): Value | Promise<Value>;
@@ -391,6 +393,12 @@ export interface Host {
   /** Environment variables, for things like AI provider keys. */
   getEnv(name: string): string | undefined;
   now(): number;
+  /**
+   * Read one line from the console, without its trailing newline, or undefined
+   * at end of input. Optional: a host with no console (a browser, a build step)
+   * simply omits it, and `input()` reports that rather than hanging.
+   */
+  readLine?(prompt: string): Promise<string | undefined>;
 }
 
 // ------------------------------------------------------------------ helpers

@@ -1,0 +1,16 @@
+// The central rule: a method call, a plain call, and a pipeline are three
+// spellings of the same thing, because every std function takes its subject
+// first. These must all agree.
+import { upper } from "std/str"
+import { map, sum } from "std/list"
+
+print("hi".upper())
+print(upper("hi"))
+print("hi" |> upper())
+
+let double = fn(n) { n * 2 }
+print([1, 2, 3].map(double))
+print(map([1, 2, 3], double))
+print([1, 2, 3] |> map(double))
+
+print([1, 2, 3].map(double).sum())

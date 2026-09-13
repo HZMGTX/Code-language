@@ -235,10 +235,52 @@ range is **materialised as a list** in v0.1 and capped at 10,000,000 elements
 - `str[i]` — yields a one-character `Str`, by code point.
 - `map[k]` — `k` must be a `Str`. **A missing key yields `nil`**; use
   `std/map.get` for an `Option` instead.
-- `value.field` — struct fields, map keys, module exports, enum variants.
+- `value.field` — struct fields, map keys, module exports, enum variants, and
+  methods (§4.10).
 - `value?.field` — yields `nil` if `value` is `nil` instead of erroring.
 
-### 4.7 Conditionals
+Member resolution is ordered, and the order is what makes methods additive:
+
+| Receiver | Resolution order |
+|---|---|
+| struct | its fields, then methods registered for that struct's type |
+| map | **its own keys first**, then methods, then `nil` |
+| module | its exports; anything else is `RT025` |
+| enum type | its variants; anything else is `RT026` |
+| `Str`, `List` | methods; anything else is `RT027` |
+
+Because a map's own keys win, `{ keys: "mine" }.keys` is `"mine"`. Adding a
+method can therefore never change what an existing lookup returns.
+
+### 4.7 Method calls
+
+`x.f(a)` calls `f(x, a)`. Every standard-library function takes its subject
+first, so these three are the same expression:
+
+```lumen
+x.f(a)        f(x, a)        x |> f(a)
+```
+
+A method is an ordinary function with its first parameter already supplied. That
+first parameter disappears from the signature, so arity checking, defaults and
+named arguments all apply to the parameters that remain:
+
+```lumen
+"a,b".split(",")                // split(s, separator)
+"a,b".split(separator: ",")     // named arguments still work
+"7".padStart(3)                 // padStart(s, width, fill = " ")
+"a,b".split()                   // error: missing a value for `separator`
+```
+
+Methods are available on `Str`, `List` and `Map`, supplied by `std/str`,
+`std/list` and `std/map` respectively. `help(value)` lists the methods available
+on any value.
+
+This is a calling convention, not an object model: there is no inheritance, no
+`self`, and no dynamic dispatch. A method that does not exist is `RT027`, with a
+suggestion when one is close.
+
+### 4.8 Conditionals
 
 `if` is an expression:
 
@@ -248,7 +290,7 @@ let label = if n < 0 { "negative" } else if n == 0 { "zero" } else { "positive" 
 
 With no `else`, a false condition yields `nil`.
 
-### 4.8 Match
+### 4.9 Match
 
 ```lumen
 match value {
@@ -287,7 +329,7 @@ Patterns:
 > `match`. Write guards that are total for the values that can reach them — in
 > practice, put shape patterns above value guards.
 
-### 4.9 Error propagation
+### 4.10 Error propagation
 
 Postfix `?` applies to a `Result` or an `Option`:
 
@@ -397,6 +439,7 @@ different meaning. Selected codes:
 | `RT039` | No parameter of that name |
 | `RT040` | Too many arguments |
 | `RT044` | One parameter supplied both positionally and by name |
+| `RT027` | No such method on this type |
 
 The parser reports multiple errors per run, suppressing duplicates and bounding
 cascades at 25.
@@ -409,8 +452,27 @@ See [stdlib.md](stdlib.md) for the full reference. The modules are
 `std/core`, `std/str`, `std/list`, `std/map`, `std/math`, `std/json`, `std/fs`,
 `std/http`, `std/web` and `std/ai`.
 
-`print`, `len`, `type`, `str`, `num`, `bool`, `assert`, `panic`, `Ok`, `Err`,
-`Some` and `None` are global and need no import.
+#### The prelude
+
+These are in scope in every file with no import. A user binding of the same name
+always shadows the prelude one, so defining your own `sum` is safe.
+
+| Group | Names |
+|---|---|
+| Output and inspection | `print` `help` `type` `len` |
+| Conversion | `str` `num` `bool` |
+| Sequences | `map` `filter` `reduce` `sum` `sorted` `reversed` `enumerate` `zip` `any` `all` `range` `join` `split` |
+| Numbers | `abs` `round` `floor` `ceil` `min` `max` |
+| Errors | `Ok` `Err` `Some` `None` `Result` `Option` `assert` `panic` |
+| Console | `input` |
+
+`range(n)`, `range(start, end)` and `range(start, end, step)` all work, and a
+negative step counts down. `min` and `max` accept either a list or several
+numbers. `input(prompt)` returns `Some(line)`, or `None` at end of input; on a
+host with no console it is `RT035`.
+
+Lumen has a single `Num` type, so there is no `int` or `float` conversion —
+`num(text)` parses, returning a `Result`.
 
 ---
 

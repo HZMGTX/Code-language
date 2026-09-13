@@ -9,8 +9,8 @@
 import { promises as fsp } from 'node:fs';
 import * as path from 'node:path';
 
-import { Interpreter, LumenError, parse, type Host } from '@lumen-lang/core';
-import { createNodeResolver } from '@lumen-lang/stdlib';
+import { LumenError, parse, type Host } from '@lumen-lang/core';
+import { createInterpreter } from '@lumen-lang/stdlib';
 
 /** The environment every fixture sees. `mock` keeps `std/ai` offline. */
 const FIXED_ENV: Readonly<Record<string, string>> = {
@@ -23,22 +23,38 @@ export interface RunResult {
   readonly failed: boolean;
 }
 
-export function makeHost(collect: (text: string) => void): Host {
+/**
+ * A host with a scripted console.
+ *
+ * `stdin` supplies the lines `input()` will read; once they run out it reports
+ * end of input. Fixtures therefore exercise the real code path and stay
+ * deterministic, instead of blocking on a terminal that is not there.
+ */
+export function makeHost(collect: (text: string) => void, stdin: readonly string[] = []): Host {
+  const queue = [...stdin];
   return {
     writeOut: collect,
     writeErr: collect,
     getEnv: (name: string): string | undefined => FIXED_ENV[name],
     now: (): number => 0,
+    readLine: async (prompt: string): Promise<string | undefined> => {
+      collect(prompt);
+      return queue.shift();
+    },
   };
 }
 
 /** Run Lumen source and capture everything it produced, errors included. */
-export async function runSource(source: string, fileName = 'fixture.lm'): Promise<RunResult> {
+export async function runSource(
+  source: string,
+  fileName = 'fixture.lm',
+  stdin: readonly string[] = [],
+): Promise<RunResult> {
   let output = '';
   const host = makeHost((text) => {
     output += text;
-  });
-  const interpreter = new Interpreter({ host, resolver: createNodeResolver() });
+  }, stdin);
+  const interpreter = createInterpreter({ host });
 
   try {
     const module = parse(source, fileName);

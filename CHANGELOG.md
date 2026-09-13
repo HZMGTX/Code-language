@@ -26,6 +26,28 @@ The first working version. Everything below runs today.
 - Modules: `import`/`export`, `std/*` modules and relative `.lm` files
 - No async colouring — I/O is awaited implicitly
 
+### Ergonomics
+
+- **Method-call syntax.** `x.f(a)` means `f(x, a)`. Because every standard-library
+  function takes its subject first, `x.f(a)`, `f(x, a)` and `x |> f(a)` are three
+  spellings of one thing, and every existing library function gained method syntax
+  without a line of new library code. Methods are available on `Str`, `List` and
+  `Map`. On a map, a real key always wins over a method of the same name, so no
+  existing lookup changes meaning.
+- **A prelude worth having.** `range`, `sum`, `sorted`, `reversed`, `min`, `max`,
+  `abs`, `round`, `floor`, `ceil`, `map`, `filter`, `reduce`, `enumerate`, `zip`,
+  `any`, `all`, `join`, `split` and `input` now need no import. Previously even
+  `map` and `filter` did, which was a lot of ceremony before a beginner had done
+  anything. A user binding of the same name still shadows the prelude one.
+- **`help()`.** `help()` lists everything in scope, `help(value)` shows a value's
+  type and the methods available on it, `help(fn)` shows a signature and
+  description, and `help("std/list")` lists a module. Standard-library functions
+  carry one-line documentation.
+- **`input(prompt)`** reads a line from the console, as `Some(line)` or `None` at
+  end of input, so interactive scripts are possible.
+- `min` and `max` accept either a list or several numbers, because guessing which
+  one a language chose is a bad first experience.
+
 ### Tooling
 
 - `lumen` CLI: `run`, `serve`, `repl`, `test`, `tokens`, `ast`
@@ -55,12 +77,12 @@ The first working version. Everything below runs today.
 - `npm run dist` builds both tiers
 - The bundler, `scripts/bundle.mjs`, is purpose-built, so single-file
   distribution still costs no dependency
-- Builds record SHA-256 checksums in `build/SHA256SUMS.txt`
+- Binary builds record SHA-256 checksums in `build/SHA256SUMS.txt`
 
 ### Project
 
 - Zero runtime dependencies
-- 133 tests and 50 conformance fixtures, green on Node 20/22/24 across Linux,
+- 181 tests and 59 conformance fixtures, green on Node 20/22/24 across Linux,
   macOS and Windows
 - Specification, tour, standard-library reference and design rationale
 - Proprietary licence; every package marked private, enforced by CI

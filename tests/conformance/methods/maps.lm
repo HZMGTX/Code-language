@@ -1,0 +1,14 @@
+let m = { b: 2, a: 1 }
+
+print(m.keys())
+print(m.values())
+print(m.entries())
+print(m.get("a"))
+print(m.get("zz"))
+print(m.has("b"))
+print(m.len())
+print(m.isEmpty())
+print(m.set("c", 3))
+print(m)
+print(m.remove("a"))
+print(m.merge({ z: 9 }))

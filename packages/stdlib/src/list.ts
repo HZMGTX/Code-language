@@ -30,6 +30,7 @@ import {
   expectStr,
   fn,
   moduleOf,
+  withDocs,
 } from './support.js';
 
 /** Compare two values for sorting; only Nums and Strs have a natural order. */
@@ -40,7 +41,8 @@ function orderOf(a: Value, b: Value, panic: (m: string) => never): number {
 }
 
 export function stdList(): Map<string, Value> {
-  return moduleOf(
+  return withDocs(
+    moduleOf(
     fn('map', ['xs', 'f'], async (a, c) => {
       const xs = expectList(arg(a, 0), c, 'map(xs)');
       const f = expectFn(arg(a, 1), c, 'map(f)');
@@ -230,5 +232,36 @@ export function stdList(): Map<string, Value> {
       const xs: ListValue = expectList(arg(a, 0), c, 'enumerate(xs)');
       return list(xs.items.map((item, i) => list([num(i), item])));
     }),
+    ),
+    {
+      map: 'Apply a function to every element, giving a new list.',
+      filter: 'Keep only the elements a predicate says true to.',
+      reduce: 'Fold the list down to a single value.',
+      find: 'The first element matching a predicate. Some(x), or None.',
+      any: 'True if the predicate holds for at least one element.',
+      all: 'True if the predicate holds for every element.',
+      count: 'How many elements match a predicate.',
+      len: 'How many elements the list has.',
+      isEmpty: 'True if the list has no elements.',
+      first: 'The first element. Some(x), or None if empty.',
+      last: 'The last element. Some(x), or None if empty.',
+      at: 'The element at an index, counting from the end if negative. Some(x), or None.',
+      push: 'Append a value, changing the list in place, and return it.',
+      pop: 'Remove and return the last element. Some(x), or None if empty.',
+      slice: 'The elements from start up to (not including) end.',
+      take: 'The first n elements.',
+      drop: 'Everything after the first n elements.',
+      reverse: 'A reversed copy. The original is untouched.',
+      contains: 'True if the value appears in the list.',
+      indexOf: 'Where a value first appears, or -1 if it never does.',
+      unique: 'A copy with duplicates removed, keeping the first of each.',
+      flatten: 'Merge one level of nested lists.',
+      join: 'Join the elements into a string with a separator.',
+      sort: 'A sorted copy. Works on numbers or on strings.',
+      sortBy: 'A copy sorted by the key each element maps to.',
+      sum: 'Add up a list of numbers.',
+      zip: 'Pair up two lists, stopping at the shorter one.',
+      enumerate: 'Pair each element with its index: [[0, a], [1, b]].',
+    },
   );
 }

@@ -54,11 +54,13 @@ export function fn(
   name: string,
   params: readonly (string | { name: string; defaultValue: Value })[],
   call: (args: readonly Value[], ctx: CallCtx) => Value | Promise<Value>,
+  doc?: string,
 ): NativeValue {
   return {
     k: 'native',
     name,
     params: params.map((p) => (typeof p === 'string' ? { name: p } : p)),
+    ...(doc === undefined ? {} : { doc }),
     call,
   };
 }
@@ -68,6 +70,24 @@ export function moduleOf(...values: readonly NativeValue[]): Map<string, Value> 
   const exports = new Map<string, Value>();
   for (const value of values) exports.set(value.name, value);
   return exports;
+}
+
+/**
+ * Attach one-line documentation to a module's functions, for `help()`.
+ *
+ * Kept separate from the definitions so the implementations stay readable and
+ * the prose sits together where it can be reviewed as prose.
+ */
+export function withDocs(
+  module: Map<string, Value>,
+  docs: Readonly<Record<string, string>>,
+): Map<string, Value> {
+  for (const [name, doc] of Object.entries(docs)) {
+    const value = module.get(name);
+    if (value === undefined || value.k !== 'native') continue;
+    module.set(name, { ...value, doc });
+  }
+  return module;
 }
 
 export const Ok = (v: Value): Value => enumValue('Result', 'Ok', [v]);

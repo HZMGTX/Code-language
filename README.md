@@ -27,7 +27,7 @@ no aspirational syntax in this README. What is *not* done yet is listed honestly
 in [ROADMAP.md](ROADMAP.md), and the most important item is that **type
 annotations are parsed but not yet enforced**.
 
-- 133 tests, 50 conformance fixtures, green on Node 20/22/24 across Linux, macOS and Windows
+- 181 tests, 59 conformance fixtures, green on Node 20/22/24 across Linux, macOS and Windows
 - **Zero runtime dependencies.** The only build-time dependencies are TypeScript
   and Node's type definitions.
 - **Ships as a standalone executable.** Running a Lumen program needs no Node,
@@ -94,6 +94,13 @@ lumen run examples/tour.lm
 ```
 
 ## What it looks like
+
+```lumen
+// No imports. Methods, because every std function takes its subject first.
+print("  Hello World  ".trim().lower().split(" ").join("_"))
+print([1, 2, 3, 4].filter(fn(n) { n % 2 == 0 }).map(fn(n) { n * 10 }).sum())
+print(sum(range(101)))
+```
 
 ```lumen
 struct Task { title: Str, done: Bool }
@@ -171,6 +178,8 @@ lumen ast <file.lm>      show the parsed syntax tree
 
 | Document | What it covers |
 |---|---|
+| [docs/learn.md](docs/learn.md) | Start here if you are new to programming |
+| [docs/from-python.md](docs/from-python.md) | Start here if you know Python |
 | [docs/tour.md](docs/tour.md) | Learn the language in about ten minutes |
 | [docs/spec.md](docs/spec.md) | The specification — grammar, semantics, diagnostics |
 | [docs/stdlib.md](docs/stdlib.md) | Every standard module and function |

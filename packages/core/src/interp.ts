@@ -99,6 +99,14 @@ export class Interpreter {
   private readonly units: SourceUnit[] = [];
   private readonly moduleCache = new Map<string, ModuleValue>();
   private readonly loading = new Set<string>();
+  /**
+   * Method tables, keyed by type name ("Str", "List", "Map").
+   *
+   * `core` cannot import the standard library, so the tables are registered
+   * from outside. That indirection is what lets `"hi".upper()` work without the
+   * language itself knowing anything about `std/str`.
+   */
+  private readonly methodTables = new Map<string, ReadonlyMap<string, Value>>();
 
   constructor(options: InterpreterOptions) {
     this.host = options.host;
@@ -107,6 +115,33 @@ export class Interpreter {
   }
 
   /** Register a native module so `import { x } from "name"` can find it. */
+  /**
+   * Make `functions` callable as methods on values of type `typeName`.
+   *
+   * Because every standard-library function takes its subject first, this makes
+   * `x.f(a)`, `f(x, a)` and `x |> f(a)` three spellings of one thing.
+   */
+  registerMethods(typeName: string, functions: ReadonlyMap<string, Value>): void {
+    const existing = this.methodTables.get(typeName);
+    if (existing === undefined) {
+      this.methodTables.set(typeName, functions);
+      return;
+    }
+    this.methodTables.set(typeName, new Map([...existing, ...functions]));
+  }
+
+  /** The method names available on a type, for error messages and `help()`. */
+  methodNames(typeName: string): string[] {
+    return [...(this.methodTables.get(typeName)?.keys() ?? [])];
+  }
+
+  /** Look up `name` as a method on `receiver`, already bound to it. */
+  private lookupMethod(typeOf: string, name: string, receiver: Value): Value | undefined {
+    const found = this.methodTables.get(typeOf)?.get(name);
+    if (found === undefined) return undefined;
+    return found.k === 'native' ? bindReceiver(found, receiver) : found;
+  }
+
   private unit(): SourceUnit {
     return this.units[this.units.length - 1] ?? { file: '<unknown>', source: '' };
   }
@@ -836,6 +871,8 @@ export class Interpreter {
       case 'struct': {
         const value = target.fields.get(name);
         if (value === undefined) {
+          const method = this.lookupMethod(target.typeName, name, target);
+          if (method !== undefined) return method;
           const hint = suggest(name, [...target.fields.keys()]);
           this.fail(
             'RT024',
@@ -849,8 +886,16 @@ export class Interpreter {
         }
         return value;
       }
-      case 'map':
-        return target.entries.get(name) ?? NIL;
+      case 'map': {
+        // A real key always wins over a method of the same name, so adding
+        // methods can never change what an existing map lookup returns.
+        const own = target.entries.get(name);
+        if (own !== undefined) return own;
+        const method = this.lookupMethod('Map', name, target);
+        if (method !== undefined) return method;
+        // A missing key is still nil, as documented.
+        return NIL;
+      }
       case 'module': {
         const value = target.exports.get(name);
         if (value === undefined) {
@@ -891,13 +936,24 @@ export class Interpreter {
         };
         return ctor;
       }
-      default:
+      default: {
+        // Str, List and Num reach here: they have no fields, only methods.
+        const method = this.lookupMethod(typeName(target), name, target);
+        if (method !== undefined) return method;
+        const available = this.methodNames(typeName(target));
+        const hint = suggest(name, available);
         return this.fail(
           'RT027',
-          'cannot read `.' + name + '` on ' + typeName(target),
+          typeName(target) + ' has no method `' + name + '`',
           span,
-          'no fields here',
+          'not available here',
+          hint !== undefined
+            ? ['did you mean `' + hint + '`?']
+            : available.length > 0
+              ? ['available on ' + typeName(target) + ': ' + available.sort().join(', ')]
+              : undefined,
         );
+      }
     }
   }
 
@@ -1400,6 +1456,24 @@ function compare(op: string, a: number | string, b: number | string): boolean {
 }
 
 // --------------------------------------------------------------- builtins
+
+/**
+ * Turn `f(subject, ...rest)` into a method on `subject`.
+ *
+ * The first parameter is dropped from the signature, so arity checking, named
+ * arguments and defaults all keep working on the parameters that remain:
+ * `"a,b".split(",")` reports errors about `separator`, not about `s`.
+ */
+function bindReceiver(fn: NativeValue, receiver: Value): NativeValue {
+  return {
+    k: 'native',
+    name: fn.name,
+    params: fn.params.slice(1),
+    ...(fn.doc === undefined ? {} : { doc: fn.doc }),
+    ...(fn.variadic === true ? { variadic: true } : {}),
+    call: (args, ctx) => fn.call([receiver, ...args], ctx),
+  };
+}
 
 /** Define a native function with named parameters. */
 export function native(
