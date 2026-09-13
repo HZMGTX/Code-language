@@ -1,0 +1,7 @@
+error[RT047]: the pattern does not fit [1]
+ --> assign-length-mismatch.lm:6:1
+  |
+6 | [a, b] = [1]
+  | ^^^^^^ expected a list of 2
+  |
+  = note: assignment takes the elements one for one; there is no `..rest` here

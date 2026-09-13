@@ -1,0 +1,6 @@
+// Destructuring assignment takes the elements one for one. There is no
+// `..rest` on the left of an `=`, so a length that does not match is an error.
+
+var a = 1
+var b = 2
+[a, b] = [1]

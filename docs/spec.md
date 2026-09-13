@@ -154,6 +154,20 @@ It is the same pattern language `match` and `for` use, nested patterns and
 does not fit the value is `RT047` rather than a miss — use `match` when a value
 may or may not have the shape you expect.
 
+The same shape works on the left of an ordinary assignment, where each element
+is a place in its own right — a variable, a field, an index, or a nested list:
+
+```lumen
+var p = 1
+var q = 2
+[p, q] = [q, p]                  // a swap, with no temporary
+[point.x, row[1]] = [7, 8]
+```
+
+The right side is evaluated in full before anything is written, which is why
+the swap works. Only plain `=` takes a list of places, and there is no
+`..rest`: the lengths must match, or `RT047`.
+
 ### 3.2 Functions
 
 ```lumen
@@ -566,7 +580,7 @@ different meaning. Selected codes:
 | `RT027` | No such method on this type |
 | `RT045` | Call depth exceeded — recursion with no reachable base case |
 | `RT046` | An arithmetic result that would be `NaN` |
-| `RT047` | A destructuring `let` whose pattern does not fit the value |
+| `RT047` | A destructuring `let` or assignment whose shape does not fit the value |
 
 The parser reports multiple errors per run, suppressing duplicates and bounding
 cascades at 25. It also refuses source nested more than 250 levels deep

@@ -471,8 +471,6 @@ places where you will miss Python, with no consolation offered:
   `3.50`.
 - **`dict.get(key, default)`.** No default form, so counters and accumulators
   need an explicit `nil` check.
-- **Tuple assignment and swapping.** No `a, b = 1, 2` and no `a, b = b, a`.
-  Destructuring exists only in `for` headers and `match` patterns.
 - **`*args` and `**kwargs`.** Not available.
 - **Slice syntax.** `xs[1:3]` and `xs[::-1]` are `xs.slice(1, 3)` and
   `xs.reversed()` — fine, but longer.

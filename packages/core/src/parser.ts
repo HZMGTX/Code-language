@@ -90,6 +90,21 @@ const STMT_START: readonly TokenKind[] = [
 
 const MAX_ERRORS = 25;
 
+/** Whether an expression names a place a value can be put. */
+function isAssignTarget(expr: Expr): boolean {
+  switch (expr.kind) {
+    case 'Ident':
+    case 'MemberExpr':
+    case 'IndexExpr':
+      return true;
+    case 'ListLit':
+      // Empty would assign nothing, which is a typo rather than an intention.
+      return expr.items.length > 0 && expr.items.every(isAssignTarget);
+    default:
+      return false;
+  }
+}
+
 /** The deepest the parser will recurse before reporting `PA016`. */
 const MAX_NESTING = 250;
 
@@ -832,14 +847,36 @@ export class Parser {
     const opTok = this.advance();
     this.skipNewlines();
     const value = this.parseAssign(); // right-associative
-    if (left.kind !== 'Ident' && left.kind !== 'MemberExpr' && left.kind !== 'IndexExpr') {
+    // `[a, b] = [b, a]` assigns positionally, so a swap is one line. Only
+    // plain `=`: `[a, b] += ...` has no sensible meaning.
+    const destructuring = left.kind === 'ListLit' && opTok.kind === '=';
+    if (destructuring && !isAssignTarget(left)) {
+      this.report({
+        severity: 'error',
+        code: 'PA008',
+        message: 'cannot assign to this expression',
+        span: left.span,
+        label: 'not every element is a place that can hold a value',
+        notes: [
+          { message: 'each element must be a variable, a field, or an index expression' },
+        ],
+      });
+      throw new ParseAbort();
+    }
+    if (!destructuring && left.kind !== 'Ident' && left.kind !== 'MemberExpr' && left.kind !== 'IndexExpr') {
       this.report({
         severity: 'error',
         code: 'PA008',
         message: 'cannot assign to this expression',
         span: left.span,
         label: 'not a place that can hold a value',
-        notes: [{ message: 'assignment targets are variables, fields, or index expressions' }],
+        notes: [
+          {
+            message:
+              'assignment targets are variables, fields, index expressions, ' +
+              'or a list of those: `[a, b] = [b, a]`',
+          },
+        ],
       });
       throw new ParseAbort();
     }

@@ -122,6 +122,12 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   because a `let` has no second arm to fall through to. Found by writing
   `let [i, values] = mostConstrained(grid)` in an example and discovering the
   language could not say it.
+- **Destructuring assignment.** `[p, q] = [q, p]` — a swap in one line, with no
+  temporary, because the right side is evaluated in full before anything is
+  written. Each element is a place in its own right, so fields, indices and
+  nested lists all work, and a `let` binding among them is refused as it would
+  be anywhere else. `docs/from-python.md` listed "no tuple assignment and no
+  swapping" under what Python does better; that line is gone.
 - **`std/web.form(req)`** reads the fields a form submitted, whichever way the
   page sent them: the query string for `method="get"`, the urlencoded body for
   `method="post"`. A handler no longer has to know which, and percent- and

@@ -482,6 +482,17 @@ class Resolver {
 
   private assign(target: Expr, value: Expr): void {
     this.expr(value);
+    this.assignTo(target);
+  }
+
+  /** Check one place being written to; a list of places is checked one by one. */
+  private assignTo(target: Expr): void {
+    // `[a, b] = [b, a]`. Each element is a place in its own right, so the same
+    // rules apply to it — including that a `let` binding may not be one.
+    if (target.kind === 'ListLit') {
+      for (const item of target.items) this.assignTo(item);
+      return;
+    }
     if (target.kind === 'Ident') {
       const binding =
         this.deferred > 0 ? this.scope.lookupDeferred(target.name) : this.scope.lookup(target.name);

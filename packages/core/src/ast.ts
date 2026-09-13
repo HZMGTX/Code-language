@@ -155,7 +155,10 @@ export type AssignOp = '=' | '+=' | '-=' | '*=' | '/=';
 export interface AssignExpr extends NodeBase {
   readonly kind: 'AssignExpr';
   readonly op: AssignOp;
-  /** Ident, MemberExpr, or IndexExpr — validated by the parser. */
+  /**
+   * Ident, MemberExpr, IndexExpr, or — for `=` only — a ListLit of those,
+   * which assigns positionally. Validated by the parser.
+   */
   readonly target: Expr;
   readonly value: Expr;
 }

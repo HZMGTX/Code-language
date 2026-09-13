@@ -1042,8 +1042,24 @@ export class Interpreter {
     env: Env,
     span: Span,
   ): Promise<Value> {
-    const incoming = await this.evaluate(valueExpr, env);
+    return await this.storeInto(op, target, await this.evaluate(valueExpr, env), env, span);
+  }
 
+  /**
+   * Put an already-evaluated value into a place.
+   *
+   * Separate from `evalAssign` so that `[a, b] = [b, a]` can put each element
+   * into its own place without evaluating anything twice — which is also why
+   * a swap needs no temporary: both new values are in hand before either is
+   * stored.
+   */
+  private async storeInto(
+    op: string,
+    target: Expr,
+    incoming: Value,
+    env: Env,
+    span: Span,
+  ): Promise<Value> {
     /** Apply the compound operator, or just take the incoming value for `=`. */
     const combine = (current: Value): Value => {
       if (op === '=') return incoming;
@@ -1077,6 +1093,25 @@ export class Interpreter {
         'mismatched operands',
       );
     };
+
+    if (target.kind === 'ListLit') {
+      if (incoming.k !== 'list' || incoming.items.length !== target.items.length) {
+        return this.fail(
+          'RT047',
+          'the pattern does not fit ' + inspect(incoming),
+          target.span,
+          'expected a list of ' + String(target.items.length),
+          ['assignment takes the elements one for one; there is no `..rest` here'],
+        );
+      }
+      for (let i = 0; i < target.items.length; i += 1) {
+        const place = target.items[i];
+        const item = incoming.items[i];
+        if (place === undefined || item === undefined) continue;
+        await this.storeInto('=', place, item, env, span);
+      }
+      return incoming;
+    }
 
     if (target.kind === 'Ident') {
       const slot = env.lookup(target.name);

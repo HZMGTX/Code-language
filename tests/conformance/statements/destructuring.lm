@@ -24,3 +24,18 @@ print([a, b])
 fn divide(n, d) { [floor(n / d), n % d] }
 let [whole, remainder] = divide(17, 5)
 print("17 = ${whole} * 5 + ${remainder}")
+
+// The same shape on the left of an ordinary assignment, which is how a swap
+// becomes one line. The right side is evaluated first, so no temporary is
+// needed and no order of writes can spoil it.
+var p = 1
+var q = 2
+[p, q] = [q, p]
+print([p, q])
+
+// Any place can be an element: a field, an index, a nested list.
+struct Point { x: Num, y: Num }
+var here = Point { x: 0, y: 0 }
+var row = [0, 0]
+[here.x, row[1]] = [7, 8]
+print([here.x, row[1]])
