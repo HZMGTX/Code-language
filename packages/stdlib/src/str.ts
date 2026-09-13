@@ -95,6 +95,96 @@ export function stdStr(): Map<string, Value> {
     fn('isEmpty', ['s'], (a, c) => bool(expectStr(arg(a, 0), c, 'isEmpty(s)').length === 0)),
 
     /** Parse a number, as a Result so failure is explicit rather than silent. */
+    /** Leading whitespace removed, trailing left alone. */
+    fn('trimStart', ['s'], (a, c) => str(expectStr(arg(a, 0), c, 'trimStart(s)').trimStart())),
+
+    /** Trailing whitespace removed, leading left alone. */
+    fn('trimEnd', ['s'], (a, c) => str(expectStr(arg(a, 0), c, 'trimEnd(s)').trimEnd())),
+
+    /** First letter upper, the rest lower: `"aDA" -> "Ada"`. */
+    fn('capitalize', ['s'], (a, c) => {
+      const s = expectStr(arg(a, 0), c, 'capitalize(s)');
+      return str(s.slice(0, 1).toUpperCase() + s.slice(1).toLowerCase());
+    }),
+
+    /** Every word capitalized: `"ada lovelace" -> "Ada Lovelace"`. */
+    fn('title', ['s'], (a, c) => {
+      const s = expectStr(arg(a, 0), c, 'title(s)');
+      // Split on the spaces rather than around them, so the original spacing
+      // survives: two spaces between words stay two spaces.
+      return str(
+        s
+          .split(' ')
+          .map((word) => word.slice(0, 1).toUpperCase() + word.slice(1).toLowerCase())
+          .join(' '),
+      );
+    }),
+
+    /** How many times a piece of text appears, without overlaps. */
+    fn('count', ['s', 'needle'], (a, c) => {
+      const s = expectStr(arg(a, 0), c, 'count(s)');
+      const needle = expectStr(arg(a, 1), c, 'count(needle)');
+      // An empty needle matches between every character, which is a number
+      // nobody wants and an infinite loop if written the obvious way.
+      if (needle === '') return c.panic('count needs a non-empty needle');
+      let total = 0;
+      let at = s.indexOf(needle);
+      while (at !== -1) {
+        total += 1;
+        at = s.indexOf(needle, at + needle.length);
+      }
+      return num(total);
+    }),
+
+    /**
+     * Split at the first separator only, giving `[before, after]`.
+     *
+     * `"key=a=b".split("=")` gives three pieces and loses where the key ended.
+     * This gives `["key", "a=b"]`. With no separator present, the whole string
+     * is the first piece and the second is empty.
+     */
+    fn('splitOnce', ['s', 'separator'], (a, c) => {
+      const s = expectStr(arg(a, 0), c, 'splitOnce(s)');
+      const sep = expectStr(arg(a, 1), c, 'splitOnce(separator)');
+      if (sep === '') return c.panic('splitOnce needs a non-empty separator');
+      const at = s.indexOf(sep);
+      if (at === -1) return list([str(s), str('')]);
+      return list([str(s.slice(0, at)), str(s.slice(at + sep.length))]);
+    }),
+
+    /** The words in a string: split on runs of whitespace, with no empties. */
+    fn('words', ['s'], (a, c) => {
+      const s = expectStr(arg(a, 0), c, 'words(s)');
+      const found = s.split(/\s+/).filter((word) => word !== '');
+      return list(found.map((word) => str(word)));
+    }),
+
+    /** Padded on both sides to `width`, the extra space going on the right. */
+    fn('center', ['s', 'width', { name: 'pad', defaultValue: str(' ') }], (a, c) => {
+      const s = expectStr(arg(a, 0), c, 'center(s)');
+      const width = expectInt(arg(a, 1), c, 'center width');
+      const pad = expectStr(arg(a, 2), c, 'center pad');
+      if (pad === '') return c.panic('center needs a non-empty pad');
+      if (s.length >= width) return str(s);
+      const total = width - s.length;
+      const left = Math.floor(total / 2);
+      return str(s.padStart(s.length + left, pad).padEnd(width, pad));
+    }),
+
+    /** The text with a prefix removed, if it is there. */
+    fn('removePrefix', ['s', 'prefix'], (a, c) => {
+      const s = expectStr(arg(a, 0), c, 'removePrefix(s)');
+      const prefix = expectStr(arg(a, 1), c, 'removePrefix(prefix)');
+      return str(prefix !== '' && s.startsWith(prefix) ? s.slice(prefix.length) : s);
+    }),
+
+    /** The text with a suffix removed, if it is there. */
+    fn('removeSuffix', ['s', 'suffix'], (a, c) => {
+      const s = expectStr(arg(a, 0), c, 'removeSuffix(s)');
+      const suffix = expectStr(arg(a, 1), c, 'removeSuffix(suffix)');
+      return str(suffix !== '' && s.endsWith(suffix) ? s.slice(0, s.length - suffix.length) : s);
+    }),
+
     fn('toNum', ['s'], (a, c) => {
       const text = expectStr(arg(a, 0), c, 'toNum(s)').trim();
       const parsed = Number(text);
@@ -122,6 +212,16 @@ export function stdStr(): Map<string, Value> {
       len: 'How many characters the string has.',
       isEmpty: 'True if the string has no characters.',
       toNum: 'Parse as a number. Ok(n), or Err if it is not one.',
+      trimStart: 'Remove whitespace from the start only.',
+      trimEnd: 'Remove whitespace from the end only.',
+      capitalize: 'First letter upper, the rest lower.',
+      title: 'Every word capitalized.',
+      count: 'How many times a piece of text appears, without overlaps.',
+      splitOnce: 'Split at the first separator only, giving [before, after].',
+      words: 'The words, splitting on runs of whitespace.',
+      center: 'Pad both sides until the string reaches a width.',
+      removePrefix: 'The text with a prefix removed, if it is there.',
+      removeSuffix: 'The text with a suffix removed, if it is there.',
     },
   );
 }

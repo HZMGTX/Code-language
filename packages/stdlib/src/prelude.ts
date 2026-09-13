@@ -284,8 +284,9 @@ function makeHelp(methodsOf: (type: string) => string[], preludeNames: () => str
  * `PI` and `E` are values, so neither belongs on a receiver.
  */
 const NUM_METHODS = [
-  'abs', 'ceil', 'clamp', 'cos', 'exp', 'fixed', 'floor', 'log',
-  'max', 'min', 'pow', 'round', 'sign', 'sin', 'sqrt', 'tan', 'trunc',
+  'abs', 'acos', 'asin', 'atan', 'atan2', 'cbrt', 'ceil', 'clamp', 'cos', 'exp',
+  'fixed', 'floor', 'gcd', 'hypot', 'lcm', 'log', 'max', 'min', 'pow', 'round',
+  'sign', 'sin', 'sqrt', 'tan', 'trunc',
 ];
 
 export function methodTables(): Record<string, Map<string, Value>> {

@@ -37,6 +37,7 @@ import { lex } from './lexer.js';
 import { KEYWORDS, describe, describeToken, type Token, type TokenKind } from './token.js';
 import type {
   Arg,
+  BinaryOp,
   Block,
   EnumVariant,
   Expr,
@@ -75,7 +76,18 @@ const PRECEDENCE: Partial<Record<TokenKind, number>> = {
   '*': 9,
   '/': 9,
   '%': 9,
+  '**': 10,
 };
+
+/**
+ * Operators that group to the right, so `2 ** 3 ** 2` is `2 ** (3 ** 2)`.
+ *
+ * Exponentiation is the only one. It is the convention in mathematics and in
+ * every language that has the operator, and the left-associative reading is
+ * never what anybody means: `(2 ** 3) ** 2` is `2 ** 6`, and is spelled that
+ * way instead.
+ */
+const RIGHT_ASSOCIATIVE: readonly TokenKind[] = ['**'];
 
 const ASSIGN_OPS: readonly TokenKind[] = ['=', '+=', '-=', '*=', '/='];
 
@@ -956,7 +968,10 @@ export class Parser {
 
       this.advance();
       this.skipNewlines();
-      const right = this.parseBinary(prec + 1);
+      // A right-associative operator re-enters at its own level, so the next
+      // one of the same kind lands in the right operand rather than closing
+      // this one.
+      const right = this.parseBinary(RIGHT_ASSOCIATIVE.includes(tok.kind) ? prec : prec + 1);
       const nodeSpan = this.spanFrom(start);
 
       switch (tok.kind) {
@@ -977,7 +992,7 @@ export class Parser {
         default:
           left = {
             kind: 'Binary',
-            op: tok.kind as '+' | '-' | '*' | '/' | '%' | '==' | '!=' | '<' | '<=' | '>' | '>=',
+            op: tok.kind as BinaryOp,
             left,
             right,
             span: nodeSpan,
@@ -993,6 +1008,29 @@ export class Parser {
       const op = this.advance();
       this.skipNewlines();
       const operand = this.parseUnary();
+
+      // `-2 ** 2` is refused rather than answered. Both readings are defensible
+      // — Python reads it as `-(2 ** 2)`, which is -4, and binding the unary
+      // first gives `(-2) ** 2`, which is 4 — and a reader coming from either
+      // language is entitled to assume theirs. Choosing one silently means
+      // somebody's arithmetic is wrong with nothing to show them why, so the
+      // parentheses are required. JavaScript made the same call.
+      if (this.at('**')) {
+        const unary = op.kind === 'not' ? 'not' : op.text;
+        this.fail(
+          'PA018',
+          'ambiguous `' + unary + '` before `**`',
+          'add parentheses to say which comes first',
+          [
+            { message: 'write `' + unary + '(… ** …)` to raise first, then apply `' + unary + '`' },
+            { message: 'write `(' + unary + ' …) ** …` to apply `' + unary + '` first, then raise' },
+            ...(op.kind === '-'
+              ? [{ message: 'Python reads `-2 ** 2` as the first, which is -4; Lumen will not guess' }]
+              : []),
+          ],
+        );
+      }
+
       return {
         kind: 'Unary',
         op: op.kind === 'not' ? 'not' : (op.kind as '-' | '!'),

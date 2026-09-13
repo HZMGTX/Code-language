@@ -1,0 +1,22 @@
+print([1, 2, 3, 4, 5].partition(fn(x) { x % 2 == 0 }))
+print([1, 2, 3, 4, 5].chunk(2))
+print([1, 2, 3].windows(2))
+print([1, 2].windows(5))
+print([1, 2, 3].flatMap(fn(x) { [x, x * 10] }))
+print([1, 2, 3].scan(fn(a, b) { a + b }, 0))
+print([].scan(fn(a, b) { a + b }, 0))
+print([1, 2, 3].intersperse(0))
+print([1, 2, 3].insert(1, 9))
+print([1, 2, 3].insert(-1, 9))
+print([1, 2, 3].removeAt(1))
+print([1, 2, 3].removeAt(9))
+print([1, 2].concat([3, 4]))
+print([[3, 1, 2].minimum(), [3, 1, 2].maximum()])
+print([[].minimum(), [].maximum()])
+print([1, 2, 3].groupBy(fn(x) { if x % 2 == 0 { "even" } else { "odd" } }))
+
+struct U { name: Str, team: Str }
+let users = [U { name: "ada", team: "a" }, U { name: "bob", team: "b" }]
+print(users.minBy(fn(u) { u.name }))
+print(users.maxBy(fn(u) { u.name }))
+print(users.groupBy(fn(u) { u.team }).keys())

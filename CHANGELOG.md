@@ -9,6 +9,25 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
 
 ### Language
 
+- **`**` raises to a power.** `2 ** 10` is `1024`. It binds tighter than `*` and
+  is the only right-associative binary operator, so `2 ** 3 ** 2` is
+  `2 ** (3 ** 2)` — 512, which is what the notation means in mathematics and in
+  every language that has the operator.
+
+  A unary operator directly before it is **refused**, not resolved: `-2 ** 2` is
+  `PA018`. Python reads it as `-(2 ** 2)`, which is -4; binding the unary first,
+  as Lumen's precedence table otherwise would, gives 4. Both readings have a
+  language behind them, so a reader arriving from either one is entitled to
+  assume theirs, and picking a side quietly means somebody's arithmetic is
+  wrong with nothing to point at. JavaScript made the same call. A unary
+  operator on the right is unambiguous and allowed: `2 ** -1` is `0.5`.
+
+  `0` to a negative power is `1 / 0` by another spelling and reports `RT018`
+  rather than `Infinity`. A negative number to a fractional power is `RT048`:
+  `(0 - 8) ** (1 / 3)` is -2 in arithmetic and `NaN` in IEEE 754, and Lumen has
+  only real numbers, so it says so instead of handing back a value that is not
+  equal to itself. `cbrt` in `std/math` is the function that answers it.
+
 - **`return`, `break` and `continue` are expressions.** They produce no value —
   they leave — so they can now appear wherever a value is expected, which is
   what lets a `match` arm bail out:
@@ -38,6 +57,15 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   piece of the `Value | Promise<Value>` change the roadmap costs out — the rest
   of which remains deliberately undone, because it is a continuation-passing
   rewrite that a bytecode VM would discard.
+
+### Static checks
+
+- **`main()` at the top level of a module that defines `main` is now `RS008`.**
+  A module that declares `fn main` has it called once the file has been read, so
+  writing the call as well ran the whole program twice. Nothing raised — the
+  output simply appeared twice — and the call at the bottom is exactly how it is
+  done in Python, which is where the habit comes from. Found by writing
+  `examples/schedule.lm` and wondering why its output was duplicated.
 
 ### Fixed
 
@@ -152,6 +180,58 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   `std/http` names the failing request instead of only "fetch failed".
 
 ### Added
+
+- **`std/set`, set operations over lists.** `of`, `has`, `add`, `remove`,
+  `union`, `intersection`, `difference`, `symmetricDifference`, `isSubset`,
+  `isSuperset`, `isDisjoint`, `equals`, `size`, `isSet`, `duplicates`.
+
+  There is no new `Set` value: a set here is an ordinary `List` with no
+  duplicates, so `map`, `filter`, `sorted`, `len` and `for … in` all still work
+  on one, `print` shows it the way you would write it, and `type()` answers
+  `List` rather than a polite fiction. Every function keeps the order of its
+  first argument, because a program that prints a set has to print it in some
+  order and "the order you built it in" is the only one that is stable across
+  runs.
+
+  The bulk operations index one side and walk the other, so they are linear
+  rather than quadratic — which is the reason the module exists, since the same
+  thing written with `filter` and `contains` is quadratic and quietly so. The
+  single-element operations still have to build that index to answer one
+  question, and the module says so rather than implying an `O(1)` it does not
+  have.
+
+  Membership follows `==` exactly, including the case that makes it hard:
+  `inspect` prints a map's entries in insertion order, so `{x: 1, y: 2}` and
+  `{y: 2, x: 1}` have different text despite being `==`, and using it as the key
+  would have put both in the same set. The key sorts them. That property — two
+  values share a key exactly when `==` calls them equal — is not observable from
+  Lumen, so it is tested directly over every ordered pair of a list of values
+  chosen to break it.
+
+- **More of `std/list`:** `groupBy`, `partition`, `chunk`, `windows`, `flatMap`,
+  `scan`, `intersperse`, `insert`, `removeAt`, `concat`, `minimum`, `maximum`,
+  `minBy`, `maxBy`. `groupBy` and `partition` are the two that were most missed:
+  both are awkward to write with `reduce` and both are one line to use.
+
+- **More of `std/map`:** `update`, `mapValues`, `filter`, `invert`, `pick`,
+  `omit`. `update` takes a fallback for a missing key, so a word counter is
+  `counts.update(word, fn(n) { n + 1 }, 0)` rather than a `get`, a `match` and a
+  `set`.
+
+- **More of `std/str`:** `trimStart`, `trimEnd`, `capitalize`, `title`, `count`,
+  `splitOnce`, `words`, `center`, `removePrefix`, `removeSuffix`. `splitOnce` is
+  the one `split` cannot do: `"key=a=b"` splits into three pieces and loses where
+  the key ended, where `splitOnce` gives `["key", "a=b"]`.
+
+- **More of `std/math`:** `asin`, `acos`, `atan`, `atan2`, `cbrt`, `hypot`,
+  `gcd`, `lcm`, `randomInt`, and the constants `TAU` and `INFINITY`. `INFINITY`
+  is not a value any literal can name — `1e400` is a lexer error — so a
+  comparison against "no limit" had no way to be written.
+
+- **`examples/schedule.lm`**, a topological sort written with set operations:
+  build order as waves of tasks that can run at once, with the two failures that
+  matter — a cycle, naming the tasks caught in it, and a dependency on a task
+  that does not exist.
 
 - **`lumen fmt`, a formatter that only touches indentation.** `lumen fmt [path]`
   rewrites leading whitespace in place; `lumen fmt --check [path]` writes

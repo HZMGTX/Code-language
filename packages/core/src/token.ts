@@ -42,6 +42,7 @@ export type TokenKind =
   | '+'
   | '-'
   | '*'
+  | '**'
   | '/'
   | '%'
   | '=='
@@ -153,6 +154,9 @@ export const KEYWORDS: ReadonlyMap<string, TokenKind> = new Map<string, TokenKin
  */
 export const OPERATORS: readonly TokenKind[] = [
   '==', '!=', '<=', '>=', '+=', '-=', '*=', '/=',
+  // `**` must precede `*=`: `**=` is not an operator, but `2 **= 3` would
+  // otherwise lex as `*` `*=` and report something about assignment.
+  '**',
   '&&', '||', '|>', '?.', '->', '=>', '..',
   '+', '-', '*', '/', '%', '<', '>', '=', '!', '?',
   '.', ',', ';', ':', '(', ')', '{', '}', '[', ']',

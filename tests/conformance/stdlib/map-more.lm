@@ -1,0 +1,11 @@
+var counts = {}
+for w in "a b a".split(" ") { counts = counts.update(w, fn(n) { n + 1 }, 0) }
+print(counts)
+print({ a: 1, b: 2 }.mapValues(fn(v) { v * 10 }))
+print({ a: 1, b: 2 }.filter(fn(k, v) { v > 1 }))
+print({ a: 1, b: 2 }.filter(fn(k, v) { k == "a" }))
+print({ a: "x", b: "y" }.invert())
+print({ a: "x", b: "x" }.invert())
+print({ a: 1, b: 2, c: 3 }.pick(["a", "c", "zz"]))
+print({ a: 1, b: 2, c: 3 }.omit(["b"]))
+print({}.update("k", fn(n) { n + 1 }, 0))

@@ -1086,7 +1086,7 @@ help("abc")
 Str: "abc"
 
 methods you can call on it:
-  chars, contains, endsWith, indexOf, isEmpty, len, lines, lower, padEnd, padStart, repeat, replace, reverse, slice, split, startsWith, toNum, trim, upper
+  capitalize, center, chars, contains, count, endsWith, indexOf, isEmpty, len, lines, lower, padEnd, padStart, removePrefix, removeSuffix, repeat, replace, reverse, slice, split, splitOnce, startsWith, title, toNum, trim, trimEnd, trimStart, upper, words
 ```
 
 `help` on a function explains that function:

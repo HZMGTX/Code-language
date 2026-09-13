@@ -1,0 +1,19 @@
+// `**` raises to a power. It is right-associative and binds tighter than `*`.
+print(2 ** 10)
+print(2 ** 3 ** 2)
+print((2 ** 3) ** 2)
+print(2 * 3 ** 2)
+print(3 ** 2 + 1)
+print(9 ** 0.5)
+print(2 ** -2)
+print(2 ** 0)
+print(0 ** 0)
+print([1, 2, 3].map(fn(x) { x ** 2 }))
+
+// A unary operator on the right is unambiguous, so it is allowed.
+let n = 2
+print(n ** -1)
+
+// Grouping the ambiguous case explicitly, both ways.
+print(-(2 ** 2))
+print((0 - 2) ** 2)

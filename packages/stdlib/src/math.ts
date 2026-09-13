@@ -1,7 +1,7 @@
 /** `std/math` — numeric helpers and constants. */
 
 import { num, str, type Value } from '@lumen-lang/core';
-import { arg, expectNum, fn, moduleOf } from './support.js';
+import { arg, expectInt, expectNum, fn, moduleOf } from './support.js';
 
 export function stdMath(): Map<string, Value> {
   const unary = (name: string, op: (n: number) => number) =>
@@ -18,6 +18,41 @@ export function stdMath(): Map<string, Value> {
     unary('cos', Math.cos),
     unary('tan', Math.tan),
     unary('exp', Math.exp),
+    unary('asin', Math.asin),
+    unary('acos', Math.acos),
+    unary('atan', Math.atan),
+    // Defined for every real number, unlike `sqrt`: every number has one real
+    // cube root, including the negative ones.
+    unary('cbrt', Math.cbrt),
+
+    /** The angle to the point (x, y), in radians, with the quadrant right. */
+    fn('atan2', ['y', 'x'], (a, c) =>
+      num(Math.atan2(expectNum(arg(a, 0), c, 'atan2(y)'), expectNum(arg(a, 1), c, 'atan2(x)'))),
+    ),
+
+    /** `sqrt(a*a + b*b)`, without the overflow that spelling can hit. */
+    fn('hypot', ['a', 'b'], (a, c) =>
+      num(Math.hypot(expectNum(arg(a, 0), c, 'hypot(a)'), expectNum(arg(a, 1), c, 'hypot(b)'))),
+    ),
+
+    /** The greatest common divisor of two whole numbers. Always positive. */
+    fn('gcd', ['a', 'b'], (a, c) => {
+      let x = Math.abs(expectInt(arg(a, 0), c, 'gcd(a)'));
+      let y = Math.abs(expectInt(arg(a, 1), c, 'gcd(b)'));
+      while (y !== 0) [x, y] = [y, x % y];
+      return num(x);
+    }),
+
+    /** The least common multiple. `lcm(n, 0)` is 0, which is the convention. */
+    fn('lcm', ['a', 'b'], (a, c) => {
+      const x = Math.abs(expectInt(arg(a, 0), c, 'lcm(a)'));
+      const y = Math.abs(expectInt(arg(a, 1), c, 'lcm(b)'));
+      if (x === 0 || y === 0) return num(0);
+      let g = x;
+      let h = y;
+      while (h !== 0) [g, h] = [h, g % h];
+      return num((x / g) * y);
+    }),
 
     fn('sqrt', ['n'], (a, c) => {
       const n = expectNum(arg(a, 0), c, 'sqrt(n)');
@@ -88,9 +123,26 @@ export function stdMath(): Map<string, Value> {
 
     /** Uniform in `[0, 1)`. Not cryptographically secure. */
     fn('random', [], () => num(Math.random())),
+
+    /**
+     * A whole number from `low` to `high`, both included.
+     *
+     * `floor(random() * n)` is the spelling everyone writes and half of them
+     * get wrong at one end, so it is worth having written once.
+     */
+    fn('randomInt', ['low', 'high'], (a, c) => {
+      const low = expectInt(arg(a, 0), c, 'randomInt(low)');
+      const high = expectInt(arg(a, 1), c, 'randomInt(high)');
+      if (low > high) return c.panic('randomInt low (' + low + ') is above high (' + high + ')');
+      return num(low + Math.floor(Math.random() * (high - low + 1)));
+    }),
   );
 
   exports.set('PI', num(Math.PI));
   exports.set('E', num(Math.E));
+  exports.set('TAU', num(Math.PI * 2));
+  // Not a literal anyone can write: `1e400` is a lexer error, and this is the
+  // only way to name the value that comparisons against "no limit" want.
+  exports.set('INFINITY', num(Infinity));
   return exports;
 }

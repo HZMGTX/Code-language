@@ -240,7 +240,7 @@ let double = fn(n) { n * 2 }
   never with a default value — `PA017` for either mistake.
 
 If a module declares `fn main()`, it is called after the module's top-level
-statements have run.
+statements have run — automatically, so writing `main()` as well is `RS008`.
 
 ### 3.3 Structs
 
@@ -302,11 +302,31 @@ Loosest to tightest:
 | 7 | `..` | left |
 | 8 | `+` `-` | left |
 | 9 | `*` `/` `%` | left |
-| 10 | unary `-` `!` `not` | right |
-| 11 | call `()`, index `[]`, member `.` `?.`, postfix `?` | left |
+| 10 | `**` | **right** |
+| 11 | unary `-` `!` `not` | right |
+| 12 | call `()`, index `[]`, member `.` `?.`, postfix `?` | left |
 
 `&&`/`and` and `||`/`or` are the same operator spelled two ways, and both
 short-circuit.
+
+`**` is the only right-associative binary operator, so `2 ** 3 ** 2` is
+`2 ** (3 ** 2)` — 512, not 64. Grouping to the left is written `(2 ** 3) ** 2`,
+which is also just `2 ** 6`.
+
+A unary operator directly before `**` is **rejected**, not resolved:
+
+```text
+-2 ** 2        PA018: ambiguous `-` before `**`
+-(2 ** 2)      -4
+(0 - 2) ** 2   4
+```
+
+Both readings have a language behind them — Python reads `-2 ** 2` as `-(2 ** 2)`,
+and binding the unary operator first, as the table above would, gives `4` — so a
+reader arriving from either one is entitled to assume theirs. Picking a side
+quietly means somebody's arithmetic is wrong with nothing to point at, so the
+parentheses are required. A unary operator on the *right* is unambiguous and
+allowed: `2 ** -1` is `0.5`.
 
 ### 4.2 Arithmetic
 
@@ -314,9 +334,17 @@ short-circuit.
 Mixing types is `RT016` — to build a string from mixed values, use
 interpolation.
 
-Division or remainder by zero is `RT018`, not `Infinity` or `NaN`. An operation
-whose result would be `NaN` — `Infinity - Infinity`, `Infinity * 0`,
-`Infinity / Infinity` — is `RT046`. Overflow to `Infinity` is not an error.
+`**` raises a `Num` to a `Num` power. `2 ** 10` is `1024`, `9 ** 0.5` is `3`,
+and `2 ** -2` is `0.25`.
+
+Division or remainder by zero is `RT018`, not `Infinity` or `NaN`. `0` to a
+negative power is the same error by another spelling — `0 ** -1` is `1 / 0` —
+and reports it as such. A negative number to a fractional power has no real
+answer, and is `RT048` rather than a `NaN`: `(0 - 8) ** (1 / 3)` is -2 in
+arithmetic but `NaN` in IEEE 754, and Lumen has only real numbers. An operation
+whose result would be `NaN` for any other reason — `Infinity - Infinity`,
+`Infinity * 0`, `Infinity / Infinity` — is `RT046`. Overflow to `Infinity` is not
+an error.
 
 ### 4.3 Comparison
 
@@ -534,6 +562,9 @@ embedding the interpreter without running these passes is not left unguarded.
 
 Top-level statements run in order; then `main`, if declared, is called.
 
+Because that call is automatic, writing `main()` yourself would run the program
+twice. It is `RS008` rather than a second run — see §7.5.
+
 ### 7.2 Scope
 
 Lexical, with closures capturing by reference — a closure over a `var` sees
@@ -570,6 +601,7 @@ program uses can be resolved without running it.
 | `RS005` | A binding introduced with `let` is assigned to |
 | `RS006` | `break` or `continue` appears outside a loop |
 | `RS007` | A struct field or enum variant is declared twice |
+| `RS008` | `main()` called at the top level of a module that defines `main` |
 
 The value is that a mistake is reported whether or not execution reaches it: a
 typo on a branch that never runs is still a typo.
@@ -593,6 +625,12 @@ valid program:
   "world"` is accepted, and mutual recursion needs no forward declaration.
   Statement-level code, which does run where it is written, is unchanged: using
   a name before its `let` is still `RS001`.
+
+- **`main()` written at the top level is `RS008`.** A module that defines `fn
+  main` has it called once the file has been read (§7.1), so writing the call as
+  well runs the whole program twice. Nothing raises — the output simply appears
+  twice — and putting the call at the bottom is exactly how it is done in
+  Python, so this is a mistake worth catching rather than leaving to be noticed.
 
 `_` may be re-declared freely; it is the conventional throwaway name. Shadowing
 an outer binding in an inner scope is not an error, and never will be.
@@ -630,6 +668,7 @@ different meaning. Selected codes:
 | `PA015` | Struct literal in a control-flow header |
 | `PA016` | Source nested more than 250 levels deep |
 | `PA017` | A `..` parameter that is not last, or that has a default |
+| `PA018` | A unary operator directly before `**`, where the grouping is ambiguous |
 | `PA014` | Unmatched `}` |
 | `RT005` | Name is not defined |
 | `RT010` | `?` applied to a non-Result/Option |
@@ -645,6 +684,7 @@ different meaning. Selected codes:
 | `RT027` | No such method on this type |
 | `RT045` | Call depth exceeded — recursion with no reachable base case |
 | `RT046` | An arithmetic result that would be `NaN` |
+| `RT048` | A negative number raised to a fractional power |
 | `RT047` | A destructuring `let` or assignment whose shape does not fit the value |
 
 The parser reports multiple errors per run, suppressing duplicates and bounding

@@ -1,0 +1,2 @@
+// 0 to a negative power is 1 / 0 by another spelling.
+print(0 ** -1)

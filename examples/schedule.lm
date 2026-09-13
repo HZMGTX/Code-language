@@ -1,0 +1,125 @@
+// Working out what order to do things in, when some of them wait on others.
+//
+//   lumen run examples/schedule.lm
+//
+// This is a topological sort, which is the answer to "build this before that"
+// in every build system, package manager and course catalogue ever written. The
+// algorithm is four lines; what makes it worth showing is that those four lines
+// are set operations, and that the interesting work is everything around them:
+//
+//   - a cycle has no valid order at all, and saying *which* tasks are in it is
+//     the difference between a usable error and "something went wrong"
+//   - a dependency on a task that does not exist is a typo, and worth catching
+//     before the sort rather than after
+//   - ties have to be broken somehow, or the same input gives a different
+//     answer each run
+//
+// Sets are lists here — see `std/set` — so everything in `std/list` still
+// works on them, which is why `sorted()` can break the ties on the next line.
+
+import { difference, intersection, union, of, isSubset, duplicates } from "std/set"
+
+struct Task { name: Str, needs: List }
+
+let tasks = [
+  Task { name: "deploy",    needs: ["test", "build", "sign"] },
+  Task { name: "build",     needs: ["install"] },
+  Task { name: "test",      needs: ["build"] },
+  Task { name: "sign",      needs: ["build"] },
+  Task { name: "install",   needs: [] },
+  Task { name: "changelog", needs: [] },
+]
+
+// ---------------------------------------------------------------- validation
+
+// Two tasks with one name means one of them is silently ignored later, which is
+// a much worse way to find out than this.
+fn repeatedNames(ts) {
+  duplicates(ts.map(fn(t) { t.name }))
+}
+
+// A dependency nobody declares is a typo, and it would otherwise look exactly
+// like a cycle: the task simply never becomes ready.
+fn danglingNeeds(ts) {
+  let known = of(ts.map(fn(t) { t.name }))
+  ts.flatMap(fn(t) { difference(t.needs, known).map(fn(n) { "${t.name} needs ${n}" }) })
+}
+
+// ---------------------------------------------------------------------- sort
+
+// Repeatedly take every task whose dependencies are all already done. Each pass
+// is one "wave" — everything in a wave can run at the same time, which is the
+// part a plain ordered list throws away.
+fn waves(ts) {
+  var remaining = ts
+  var done = []
+  var out = []
+
+  while remaining.len() > 0 {
+    // `sorted()` only to break ties: without it the answer depends on the order
+    // the tasks happened to be written in, and a build order that changes for
+    // no reason is a build order nobody trusts.
+    let ready = remaining.filter(fn(t) { isSubset(t.needs, done) })
+    if ready.len() == 0 {
+      return Err(remaining.map(fn(t) { t.name }).sorted())
+    }
+    let names = ready.map(fn(t) { t.name }).sorted()
+    out = out.push(names)
+    done = union(done, names)
+    remaining = remaining.filter(fn(t) { !names.contains(t.name) })
+  }
+  Ok(out)
+}
+
+fn main() {
+  let repeats = repeatedNames(tasks)
+  if repeats.len() > 0 {
+    print("These names are used more than once: ${repeats.join(", ")}")
+    return nil
+  }
+
+  let dangling = danglingNeeds(tasks)
+  if dangling.len() > 0 {
+    print("These dependencies name a task that does not exist:")
+    for problem in dangling.sorted() { print("  ${problem}") }
+    return nil
+  }
+
+  match waves(tasks) {
+    Ok(order) => {
+      print("Order, one wave per line — everything on a line can run at once:")
+      for pair in order.enumerate(1) {
+        print("  ${pair[0]}. ${pair[1].join(", ")}")
+      }
+      print("")
+      print("Flat order: ${order.flatten().join(" -> ")}")
+    },
+    Err(stuck) => {
+      print("These tasks wait on each other and can never start:")
+      for name in stuck { print("  ${name}") }
+    },
+  }
+
+  // The same machinery, on a graph that cannot be satisfied. A cycle is not an
+  // exotic case — one bad edit makes one — so an example that never shows the
+  // failure is only showing half the program.
+  print("")
+  print("And a deliberately circular one:")
+  let circular = [
+    Task { name: "a", needs: ["b"] },
+    Task { name: "b", needs: ["c"] },
+    Task { name: "c", needs: ["a"] },
+    Task { name: "fine", needs: [] },
+  ]
+  match waves(circular) {
+    Ok(order) => print("  unexpectedly fine: ${order}"),
+    Err(stuck) => print("  stuck: ${stuck.join(", ")}"),
+  }
+
+  // Set operations answer the questions people actually ask of a plan.
+  print("")
+  let beforeDeploy = of(["test", "build", "sign", "install"])
+  let beforeTest = of(["build", "install"])
+  print("Needed by deploy but not by test: ${difference(beforeDeploy, beforeTest).sorted().join(", ")}")
+  print("Needed by both: ${intersection(beforeDeploy, beforeTest).sorted().join(", ")}")
+}

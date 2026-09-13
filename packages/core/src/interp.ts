@@ -795,7 +795,7 @@ export class Interpreter {
       );
     }
 
-    if (op === '-' || op === '*' || op === '/' || op === '%') {
+    if (op === '-' || op === '*' || op === '/' || op === '%' || op === '**') {
       if (left.k !== 'num' || right.k !== 'num') {
         return this.fail(
           'RT017',
@@ -812,6 +812,33 @@ export class Interpreter {
           'the right operand is 0',
         );
       }
+      // `0 ** -1` is one over zero by another spelling, and gets the same
+      // answer as `1 / 0` rather than Infinity.
+      if (op === '**' && left.v === 0 && right.v < 0) {
+        return this.fail(
+          'RT018',
+          'division by zero',
+          span,
+          '0 raised to a negative power',
+          ['`0 ** ' + display(num(right.v)) + '` is 1 / 0, which has no value'],
+        );
+      }
+      // A fractional power of a negative number has no real answer: `(-8) **
+      // (1 / 3)` is NaN in IEEE 754 even though -2 cubed is -8. Saying so is
+      // more use than a NaN, and more use than the RT046 it would otherwise
+      // reach, which talks about infinities cancelling.
+      if (op === '**' && left.v < 0 && !Number.isInteger(right.v)) {
+        return this.fail(
+          'RT048',
+          'cannot raise a negative number to a fractional power',
+          span,
+          'no real number answers this',
+          [
+            display(num(left.v)) + ' ** ' + display(num(right.v)) + ' has no real value',
+            'a root of a negative number is imaginary; Lumen has only real numbers',
+          ],
+        );
+      }
       switch (op) {
         case '-':
           return this.checked(left.v - right.v, op, left.v, right.v, span);
@@ -819,6 +846,8 @@ export class Interpreter {
           return this.checked(left.v * right.v, op, left.v, right.v, span);
         case '/':
           return this.checked(left.v / right.v, op, left.v, right.v, span);
+        case '**':
+          return this.checked(left.v ** right.v, op, left.v, right.v, span);
         default:
           return this.checked(left.v % right.v, op, left.v, right.v, span);
       }

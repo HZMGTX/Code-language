@@ -19,6 +19,11 @@ import { makeHelp, methodTables, preludeExtras } from './prelude.js';
 
 export { toJson } from './json.js';
 export { setServeMode } from './web.js';
+// For the tests only: the property that two values share a key exactly when
+// `==` calls them equal is what makes `std/set` correct, and it cannot be
+// observed from Lumen — a set that got it wrong would just hold two of
+// something without complaining.
+export { setKeyForTesting } from './set.js';
 export { STD_MODULES, STD_MODULE_NAMES } from './modules.js';
 
 /** A `Host` backed by the Node process: stdout, stderr, env, and the clock. */

@@ -10,6 +10,7 @@
 import {
   NIL,
   bool,
+  display,
   inspect,
   list,
   num,
@@ -236,6 +237,184 @@ export function stdList(): Map<string, Value> {
       return list(out);
     }),
 
+    /**
+     * Split into a Map from key to the elements that produced it.
+     *
+     * The one people reach for most often and cannot easily write, because
+     * `reduce` over a Map means rebuilding the accumulator on every element.
+     */
+    fn('groupBy', ['xs', 'key'], async (a, c) => {
+      const xs = expectList(arg(a, 0), c, 'groupBy(xs)');
+      const key = expectFn(arg(a, 1), c, 'groupBy(key)');
+      const groups = new Map<string, Value>();
+      for (const item of xs.items) {
+        const k = await c.call(key, [item]);
+        // A Map's keys are text, so the key is displayed rather than inspected:
+        // grouping by `u.name` should key on `ada`, not on `"ada"`.
+        const name = k.k === 'str' ? k.v : display(k);
+        const bucket = groups.get(name);
+        if (bucket !== undefined && bucket.k === 'list') bucket.items.push(item);
+        else groups.set(name, list([item]));
+      }
+      return { k: 'map', entries: groups };
+    }),
+
+    /** `[matching, notMatching]` — one pass, both halves, original order kept. */
+    fn('partition', ['xs', 'predicate'], async (a, c) => {
+      const xs = expectList(arg(a, 0), c, 'partition(xs)');
+      const p = expectFn(arg(a, 1), c, 'partition(predicate)');
+      const yes: Value[] = [];
+      const no: Value[] = [];
+      for (const item of xs.items) (truthy(await c.call(p, [item])) ? yes : no).push(item);
+      return list([list(yes), list(no)]);
+    }),
+
+    /**
+     * Consecutive runs of `size`, the last one short if it does not divide.
+     *
+     * The short final chunk is deliberate: dropping it loses data, and padding
+     * it invents some.
+     */
+    fn('chunk', ['xs', 'size'], (a, c) => {
+      const xs = expectList(arg(a, 0), c, 'chunk(xs)');
+      const size = expectInt(arg(a, 1), c, 'chunk size');
+      if (size < 1) return c.panic('chunk size must be at least 1, got ' + size);
+      const out: Value[] = [];
+      for (let i = 0; i < xs.items.length; i += size) out.push(list(xs.items.slice(i, i + size)));
+      return list(out);
+    }),
+
+    /**
+     * Every overlapping run of `size`, so `windows([1,2,3], 2)` is
+     * `[[1,2],[2,3]]`. Empty when the list is shorter than the window, because
+     * there is no such run — not one short one.
+     */
+    fn('windows', ['xs', 'size'], (a, c) => {
+      const xs = expectList(arg(a, 0), c, 'windows(xs)');
+      const size = expectInt(arg(a, 1), c, 'windows size');
+      if (size < 1) return c.panic('windows size must be at least 1, got ' + size);
+      const out: Value[] = [];
+      for (let i = 0; i + size <= xs.items.length; i += 1) out.push(list(xs.items.slice(i, i + size)));
+      return list(out);
+    }),
+
+    /** Map, then flatten one level — for a function that returns a list each time. */
+    fn('flatMap', ['xs', 'f'], async (a, c) => {
+      const xs = expectList(arg(a, 0), c, 'flatMap(xs)');
+      const f = expectFn(arg(a, 1), c, 'flatMap(f)');
+      const out: Value[] = [];
+      for (const item of xs.items) {
+        const produced = await c.call(f, [item]);
+        if (produced.k === 'list') out.push(...produced.items);
+        else out.push(produced);
+      }
+      return list(out);
+    }),
+
+    /**
+     * Like `reduce`, but keeping every step rather than only the last.
+     *
+     * A running total, in other words: `scan([1,2,3], fn(a, b) { a + b }, 0)`
+     * gives `[0, 1, 3, 6]`. The initial value is the first element of the
+     * result, so the output is always one longer than the input.
+     */
+    fn('scan', ['xs', 'f', 'initial'], async (a, c) => {
+      const xs = expectList(arg(a, 0), c, 'scan(xs)');
+      const f = expectFn(arg(a, 1), c, 'scan(f)');
+      let acc = arg(a, 2);
+      const out: Value[] = [acc];
+      for (const item of xs.items) {
+        acc = await c.call(f, [acc, item]);
+        out.push(acc);
+      }
+      return list(out);
+    }),
+
+    /** A value between every pair of elements: `intersperse([1,2,3], 0)` is `[1,0,2,0,3]`. */
+    fn('intersperse', ['xs', 'value'], (a, c) => {
+      const xs = expectList(arg(a, 0), c, 'intersperse(xs)');
+      const sep = arg(a, 1);
+      const out: Value[] = [];
+      for (const [i, item] of xs.items.entries()) {
+        if (i > 0) out.push(sep);
+        out.push(item);
+      }
+      return list(out);
+    }),
+
+    /** A copy with `value` inserted at `index`, counting from the end if negative. */
+    fn('insert', ['xs', 'index', 'value'], (a, c) => {
+      const xs = expectList(arg(a, 0), c, 'insert(xs)');
+      const raw = expectInt(arg(a, 1), c, 'insert index');
+      const at = raw < 0 ? xs.items.length + raw : raw;
+      const copy = [...xs.items];
+      copy.splice(Math.max(0, Math.min(copy.length, at)), 0, arg(a, 2));
+      return list(copy);
+    }),
+
+    /** A copy without the element at `index`. An index past the end changes nothing. */
+    fn('removeAt', ['xs', 'index'], (a, c) => {
+      const xs = expectList(arg(a, 0), c, 'removeAt(xs)');
+      const raw = expectInt(arg(a, 1), c, 'removeAt index');
+      const at = raw < 0 ? xs.items.length + raw : raw;
+      if (at < 0 || at >= xs.items.length) return list([...xs.items]);
+      const copy = [...xs.items];
+      copy.splice(at, 1);
+      return list(copy);
+    }),
+
+    /** Two lists joined into a new one. Neither original is changed. */
+    fn('concat', ['xs', 'ys'], (a, c) =>
+      list([
+        ...expectList(arg(a, 0), c, 'concat(xs)').items,
+        ...expectList(arg(a, 1), c, 'concat(ys)').items,
+      ]),
+    ),
+
+    /** The smallest element. `None` when the list is empty, rather than an error. */
+    fn('minimum', ['xs'], (a, c) => {
+      const xs = expectList(arg(a, 0), c, 'minimum(xs)');
+      let best: Value | undefined;
+      for (const item of xs.items) {
+        if (best === undefined || orderOf(item, best, (m) => c.panic(m)) < 0) best = item;
+      }
+      return best === undefined ? None : Some(best);
+    }),
+
+    /** The largest element. `None` when the list is empty. */
+    fn('maximum', ['xs'], (a, c) => {
+      const xs = expectList(arg(a, 0), c, 'maximum(xs)');
+      let best: Value | undefined;
+      for (const item of xs.items) {
+        if (best === undefined || orderOf(item, best, (m) => c.panic(m)) > 0) best = item;
+      }
+      return best === undefined ? None : Some(best);
+    }),
+
+    /** The element whose key is smallest. `None` when the list is empty. */
+    fn('minBy', ['xs', 'key'], async (a, c) => {
+      const xs = expectList(arg(a, 0), c, 'minBy(xs)');
+      const key = expectFn(arg(a, 1), c, 'minBy(key)');
+      let best: { key: Value; item: Value } | undefined;
+      for (const item of xs.items) {
+        const k = await c.call(key, [item]);
+        if (best === undefined || orderOf(k, best.key, (m) => c.panic(m)) < 0) best = { key: k, item };
+      }
+      return best === undefined ? None : Some(best.item);
+    }),
+
+    /** The element whose key is largest. `None` when the list is empty. */
+    fn('maxBy', ['xs', 'key'], async (a, c) => {
+      const xs = expectList(arg(a, 0), c, 'maxBy(xs)');
+      const key = expectFn(arg(a, 1), c, 'maxBy(key)');
+      let best: { key: Value; item: Value } | undefined;
+      for (const item of xs.items) {
+        const k = await c.call(key, [item]);
+        if (best === undefined || orderOf(k, best.key, (m) => c.panic(m)) > 0) best = { key: k, item };
+      }
+      return best === undefined ? None : Some(best.item);
+    }),
+
     /** `[a, b]` becomes `[[0, a], [1, b]]`. */
     fn('enumerate', ['xs', { name: 'start', defaultValue: num(0) }], (a, c) => {
       const xs: ListValue = expectList(arg(a, 0), c, 'enumerate(xs)');
@@ -274,6 +453,20 @@ export function stdList(): Map<string, Value> {
       sum: 'Add up a list of numbers.',
       zip: 'Pair up two lists, stopping at the shorter one.',
       enumerate: 'Pair each element with its index: [[0, a], [1, b]].',
+      groupBy: 'Group the elements into a Map by the key each one maps to.',
+      partition: 'Split into [matching, notMatching] in one pass.',
+      chunk: 'Consecutive runs of n, the last short if it does not divide.',
+      windows: 'Every overlapping run of n elements.',
+      flatMap: 'Map a function that returns lists, then flatten one level.',
+      scan: 'Like reduce, but keeping every intermediate value.',
+      intersperse: 'Put a value between every pair of elements.',
+      insert: 'A copy with a value inserted at an index.',
+      removeAt: 'A copy without the element at an index.',
+      concat: 'Two lists joined into a new one.',
+      minimum: 'The smallest element. Some(x), or None if empty.',
+      maximum: 'The largest element. Some(x), or None if empty.',
+      minBy: 'The element with the smallest key. Some(x), or None if empty.',
+      maxBy: 'The element with the largest key. Some(x), or None if empty.',
     },
   );
 }

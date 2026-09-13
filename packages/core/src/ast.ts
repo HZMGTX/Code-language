@@ -106,7 +106,7 @@ export interface Unary extends NodeBase {
 }
 
 export type BinaryOp =
-  | '+' | '-' | '*' | '/' | '%'
+  | '+' | '-' | '*' | '/' | '%' | '**'
   | '==' | '!=' | '<' | '<=' | '>' | '>=';
 
 export interface Binary extends NodeBase {

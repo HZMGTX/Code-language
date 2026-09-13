@@ -460,6 +460,41 @@ What it buys: data is data. There is no question about where behaviour lives or
 what a subclass overrode, and `struct` + `enum` + `match` covers a large share of
 what class hierarchies are usually used for.
 
+### 8. `main()` calls itself
+
+Python needs the call at the bottom:
+
+```python
+def main():
+    print("hi")
+
+if __name__ == "__main__":
+    main()
+```
+
+Lumen does not. A file that defines `fn main` runs its top-level statements and
+then calls `main` for you:
+
+```lumen
+fn main() {
+  print("hi")
+}
+```
+
+Writing the call as well would run everything twice, so it is refused:
+
+```text
+main()
+
+RS008: `main()` is called for you, so this runs the program twice
+```
+
+Nothing about the double run would have raised — you would simply have seen the
+output twice and wondered — which is why it is worth a diagnostic rather than a
+footnote. There is no `__name__` and no import-versus-run distinction: a module
+you import runs its own top-level statements once, and only the file you named
+on the command line has its `main` called.
+
 ## Where Python is simply more convenient
 
 A comparison that only flatters its own side is not worth reading. These are

@@ -229,7 +229,42 @@ class Resolver {
     this.expectAll(module.stmts);
     this.hoist(module.stmts);
     for (const stmt of module.stmts) this.stmt(stmt);
+    this.checkMainCall(module);
     return this.diagnostics;
+  }
+
+  /**
+   * `main()` written at the top level of a module that defines `main`.
+   *
+   * A program that declares `fn main` has it called once the file has been
+   * read, so writing the call as well runs the whole program twice. Nothing
+   * raises: the output simply appears twice, which is a confusing way to spend
+   * an afternoon, and an easy habit to bring from Python — where the call at
+   * the bottom is exactly how you do it.
+   */
+  private checkMainCall(module: Module): void {
+    const declaresMain = module.stmts.some((stmt) => {
+      const decl = stmt.kind === 'ExportDecl' ? stmt.declaration : stmt;
+      return decl.kind === 'FnDecl' && decl.name === 'main';
+    });
+    if (!declaresMain) return;
+
+    for (const stmt of module.stmts) {
+      if (stmt.kind !== 'ExprStmt') continue;
+      const call = stmt.expr;
+      if (call.kind !== 'CallExpr') continue;
+      if (call.callee.kind !== 'Ident' || call.callee.name !== 'main') continue;
+      this.report(
+        'RS008',
+        '`main()` is called for you, so this runs the program twice',
+        stmt.span,
+        'already called',
+        [
+          'a module that defines `fn main` calls it once the file has been read',
+          'delete this line; everything it does still happens',
+        ],
+      );
+    }
   }
 
   /**

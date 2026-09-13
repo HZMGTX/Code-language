@@ -6,11 +6,12 @@
  * want the compiler-of-the-future to make you handle.
  */
 
-import { NIL, bool, list, map, num, str, type Value } from '@lumen-lang/core';
+import { NIL, bool, display, list, map, num, str, truthy, type Value } from '@lumen-lang/core';
 import {
   None,
   Some,
   arg,
+  expectFn,
   expectList,
   expectMap,
   expectStr,
@@ -85,6 +86,82 @@ export function stdMap(): Map<string, Value> {
 
     fn('isEmpty', ['m'], (a, c) => bool(expectMap(arg(a, 0), c, 'isEmpty(m)').entries.size === 0)),
 
+    /**
+     * A copy with one key's value replaced by `f(oldValue)`.
+     *
+     * A missing key gets `fallback`, which defaults to nil — so a counter is
+     * `counts.update(word, fn(n) { n + 1 }, 0)` rather than a `get`, a `match`
+     * and a `set`.
+     */
+    fn('update', ['m', 'key', 'f', { name: 'fallback', defaultValue: NIL }], async (a, c) => {
+      const m = expectMap(arg(a, 0), c, 'update(m)');
+      const key = expectStr(arg(a, 1), c, 'update(key)');
+      const f = expectFn(arg(a, 2), c, 'update(f)');
+      const current = m.entries.get(key) ?? arg(a, 3);
+      const out = new Map(m.entries);
+      out.set(key, await c.call(f, [current]));
+      return map(out);
+    }),
+
+    /** A copy with every value passed through a function. Keys are untouched. */
+    fn('mapValues', ['m', 'f'], async (a, c) => {
+      const m = expectMap(arg(a, 0), c, 'mapValues(m)');
+      const f = expectFn(arg(a, 1), c, 'mapValues(f)');
+      const out = new Map<string, Value>();
+      for (const [key, value] of m.entries) out.set(key, await c.call(f, [value]));
+      return map(out);
+    }),
+
+    /** A copy holding only the entries a predicate says true to, given key and value. */
+    fn('filter', ['m', 'predicate'], async (a, c) => {
+      const m = expectMap(arg(a, 0), c, 'filter(m)');
+      const p = expectFn(arg(a, 1), c, 'filter(predicate)');
+      const out = new Map<string, Value>();
+      for (const [key, value] of m.entries) {
+        if (truthy(await c.call(p, [str(key), value]))) out.set(key, value);
+      }
+      return map(out);
+    }),
+
+    /**
+     * Keys and values swapped.
+     *
+     * Values that are not Strs are displayed to make a key, and two entries
+     * sharing a value collapse — the last one wins, which is the only answer
+     * that keeps the result a map.
+     */
+    fn('invert', ['m'], (a, c) => {
+      const m = expectMap(arg(a, 0), c, 'invert(m)');
+      const out = new Map<string, Value>();
+      for (const [key, value] of m.entries) {
+        out.set(value.k === 'str' ? value.v : display(value), str(key));
+      }
+      return map(out);
+    }),
+
+    /** A copy holding only the named keys. Names that are absent are skipped. */
+    fn('pick', ['m', 'keys'], (a, c) => {
+      const m = expectMap(arg(a, 0), c, 'pick(m)');
+      const keys = expectList(arg(a, 1), c, 'pick(keys)');
+      const out = new Map<string, Value>();
+      for (const key of keys.items) {
+        const name = expectStr(key, c, 'pick key');
+        const found = m.entries.get(name);
+        if (found !== undefined) out.set(name, found);
+      }
+      return map(out);
+    }),
+
+    /** A copy without the named keys. */
+    fn('omit', ['m', 'keys'], (a, c) => {
+      const m = expectMap(arg(a, 0), c, 'omit(m)');
+      const keys = expectList(arg(a, 1), c, 'omit(keys)');
+      const drop = new Set(keys.items.map((key) => expectStr(key, c, 'omit key')));
+      const out = new Map<string, Value>();
+      for (const [key, value] of m.entries) if (!drop.has(key)) out.set(key, value);
+      return map(out);
+    }),
+
     /** Build a map from `[[key, value], ...]`. */
     fn('fromEntries', ['pairs'], (a, c) => {
       const pairs = expectList(arg(a, 0), c, 'fromEntries(pairs)');
@@ -112,6 +189,12 @@ export function stdMap(): Map<string, Value> {
       len: 'How many entries the map has.',
       isEmpty: 'True if the map has no entries.',
       fromEntries: 'Build a map from [[key, value], ...].',
+      update: 'A copy with one key passed through a function, with a fallback if absent.',
+      mapValues: 'A copy with every value passed through a function.',
+      filter: 'A copy holding only the entries a predicate accepts.',
+      invert: 'Keys and values swapped; the last of a repeated value wins.',
+      pick: 'A copy holding only the named keys.',
+      omit: 'A copy without the named keys.',
     },
   );
 }
