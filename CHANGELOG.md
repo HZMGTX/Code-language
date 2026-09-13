@@ -146,9 +146,12 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   and padded wrong. All three are fixed. A block that cannot run on its own is
   skipped with `<!-- no-run: reason -->`, and the reason is required, so
   skipping is a decision somebody made rather than something that quietly
-  happened. `docs/tour.md` and `docs/from-python.md` state their results in
-  trailing comments instead and are still unverified — the script says so
-  rather than letting its count imply otherwise.
+  happened. `docs/tour.md` and `docs/from-python.md` use a second convention,
+  the result in a trailing comment, and 27 of those are checked as well —
+  everything before an em dash is the claim. Where a block's prints do not
+  produce one output line each the mapping is a guess, so those are counted as
+  unchecked rather than guessed at, and the summary says how many, which keeps
+  the number it reports honest about what was actually verified.
 - **`docs/learn.md` caught up with the language.** Destructuring, swapping,
   `..` parameters, `getOr` and `fixed` are all things a beginner now reaches
   for and none of them were in the guide that teaches beginners.

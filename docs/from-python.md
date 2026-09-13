@@ -223,7 +223,7 @@ fn label(t) { (if t.done { "[x] " } else { "[ ] " }) + t.title }
 
 let t = Task { title: "write docs", done: false }
 print(label(t))         // [ ] write docs
-print(t |> label())     // the same call, written left to right
+print(t |> label())     // [ ] write docs   — the same call, left to right
 ```
 
 Every field must be supplied — there are no defaults on a struct, and no

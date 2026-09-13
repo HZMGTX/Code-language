@@ -61,8 +61,21 @@ anyone editing it will see:
 <!-- no-run: waits for a line to be typed -->
 ```
 
-The reason is required. `docs/tour.md` and `docs/from-python.md` state their
-results in trailing comments instead, and those are still unverified.
+The reason is required.
+
+`docs/tour.md` and `docs/from-python.md` use a second convention — the result
+in a trailing comment — and those are checked too:
+
+```lumen
+print(greet("Ada"))                          // Hello, Ada!
+print(greet(greeting: "Hi", name: "Bob"))    // Hi, Bob!   — arguments by name
+```
+
+Everything before an em dash is the claim; anything after it is a remark. This
+only works where a block's `print` lines produce one output line each, so a
+block containing a loop or a multi-line string is counted as unchecked rather
+than guessed at — and the summary says how many those are, so the number it
+reports is what was really verified.
 
 ## Layout
 

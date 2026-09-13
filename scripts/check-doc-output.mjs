@@ -25,11 +25,17 @@
  * The reason is required, so skipping is a decision somebody made rather than
  * a thing that quietly happened.
  *
- * What this does not cover: `docs/tour.md` and `docs/from-python.md` state
- * their results in trailing comments — `print(x)  // 42` — rather than in an
- * output block, and those claims are not checked by anything. Verifying them
- * needs a different convention and is worth doing; saying so here is better
- * than letting the count above imply the documentation is all verified.
+ * `docs/tour.md` and `docs/from-python.md` use a second convention — the
+ * result in a trailing comment, `print(x)  // 42` — and those are checked too,
+ * where a block's prints line up one for one with the lines it produces. A
+ * comment may carry a remark after the value, separated by an em dash:
+ *
+ *     print(greet(greeting: "Hi", name: "Bob"))   // Hi, Bob!   — by name
+ *
+ * What is still not covered: a block whose output does not line up with its
+ * prints, because a loop or a multi-line string makes the mapping ambiguous.
+ * The summary counts those, so the number it prints is what was really
+ * checked rather than what was looked at.
  */
 
 import { spawnSync } from 'node:child_process';
@@ -62,6 +68,8 @@ function normalize(text) {
 const workdir = mkdtempSync(path.join(os.tmpdir(), 'lumen-docs-'));
 let checked = 0;
 let skipped = 0;
+let inlineChecked = 0;
+let ambiguous = 0;
 const failures = [];
 
 try {
@@ -100,9 +108,78 @@ try {
         failures.push({ file, line, code: code.trimEnd(), expected: normalize(expected), got });
       }
     }
+
+    checkInlineResults(file, text);
   }
 } finally {
   rmSync(workdir, { recursive: true, force: true });
+}
+
+/**
+ * The second convention: `print(x)   // 42`.
+ *
+ * Only checked where the block's `print` lines and its output lines match one
+ * for one — a loop or a multi-line string makes which line came from which
+ * call a guess, and a guess would produce failures nobody can act on.
+ */
+function checkInlineResults(file, text) {
+  const blocks = /```lumen\n([\s\S]*?)```/g;
+  let match;
+  while ((match = blocks.exec(text)) !== null) {
+    const code = match[1];
+    const startLine = text.slice(0, match.index).split('\n').length;
+    const lines = code.split('\n');
+
+    const printLines = [];
+    lines.forEach((l, i) => {
+      if (/^\s*print\(/.test(l)) printLines.push(i);
+    });
+    const annotated = [];
+    lines.forEach((l, i) => {
+      const m = /^\s*print\(.*\)\s+\/\/ (.+)$/.exec(l);
+      // Everything before an em dash is the claim; the rest is a remark.
+      if (m !== null) annotated.push({ at: i, want: m[1].split('—')[0].trim() });
+    });
+    if (annotated.length === 0) continue;
+
+    const script = path.join(workdir, 'inline.lm');
+    writeFileSync(script, code, 'utf8');
+    const run = spawnSync(process.execPath, [CLI, 'run', script], {
+      encoding: 'utf8',
+      env: { ...process.env, NO_COLOR: '1', LUMEN_AI_PROVIDER: 'mock' },
+      timeout: 30000,
+    });
+    if (run.status !== 0) {
+      failures.push({
+        file,
+        line: startLine,
+        code: code.trimEnd(),
+        expected: '(it to run at all)',
+        got: (run.stdout ?? '') + (run.stderr ?? ''),
+      });
+      continue;
+    }
+
+    const out = (run.stdout ?? '').replace(/\n$/, '').split('\n');
+    if (out.length !== printLines.length) {
+      ambiguous += 1;
+      continue;
+    }
+    inlineChecked += annotated.length;
+
+    for (const a of annotated) {
+      const got = out[printLines.indexOf(a.at)];
+      if (got !== a.want) {
+        failures.push({
+          file,
+          line: startLine + a.at,
+          code: lines[a.at].trim(),
+          expected: a.want,
+          got: got ?? '(nothing)',
+        });
+      }
+    }
+  }
 }
 
 for (const f of failures) {
@@ -113,8 +190,9 @@ for (const f of failures) {
 }
 
 const summary =
-  checked + ' documented examples run, ' + (checked - failures.length) + ' correct' +
-  (skipped > 0 ? ', ' + skipped + ' skipped' : '') +
-  (failures.length > 0 ? ', ' + failures.length + ' WRONG' : '');
+  checked + ' documented examples run and ' + inlineChecked + ' inline results checked, ' +
+  (failures.length === 0 ? 'all correct' : failures.length + ' WRONG') +
+  (skipped > 0 ? '; ' + skipped + ' skipped' : '') +
+  (ambiguous > 0 ? '; ' + ambiguous + ' blocks whose output does not line up with their prints' : '');
 process.stdout.write('\n' + summary + '\n');
 process.exit(failures.length === 0 ? 0 : 1);

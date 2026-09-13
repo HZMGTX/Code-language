@@ -61,7 +61,7 @@ fn greet(name, greeting = "Hello") { "${greeting}, ${name}!" }
 
 print(greet("Ada"))                 // Hello, Ada!
 print(greet("Ada", "Yo"))           // Yo, Ada!
-print(greet(greeting: "Hi", name: "Bob"))   // arguments by name
+print(greet(greeting: "Hi", name: "Bob"))   // Hi, Bob!   — arguments by name
 ```
 
 Declarations are hoisted, so order does not matter and mutual recursion just
