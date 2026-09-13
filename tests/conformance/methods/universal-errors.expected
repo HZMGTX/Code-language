@@ -1,0 +1,7 @@
+error[RT027]: List has no method `upper`
+ --> universal-errors.lm:3:7
+  |
+3 | print([1, 2].upper())
+  |       ^^^^^^^^^^^^ not available here
+  |
+  = note: available on List: all, any, at, chunk, clone, concat, contains, count, drop, enumerate, filter, find, first, flatMap, flatten, groupBy, indexOf, insert, inspect, intersperse, isEmpty, isNil, join, last, len, map, maxBy, maximum, minBy, minimum, partition, pop, push, reduce, removeAt, reverse, reversed, scan, slice, sort, sortBy, sorted, str, sum, take, type, unique, windows, zip

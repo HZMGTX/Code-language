@@ -3,6 +3,8 @@
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
 
+import { editDistance, suggest } from '@lumen-lang/core';
+
 import { runSource } from '../support/harness.js';
 
 /** Run a snippet and return its trimmed output. */
@@ -183,5 +185,50 @@ describe('modules', () => {
   it('reports a missing export with a suggestion', async () => {
     const result = await runSource('import { fliter } from "std/list"');
     assert.match(result.output, /did you mean `filter`/);
+  });
+});
+
+/**
+ * The suggestion threshold.
+ *
+ * `did you mean X?` is only worth printing when it is probably right: the reader
+ * trusts it because the compiler said it, and a confident wrong guess sends them
+ * after the wrong thing. These pin both halves of the rule — that real typos are
+ * still caught, and that a different word is not offered as one.
+ */
+describe('suggest', () => {
+  it('catches a transposition, which is the commonest typo', () => {
+    // Plain Levenshtein charges two for a swap, which is why `editDistance`
+    // counts it as one: at two, the threshold has to be loose enough to let
+    // unrelated short words through.
+    assert.equal(editDistance('cuont', 'count'), 1);
+    assert.equal(editDistance('tets', 'test'), 1);
+    assert.equal(suggest('cuont', ['count', 'contains']), 'count');
+    assert.equal(suggest('tets', ['test', 'text']), 'test');
+  });
+
+  it('catches an ordinary one-letter slip', () => {
+    assert.equal(suggest('lenght', ['length', 'len']), 'length');
+    assert.equal(suggest('fliter', ['filter', 'find']), 'filter');
+    assert.equal(suggest('caplitalize', ['capitalize', 'center']), 'capitalize');
+    assert.equal(suggest('padstart', ['padStart', 'padEnd']), 'padStart');
+  });
+
+  it('offers nothing when the name is a different word, not a typo', () => {
+    // `nope` is two of its four letters away from `type`. With a flat allowance
+    // of two it was offered as the suggestion for it, and for `pop`.
+    assert.equal(suggest('nope', ['type', 'str', 'upper', 'trim']), undefined);
+    assert.equal(suggest('nope', ['pop', 'push']), undefined);
+    assert.equal(suggest('oops', ['ok', 'err']), undefined);
+  });
+
+  it('prefers the closer of two candidates', () => {
+    assert.equal(suggest('revese', ['reversed', 'reverse']), 'reverse');
+  });
+
+  it('allows a longer name to drift further, but never by more than three', () => {
+    assert.equal(suggest('symetricDiference', ['symmetricDifference']), 'symmetricDifference');
+    // Nine characters different is not a typo however long the name is.
+    assert.equal(suggest('completelyunrelated', ['symmetricDifference']), undefined);
   });
 });

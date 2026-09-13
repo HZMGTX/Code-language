@@ -15,7 +15,8 @@ import * as readline from 'node:readline';
 import { Interpreter, type Host, type ModuleResolver, type ResolvedModule, type Value } from '@lumen-lang/core';
 
 import { STD_MODULES, STD_MODULE_NAMES } from './modules.js';
-import { makeHelp, methodTables, preludeExtras } from './prelude.js';
+import { stdCore } from './core.js';
+import { makeHelp, methodTables, preludeExtras, universalMethods } from './prelude.js';
 
 export { toJson } from './json.js';
 export { setServeMode } from './web.js';
@@ -167,6 +168,17 @@ export function createInterpreter(
   for (const [name, value] of preludeExtras()) {
     interpreter.globals.declare(name, value, false);
   }
+
+  // Then the few that belong to every value. They come from two places — `str`
+  // and `type` are core builtins in the globals, while `inspect`, `clone` and
+  // `isNil` are `std/core` exports the prelude deliberately leaves out of scope
+  // — so both are searched. Registered after the type tables, but a
+  // type-specific method of the same name still wins at lookup, so this cannot
+  // change what an existing call means.
+  const core = stdCore();
+  interpreter.registerUniversalMethods(
+    universalMethods((name) => interpreter.globals.lookup(name)?.value ?? core.get(name)),
+  );
 
   const help = makeHelp(
     (type) => interpreter.methodNames(type),

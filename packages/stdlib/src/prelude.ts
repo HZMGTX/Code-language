@@ -289,6 +289,41 @@ const NUM_METHODS = [
   'sign', 'sin', 'sqrt', 'tan', 'trunc',
 ];
 
+/**
+ * The functions that are methods on every value.
+ *
+ * Their subject is any value at all, so there is no type to attach them to and
+ * no reason to leave them off one. `"${n}"` covers most of what `str` is for,
+ * but a chain like `n.str().padStart(3)` has nowhere to put the interpolation,
+ * and `p.str()` on a struct had no spelling at all.
+ *
+ * Deliberately short. This is not a general fallback to whatever is in scope —
+ * see `registerUniversalMethods` for why that would be a worse error message
+ * rather than a better language.
+ */
+export const UNIVERSAL_METHODS: readonly string[] = ['str', 'inspect', 'type', 'clone', 'isNil'];
+
+/**
+ * The universal methods, resolved through `lookup`.
+ *
+ * `lookup` rather than a fixed import because these do not all live in one
+ * place: `str` and `type` are core builtins installed straight into the globals,
+ * while `inspect`, `clone` and `isNil` are exports of `std/core` that the prelude
+ * deliberately does not put in scope. Taking a lookup lets the caller search
+ * both, and means a name that moves between the two homes keeps working.
+ *
+ * A name that resolves to nothing is skipped rather than faked, so this cannot
+ * be the thing that breaks if one is ever removed.
+ */
+export function universalMethods(lookup: (name: string) => Value | undefined): Map<string, Value> {
+  const out = new Map<string, Value>();
+  for (const name of UNIVERSAL_METHODS) {
+    const found = lookup(name);
+    if (found !== undefined && (found.k === 'native' || found.k === 'fn')) out.set(name, found);
+  }
+  return out;
+}
+
 export function methodTables(): Record<string, Map<string, Value>> {
   const listMethods = stdList();
   const sort = listMethods.get('sort');

@@ -132,6 +132,8 @@ export class Interpreter {
    * language itself knowing anything about `std/str`.
    */
   private readonly methodTables = new Map<string, ReadonlyMap<string, Value>>();
+  /** Methods on every value: the ones whose subject is genuinely any value. */
+  private universalMethods: ReadonlyMap<string, Value> = new Map();
 
   constructor(options: InterpreterOptions) {
     this.host = options.host;
@@ -155,14 +157,37 @@ export class Interpreter {
     this.methodTables.set(typeName, new Map([...existing, ...functions]));
   }
 
+  /**
+   * Make `functions` callable as methods on **every** value.
+   *
+   * For the handful whose subject is genuinely any value — `str`, `inspect`,
+   * `type` — and not a general fallback to whatever is in scope. That
+   * distinction is the point: falling back to every global would make
+   * `[1, 2].upper()` call `upper` with a List and fail somewhere inside
+   * `std/str`, where today it is `RT027: List has no method \`upper\`` with a
+   * list of the ones it does have. Trading a good error for a worse one is not
+   * worth the convenience.
+   *
+   * A type-specific method of the same name always wins, so registering one of
+   * these can never change what an existing call means.
+   */
+  registerUniversalMethods(functions: ReadonlyMap<string, Value>): void {
+    this.universalMethods = new Map([...this.universalMethods, ...functions]);
+  }
+
   /** The method names available on a type, for error messages and `help()`. */
   methodNames(typeName: string): string[] {
-    return [...(this.methodTables.get(typeName)?.keys() ?? [])];
+    return [
+      ...new Set([
+        ...(this.methodTables.get(typeName)?.keys() ?? []),
+        ...this.universalMethods.keys(),
+      ]),
+    ];
   }
 
   /** Look up `name` as a method on `receiver`, already bound to it. */
   private lookupMethod(typeOf: string, name: string, receiver: Value): Value | undefined {
-    const found = this.methodTables.get(typeOf)?.get(name);
+    const found = this.methodTables.get(typeOf)?.get(name) ?? this.universalMethods.get(name);
     if (found === undefined) return undefined;
     return found.k === 'native' ? bindReceiver(found, receiver) : found;
   }

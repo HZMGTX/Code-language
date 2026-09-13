@@ -434,23 +434,42 @@ export interface Host {
 // ------------------------------------------------------------------ helpers
 
 /**
- * Levenshtein distance, capped for speed. Used only to suggest a name the user
- * probably meant.
+ * Edit distance, counting a swap of two neighbours as one edit.
+ *
+ * Plain Levenshtein charges two for a transposition, because it has to
+ * substitute both letters. But transposing is the commonest typo there is, and
+ * charging it double forces the suggestion threshold up to two — which on a
+ * four-letter word means half of it may differ, and `nope` starts "meaning"
+ * `type`. Counting the swap as one (Damerau-Levenshtein, the restricted form)
+ * separates the two cases properly: `cuont` is one edit from `count`, and `nope`
+ * is still two from `type`.
+ *
+ * Used only to suggest a name the reader probably meant.
  */
 export function editDistance(a: string, b: string): number {
-  const prev: number[] = Array.from({ length: b.length + 1 }, (_, i) => i);
-  const curr: number[] = new Array<number>(b.length + 1).fill(0);
+  // Three rows rather than two: a transposition needs the row before the
+  // previous one, which is what distinguishes this from Levenshtein.
+  let twoBack: number[] = new Array<number>(b.length + 1).fill(0);
+  let prev: number[] = Array.from({ length: b.length + 1 }, (_, i) => i);
+  let curr: number[] = new Array<number>(b.length + 1).fill(0);
+
   for (let i = 1; i <= a.length; i += 1) {
     curr[0] = i;
     for (let j = 1; j <= b.length; j += 1) {
       const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      curr[j] = Math.min(
+      let best = Math.min(
         (curr[j - 1] ?? 0) + 1,
         (prev[j] ?? 0) + 1,
         (prev[j - 1] ?? 0) + cost,
       );
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        best = Math.min(best, (twoBack[j - 2] ?? 0) + 1);
+      }
+      curr[j] = best;
     }
-    for (let j = 0; j <= b.length; j += 1) prev[j] = curr[j] ?? 0;
+    twoBack = prev;
+    prev = curr;
+    curr = new Array<number>(b.length + 1).fill(0);
   }
   return prev[b.length] ?? 0;
 }
@@ -458,16 +477,26 @@ export function editDistance(a: string, b: string): number {
 /**
  * The closest candidate to `name`, if any is close enough to be worth showing.
  *
- * The threshold is deliberately tight: at least 2, so an ordinary typo or
- * transposition is still caught (`cuont` finds `count`), but never more than 3,
- * so a long name cannot drift far enough to match something unrelated. A
- * confident wrong suggestion costs more than no suggestion — it sends the
- * reader after the wrong thing.
+ * A confident wrong suggestion costs more than no suggestion: it sends the
+ * reader after the wrong thing, and they trust it because the compiler said it.
+ * So the allowance scales with the length of the name and never exceeds three —
+ * roughly a third of it may differ, and no more:
+ *
+ *     up to 5 characters   one edit
+ *     6 to 8               two
+ *     9 or more            three
+ *
+ * Short names are where this matters. With a flat allowance of two, `nope`
+ * "meant" `type` — two of its four letters, which is a different word rather
+ * than a typo. One edit is enough for a short name precisely because
+ * `editDistance` counts a transposition as one, so `cuont` still finds `count`
+ * and `tets` still finds `test`. A one-edit match on a short name is kept:
+ * `abc` really might be a slip for `abs`.
  */
 export function suggest(name: string, candidates: readonly string[]): string | undefined {
   let best: string | undefined;
   let bestScore = Number.POSITIVE_INFINITY;
-  const limit = Math.max(2, Math.min(3, Math.floor(name.length / 3)));
+  const limit = name.length <= 5 ? 1 : Math.min(3, Math.floor(name.length / 3));
   for (const candidate of candidates) {
     const score = editDistance(name.toLowerCase(), candidate.toLowerCase());
     if (score < bestScore && score <= limit) {

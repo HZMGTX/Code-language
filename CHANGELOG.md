@@ -69,6 +69,19 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
 
 ### Fixed
 
+- **`did you mean …?` no longer offers a different word as a typo.** The
+  threshold allowed two edits on any name, so `nope` "meant" `type` — two of its
+  four letters — and `import { nope }` "meant" `pop`. It now scales with length:
+  one edit up to five characters, two up to eight, three beyond, so roughly a
+  third of a name may differ and no more.
+
+  Tightening it alone would have lost the real typos, because plain Levenshtein
+  charges two for a transposition and transposing is the commonest slip there is.
+  So `editDistance` now counts a swap of neighbours as one edit
+  (Damerau-Levenshtein, restricted). `cuont` still finds `count` and `tets` still
+  finds `test`, while `nope` finds nothing and gets the list of what does exist
+  instead — which is the more useful answer for a name that was never a typo.
+
 - **`args()` no longer depends on how the program was started.** It was
   `process.argv.slice(3)`, a fixed offset that is one word further along for
   `lumen run app.lm a b` than for `lumen app.lm a b` — so the first spelling
@@ -214,6 +227,27 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   `std/http` names the failing request instead of only "fetch failed".
 
 ### Added
+
+- **Five methods on every value: `str`, `inspect`, `type`, `clone`, `isNil`.**
+  Their subject is genuinely any value, so there was no type to attach them to
+  and no reason to leave them off one. `42.str()` was `RT027`, and
+  `n.str().padStart(3)` — a chain that has somewhere to put the conversion, which
+  `"${n}"` does not — could not be written at all. `p.str()` on a struct had no
+  spelling.
+
+  Not a general fallback to whatever is in scope, and the difference is about
+  error messages. Under a general fallback `[1, 2].upper()` would call `upper`
+  with a `List` and fail somewhere inside `std/str`; as it is, it stays
+  `RT027: List has no method \`upper\`` with the ones it does have listed. A
+  per-type method of the same name still wins, so nothing existing changed
+  meaning.
+
+- **`examples/logs.lm`**, reading a log file and reporting on it — the job
+  everybody has. It does the three parts people skip: it counts and shows the
+  lines that do not parse (real logs contain half-written lines and wrapped stack
+  traces), it prints the hours with **nothing** in them (the most interesting hour
+  in an outage is exactly the row a `groupBy` drops), and it orders everything by
+  something the data decides so two runs over one file agree.
 
 - **`std/time`.** `now()` gave milliseconds and there was no way to turn one into
   a date, which left every log line, filename and guestbook entry stuck with a

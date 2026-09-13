@@ -211,7 +211,7 @@ wants.
 
 ## Examples
 
-Nineteen runnable programs, each executed by CI on every change. `lumen run
+Twenty runnable programs, each executed by CI on every change. `lumen run
 examples/<name>.lm` runs any of them.
 
 | File | What it shows |
@@ -221,6 +221,7 @@ examples/<name>.lm` runs any of them.
 | `tour.lm` | Structs, enums, `match`, pipelines — the language in one file |
 | `fizzbuzz.lm` | `match` with guards, read as a table of rules |
 | `schedule.lm` | A topological sort written with set operations |
+| `logs.lm` | Parsing a log file: the lines that fail, and the hours with nothing in them |
 | `wordcount.lm` | `Str` and `Map` methods carrying a whole program |
 | `stats.lm` | Mean, median, variance, and a bar chart drawn in text |
 | `caesar.lm` | Strings as lists of characters; breaking the cipher by score |

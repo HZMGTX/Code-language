@@ -1,0 +1,20 @@
+42
+3.5
+true
+nil
+a
+[1, 2]
+{a: 1}
+P {x: 1, y: 2}
+C.Red
+C.Custom(1)
+00042
+["Num", "Str", "List", "Nil"]
+["P", "C", "Option"]
+["42", "\"a\"", "[1, \"a\"]"]
+P {x: 1, y: 2}
+[true, false, false]
+[[1, 2], [1, 2, 3]]
+3
+3
+["mine", "also mine"]

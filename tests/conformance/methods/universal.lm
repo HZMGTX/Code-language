@@ -1,0 +1,41 @@
+// Five methods work on every value, because their subject is any value:
+// str, inspect, type, clone, isNil.
+struct P { x: Num, y: Num }
+enum C { Red, Custom(Num) }
+
+print(42.str())
+print(3.5.str())
+print(true.str())
+print(nil.str())
+print("a".str())
+print([1, 2].str())
+print({ a: 1 }.str())
+print(P { x: 1, y: 2 }.str())
+print(C.Red.str())
+print(C.Custom(1).str())
+
+// The point of having it as a method: a chain has somewhere to put it, where
+// string interpolation does not.
+print(42.str().padStart(5, "0"))
+
+print([42.type(), "a".type(), [1].type(), nil.type()])
+print([P { x: 1, y: 2 }.type(), C.Red.type(), Some(1).type()])
+
+print([42.inspect(), "a".inspect(), [1, "a"].inspect()])
+print(P { x: 1, y: 2 }.inspect())
+
+print([nil.isNil(), 42.isNil(), "".isNil()])
+
+// `clone` is a copy, so changing one does not change the other.
+let xs = [1, 2]
+let copy = xs.clone()
+copy.push(3)
+print([xs, copy])
+
+// A per-type method of the same name wins, so nothing existing changed.
+print("abc".len())
+print([1, 2, 3].len())
+
+// A map's own key still wins over any method, universal or not.
+let m = { str: "mine", type: "also mine" }
+print([m.str, m.type])

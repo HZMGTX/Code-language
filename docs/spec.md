@@ -404,9 +404,25 @@ named arguments all apply to the parameters that remain:
 "a,b".split()                   // error: missing a value for `separator`
 ```
 
-Methods are available on `Str`, `List` and `Map`, supplied by `std/str`,
-`std/list` and `std/map` respectively. `help(value)` lists the methods available
-on any value.
+Methods come from two places.
+
+**Per type**: `Str`, `List`, `Map`, `Num`, `Option` and `Result` each have a
+table, supplied by `std/str`, `std/list`, `std/map`, `std/math`, `std/option` and
+`std/result`.
+
+**On every value**: `str`, `inspect`, `type`, `clone` and `isNil` — the five
+whose subject is any value at all. `42.str()`, `p.str()` on a struct and
+`v.type()` therefore work, and a chain like `n.str().padStart(3)` has somewhere
+to put the conversion, which `"${n}"` does not. A per-type method of the same
+name always wins, so these can never change what an existing call means.
+
+This is **not** a general fallback to whatever function is in scope, and the
+difference is a deliberate one about error messages. Under a general fallback
+`[1, 2].upper()` would call `upper` with a `List` and fail somewhere inside
+`std/str`; as it is, it is `RT027: List has no method `upper`` with the ones it
+does have listed. A worse error is not worth the convenience.
+
+`help(value)` lists the methods available on any value.
 
 This is a calling convention, not an object model: there is no inheritance, no
 `self`, and no dynamic dispatch. A method that does not exist is `RT027`, with a
