@@ -143,7 +143,7 @@ const PRELUDE = `'use strict';
 (function () {
 var __modules = Object.create(null);
 var __cache = Object.create(null);
-var __aliases = ${JSON.stringify(ALIASES, null, 2).split('\n').join('\n')};
+var __aliases = ${JSON.stringify(ALIASES, null, 2)};
 var __nodeRequire = typeof require === 'function' ? require : null;
 var __root = typeof __dirname === 'string' ? __dirname : '.';
 

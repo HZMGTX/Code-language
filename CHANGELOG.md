@@ -41,6 +41,22 @@ The first working version. Everything below runs today.
 - `std/ai` speaks to Anthropic and OpenAI, with a deterministic `mock` provider
   so examples and CI need no API key
 
+### Distribution
+
+- `npm run binary` builds `build/lumen`, a native standalone executable that
+  runs Lumen programs with no Node, no npm and no `node_modules` present. It
+  embeds a JavaScript runtime, so it is around 100 MB
+- `npm run binary:all` cross-compiles five targets from one machine: linux-x64,
+  linux-arm64, macos-x64, macos-arm64 and windows-x64. Bun compiles them, at
+  build time only — it is never needed to run a binary
+- `npm run bundle` builds `build/lumen.cjs`, one self-contained CommonJS file
+  that runs the whole CLI on any Node 20 or newer with no install, no
+  `node_modules` and no source tree
+- `npm run dist` builds both tiers
+- The bundler, `scripts/bundle.mjs`, is purpose-built, so single-file
+  distribution still costs no dependency
+- Builds record SHA-256 checksums in `build/SHA256SUMS.txt`
+
 ### Project
 
 - Zero runtime dependencies

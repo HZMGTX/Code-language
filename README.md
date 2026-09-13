@@ -30,8 +30,53 @@ annotations are parsed but not yet enforced**.
 - 133 tests, 50 conformance fixtures, green on Node 20/22/24 across Linux, macOS and Windows
 - **Zero runtime dependencies.** The only build-time dependencies are TypeScript
   and Node's type definitions.
+- **Ships as a standalone executable.** Running a Lumen program needs no Node,
+  no npm and no `node_modules` — see below.
+
+## Running Lumen
+
+**You do not need Node installed to run Lumen.** Lumen is written in
+TypeScript — that has not changed and is not worth hiding — but what you run is
+a standalone executable with the runtime already inside it.
+
+There are three ways to get a `lumen` you can run.
+
+**1. The standalone binary — recommended if you just want to run programs.** One
+file, and no runtime of any kind required: no Node, no npm, no `node_modules`.
+
+```bash
+npm run binary                      # writes build/lumen
+build/lumen run examples/hello.lm
+```
+
+Building it needs [bun](https://bun.sh) on the machine doing the build. Running
+it needs nothing at all. The binary is around 100 MB, because it embeds a
+JavaScript runtime — that is the honest price of depending on nothing.
+
+`npm run binary:all` cross-compiles all five supported targets from a single
+machine — `linux-x64`, `linux-arm64`, `macos-x64`, `macos-arm64` and
+`windows-x64` — into `build/lumen-<target>` (`.exe` for Windows).
+
+**2. The portable bundle.** One self-contained CommonJS file. It needs some Node
+20 or newer to be present, but no npm install, no `node_modules` and no source
+tree.
+
+```bash
+npm run bundle                           # writes build/lumen.cjs
+node build/lumen.cjs run examples/hello.lm
+```
+
+It is a couple of hundred kilobytes rather than a hundred megabytes, so it is the
+better choice if you already have Node and would rather use it.
+
+`npm run dist` builds both.
+
+**3. From source**, if you are working on Lumen itself — that is the quick start
+below.
 
 ## Quick start
+
+Working on the language, rather than running programs with it:
 
 ```bash
 npm install

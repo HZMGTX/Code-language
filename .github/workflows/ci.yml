@@ -89,6 +89,77 @@ jobs:
       - name: Check the generated docs are current
         run: node scripts/gen-stdlib-docs.mjs --check
 
+  # The whole point of the project: Lumen runs on its own. This job re-proves it
+  # on every pull request, in the two ways a user can actually get it. The
+  # portable bundle has to run from a directory that contains nothing but itself,
+  # and the native binary has to run with node unreachable. If either tier
+  # quietly regrows a dependency on node_modules, on the source tree, or on an
+  # installed runtime, it fails here instead of on someone's laptop.
+  distribution:
+    name: runs without node or node_modules
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      # Tier 2: one CommonJS file for a machine that has some Node and nothing else.
+      - name: Build the portable bundle
+        run: npm run bundle
+
+      # Copy ONLY the bundle and one example to a fresh directory outside the
+      # checkout, then run it there. No package.json, no node_modules, no Lumen
+      # sources are within reach. If the bundle needs any of them, this is the
+      # step that says so.
+      - name: The portable bundle is self-contained
+        run: |
+          set -euo pipefail
+          sandbox="$RUNNER_TEMP/portable"
+          rm -rf "$sandbox"
+          mkdir -p "$sandbox"
+          cp build/lumen.cjs "$sandbox/"
+          cp examples/hello.lm "$sandbox/"
+          cd "$sandbox"
+          echo "contents of $sandbox:"
+          ls -A
+          output="$(node lumen.cjs run hello.lm)"
+          echo "$output"
+          test "$output" = 'Hello from Lumen!'
+
+      # Bun compiles the native binary. It is a build-time tool only: nothing a
+      # user of the binary ever needs, which is what the last step demonstrates.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # Tier 1: a true standalone executable with a JavaScript runtime inside it.
+      - name: Build the native binary
+        run: npm run binary
+
+      - name: The native binary runs
+        run: ./build/lumen run examples/hello.lm
+
+      # The real proof. `env -i` hands the process an empty environment and PATH
+      # points at a directory that does not exist, so no `node` can be found by
+      # any means. A binary that still prints the right answer needs no runtime
+      # installed at all. The first half asserts node really is gone, so that a
+      # future runner change cannot turn this into a test that proves nothing.
+      - name: The native binary runs with node unreachable
+        run: |
+          set -euo pipefail
+          if env -i PATH=/nonexistent node --version >/dev/null 2>&1; then
+            echo 'node is still reachable with PATH=/nonexistent; this check would prove nothing' >&2
+            exit 1
+          fi
+          output="$(env -i PATH=/nonexistent HOME=/tmp ./build/lumen run examples/hello.lm)"
+          echo "$output"
+          test "$output" = 'Hello from Lumen!'
+
   # This repository is proprietary. Every package is marked private, and this
   # job fails if that ever stops being true, so an accidental `npm publish`
   # cannot be the thing that discovers it.

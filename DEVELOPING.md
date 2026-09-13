@@ -5,6 +5,10 @@
 Node 20 or newer. Nothing else — Lumen has no runtime dependencies, and the only
 build-time ones are TypeScript and Node's type definitions.
 
+One exception, and only if you are building the native binary: that step shells
+out to [bun](https://bun.sh). Bun is a build-time tool, not a dependency — it is
+not in `package.json`, and nobody running the binary it produces needs it.
+
 ## Setup
 
 ```bash
@@ -22,6 +26,10 @@ npm run build
 | `npm run typecheck` | Force a clean rebuild, so nothing hides in incremental output |
 | `npm run examples` | Run every example through the real CLI, server included |
 | `npm run lumen -- <args>` | Run the CLI without installing it |
+| `npm run bundle` | Build `build/lumen.cjs`, the portable single-file bundle |
+| `npm run binary` | Build `build/lumen`, the native standalone executable (needs bun) |
+| `npm run binary:all` | Cross-compile the native binary for all five targets |
+| `npm run dist` | Build both: bundle, then binary |
 | `npm run clean` | Delete all build output |
 
 To get a real `lumen` on your PATH:
@@ -38,7 +46,8 @@ packages/stdlib    std/* modules, the Node host, the module resolver
 packages/cli       the `lumen` command
 tests/unit         unit tests (node:test)
 tests/conformance  golden fixtures
-scripts/           test runner, example runner, doc generator, private check
+scripts/           test runner, example runner, doc generator, private check,
+                   the bundler and the native-binary builder
 ```
 
 ### The one architectural rule
@@ -135,6 +144,75 @@ guessable — a note. Use `suggest()` from `values.ts` for "did you mean" hints.
 Never reuse a diagnostic code for a different meaning; codes are part of the
 language's contract. Take the next free number in the `LX`/`PA`/`RT` series and
 add it to the table in `docs/spec.md`.
+
+## Distribution
+
+Lumen ships in two tiers. Both are built from the same TypeScript sources and
+both land in `build/`, which is git-ignored.
+
+### Tier 1 — the native binary
+
+`npm run binary` writes `build/lumen`: a true standalone executable. It embeds a
+JavaScript runtime, so it runs with no Node, no npm and no `node_modules`
+present anywhere on the machine.
+
+`scripts/build-binary.mjs` compiles it with `bun build --compile`. Bun is needed
+at **build time only** — it is not a Lumen dependency, it is not in
+`package.json`, and a user running the binary never installs it. If bun is not
+on your PATH the script says so plainly and points you at the portable bundle
+instead.
+
+`npm run binary:all` cross-compiles every supported target from one machine:
+
+```
+build/lumen-linux-x64
+build/lumen-linux-arm64
+build/lumen-macos-x64
+build/lumen-macos-arm64
+build/lumen-windows-x64.exe
+```
+
+Those five are the whole supported set; `node scripts/build-binary.mjs
+--target=<name>` builds just one of them. Each build records a SHA-256 in
+`build/SHA256SUMS.txt`, merging with what is already there rather than replacing
+it, so the bundle's entry survives.
+
+Expect roughly 100 MB per binary. That is the embedded runtime, not bloat in
+Lumen, and it is what buys the "needs nothing installed" property — state it
+wherever the binary is offered, rather than letting the download size surprise
+someone.
+
+### Tier 2 — the portable bundle
+
+`npm run bundle` writes `build/lumen.cjs`: one self-contained CommonJS file of a
+couple of hundred kilobytes, which runs the whole CLI on any Node 20 or newer
+with no npm install, no `node_modules` and no source tree.
+
+`scripts/bundle.mjs` is a small purpose-built bundler, which is the point: a
+single-file distribution bought with a bundler dependency would have cost the
+property in the section above. It recompiles the same sources to CommonJS
+through `tsconfig.cjs.json` into `build/cjs/` — a standalone project with its
+own `outDir` and `tsBuildInfoFile`, so it never disturbs `packages/*/dist` —
+wraps each emitted module in a factory, and resolves them with a `require` shim
+that falls through to the real `require` for the `node:` builtins.
+
+### Verifying them
+
+Each tier claims something specific, so test the claim rather than the happy
+path. The binary claims it needs no runtime, so take the runtime away:
+
+```bash
+env -i PATH=/nonexistent build/lumen run examples/hello.lm
+```
+
+The bundle claims it needs no install and no source tree, so run it from
+somewhere else entirely:
+
+```bash
+cp build/lumen.cjs /tmp && (cd /tmp && node lumen.cjs run /abs/path/to/app.lm)
+```
+
+Both must print exactly what `npm run lumen -- run` prints for the same program.
 
 ## Before you push
 

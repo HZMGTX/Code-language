@@ -42,6 +42,23 @@ dependency graph inherits every one of its dependencies' abandonments, breaking
 changes and supply-chain incidents. Lumen has no such graph to rot. CI enforces
 this by checking the manifests.
 
+Shipping a standalone executable carries the same argument one step further.
+Until now there was one dependency left that the manifests could not see,
+because it sat underneath them: the user's Node installation, of a particular
+version, in working order. `npm run binary` produces `build/lumen`, a single
+file with a JavaScript runtime inside it, so running a Lumen program now depends
+on nothing being installed at all. Lumen is still written in TypeScript — that
+is a fact about how it is built, not about what anyone must install to use it.
+
+*Cost:* the embedded runtime makes that binary around 100 MB, and the price is
+paid on every download. For people who already have Node 20 or newer and would
+rather use it, `npm run bundle` produces `build/lumen.cjs` — one portable file
+of a couple of hundred kilobytes, no install, no `node_modules`. The bundler that
+writes it was built for the purpose rather than taken off the shelf: a
+single-file distribution bought with a bundler dependency would have undone the
+section it sits under. Bun compiles the native binary, and only at build time;
+nobody who runs one ever installs it.
+
 ### 4. New domains arrive as libraries, not as surgery on the core
 
 `packages/core` contains the language and imports no host API whatsoever. All
@@ -115,6 +132,8 @@ It is worth writing down what would actually undermine the above, so it can be
 watched for:
 
 - A runtime dependency creeping in.
+- A build-time tool — TypeScript, bun — turning into something a *user* has to
+  install.
 - A behaviour change that the conformance suite does not notice.
 - The specification drifting from the implementation with no one reconciling it.
 - Diagnostics degrading into bare messages with no span or suggestion.

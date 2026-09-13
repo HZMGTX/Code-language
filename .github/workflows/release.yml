@@ -1,0 +1,112 @@
+# Release: build every shipping artifact for a tag and attach it to the GitHub
+# release for that tag.
+#
+# This repository is PROPRIETARY and its releases are PRIVATE. The assets land on
+# this repository's own releases page, visible only to people who can already see
+# the repository, and nowhere else. Nothing in this workflow publishes to npm or
+# to any other public registry, and nothing in it ever should: the only registry
+# traffic here is `npm ci`, which reads. The `private` job in ci.yml enforces the
+# same rule from the other end by keeping every package manifest unpublishable.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+# Releases are slow and upload real files. Queue overlapping runs rather than
+# cancelling one halfway through attaching assets.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+# Creating a release and uploading its assets needs write access to contents.
+# That is the only permission this workflow gets.
+permissions:
+  contents: write
+
+jobs:
+  # Bun cross-compiles every target from one Linux runner, so the entire
+  # five-platform matrix plus the portable bundle comes out of a single job.
+  release:
+    name: build and attach the distribution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Build
+        run: npm run build
+
+      # A last mechanical check that nothing here can be published: if a package
+      # manifest ever lost `"private": true`, stop before producing artifacts.
+      - name: Packages are still private
+        run: node scripts/check-private.mjs
+
+      # Tier 2, and it goes first on purpose. `npm run bundle` does not write to
+      # build/SHA256SUMS.txt, so the checksum is recorded by hand below; the
+      # binary build that follows merges that file with what is already in it,
+      # which is what leaves every published asset covered by one checksum file.
+      - name: Build the portable bundle
+        run: npm run bundle
+
+      - name: Record the bundle's checksum
+        run: |
+          set -euo pipefail
+          cd build
+          touch SHA256SUMS.txt
+          grep -v '  lumen\.cjs$' SHA256SUMS.txt > SHA256SUMS.next || true
+          sha256sum lumen.cjs >> SHA256SUMS.next
+          mv SHA256SUMS.next SHA256SUMS.txt
+
+      # Tier 1: five standalone executables, each with a JavaScript runtime
+      # inside, for machines with no Node at all. They are ~100 MB apiece.
+      - name: Build every native binary
+        run: npm run binary:all
+
+      # A quick smoke test of the artifact this runner can actually execute, so a
+      # broken build is caught before it is attached to a release.
+      - name: The Linux binary runs
+        run: ./build/lumen-linux-x64 run examples/hello.lm
+
+      - name: Show what is being shipped
+        run: |
+          set -euo pipefail
+          ls -lh build/lumen-* build/lumen.cjs
+          cat build/SHA256SUMS.txt
+
+      # Artifacts as well as release assets: a workflow_dispatch run has no tag
+      # and so no release to attach to, and it should still hand you the binaries.
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: lumen-dist
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            build/lumen-*
+            build/lumen.cjs
+            build/SHA256SUMS.txt
+
+      # Only a tag push has a release to attach to. The release is private for
+      # the same reason the repository is: a release inherits its visibility.
+      - name: Attach to the GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            build/lumen-*
+            build/lumen.cjs
+            build/SHA256SUMS.txt
