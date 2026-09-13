@@ -324,7 +324,9 @@ Relax about most of it. These carry over unchanged:
 
 - **Reading and writing feel the same.** `print`, `len`, `range`, `sum`,
   `sorted`, `min`, `max`, `abs`, `round`, `enumerate`, `zip`, `input`, `type` —
-  same names, same jobs, and all in scope with no import.
+  same names, same jobs, and all in scope with no import. Two small deviations:
+  `type(x)` hands back a `Str` (`"List"`) rather than a type object, and `round`
+  rounds halves away from zero, so `round(2.5)` is `3` here and `2` in Python.
 - **Dynamic typing.** Values carry their types; you do not declare them.
   (Annotations parse, but nothing checks them yet — the roadmap is honest about
   this.)
@@ -477,9 +479,9 @@ places where you will miss Python, with no consolation offered:
   `.filter().map()` plus `fromEntries` is more machinery than Python needs.
 - **Arbitrary-precision integers.** See above.
 - **`enumerate(xs, start=1)`.** No `start` argument.
-- **The ecosystem.** PyPI is 500,000 packages. Lumen has ten standard modules and
-  no package manager. For anything outside what ships in the box, Python is not
-  in competition with Lumen; it has already won.
+- **The ecosystem.** PyPI holds hundreds of thousands of packages. Lumen has ten
+  standard modules and no package manager at all. For anything outside what ships
+  in the box, Python is not in competition with Lumen; it has already won.
 
 ## Translate this Python
 
@@ -525,12 +527,15 @@ for [word, count] in topWords(text) {
    falls  1
 ```
 
-Seven things changed, and they are the seven things that always change:
-`def` became `fn` with braces; the default argument is `limit = 3`; `split()`
-with no argument became `split(" ")`; `counts.get(w, 0)` became an explicit
-`nil` check; `sorted(..., key=...)` became `.sortBy(...)`; the slice `[:limit]`
-became `.take(limit)`; and the f-string's `:>8` became `.padStart(8)`. The
-`return` disappeared because the last expression is the value.
+Everything that changed here is something you have already met above: `def`
+became `fn` with braces; the default argument is `limit = 3`; `split()` with no
+argument became `split(" ")`; `counts.get(w, 0)` became an explicit `nil` check;
+`sorted(..., key=...)` became `.sortBy(...)`; the slice `[:limit]` became
+`.take(limit)`; the f-string's `:>8` became `.padStart(8)`; and the `return`
+vanished because the last expression in a body is already the value.
+
+Nothing here was a rewrite. That is the usual experience: the shape of a Python
+script survives, and the edits are local.
 
 ## Where next
 
