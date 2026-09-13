@@ -1,0 +1,36 @@
+// Every valid assignment, and nothing reported.
+struct P { x: Num, name: Str }
+
+var p: P = P { x: 1, name: "a" }
+p.x = 2
+p.x += 1
+p.name = "b"
+p.name += "c"
+
+var n: Num = 0
+n = 5
+n += 1
+n -= 1
+n *= 2
+n /= 2
+
+var s: Str = "a"
+s = "b"
+s += "c"
+
+var xs: List = [1]
+xs = [2]
+xs += [3]
+
+// An unannotated `var` is Any, so a reassignment to another type is silent —
+// the documented gradual rule. It is not an error at run time either: a `var`
+// really can hold anything.
+var loose = 1
+loose = "now a string"
+
+// A `let` takes its value's type, which is sound because it cannot be rebound.
+// Its struct's fields can still be assigned, and are still checked.
+let q = P { x: 1, name: "a" }
+q.x = 9
+
+print([p, n, s, xs, loose, q])

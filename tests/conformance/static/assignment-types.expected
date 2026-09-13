@@ -1,0 +1,29 @@
+error[TY006]: `v` is Num but is being given Str
+ --> assignment-types.lm:7:5
+  |
+7 | v = "text"
+  |     ^^^^^^ expected Num
+  |
+
+error[TY006]: `p.x` is Num but is being given Str
+  --> assignment-types.lm:10:7
+   |
+10 | p.x = "text"
+   |       ^^^^^^ expected Num
+   |
+
+error[TY006]: `p.name` is Str but is being given Num
+  --> assignment-types.lm:11:10
+   |
+11 | p.name = 2
+   |          ^ expected Str
+   |
+
+error[TY005]: cannot add Num and Str
+  --> assignment-types.lm:15:1
+   |
+15 | total += "x"
+   | ^^^^^^^^^^^^ mismatched operands
+   |
+   = note: `+` joins two Nums, two Strs or two Lists
+   = note: to build a string from mixed values use interpolation: "${a}${b}"

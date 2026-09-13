@@ -73,6 +73,18 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   `!=` still accept anything, deliberately: comparing values of different types is
   `false`, not an error.
 
+- **`TY006`: an assignment that does not match the target's declared type.** An
+  annotation is a promise about every value a binding will hold, and it was being
+  kept only for the first. `var v: Num = 1` followed by `v = "text"` passed, which
+  made the annotation decorative after line one — and a `var` is precisely where
+  a second value turns up. Struct fields too: `p.x = "text"` where `P.x` is `Num`.
+
+  A compound assignment is an operator as well as an assignment, so `total += "x"`
+  on a `Num` is now caught by `TY005` — which needed doing here rather than in the
+  `Binary` case, because the AST holds `+=` as one node and not as an addition
+  followed by a store. An unannotated `var` stays `Any`, so reassigning it to
+  another type is still silent and still legal: a `var` really can hold anything.
+
 - **The type checker was not declaring loop or pattern bindings.** Found
   immediately by TY005, which reported `x * 2` inside `for x in [1, 2]` as
   multiplying a `Str` — because an outer `let x = "outer"` was still what `x`

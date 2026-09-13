@@ -63,6 +63,28 @@ const BOOL: Ty = { k: 'bool' };
 const NUM: Ty = { k: 'num' };
 const STR: Ty = { k: 'str' };
 
+/**
+ * How an assignment target is named in a diagnostic.
+ *
+ * `v`, `p.x`, `xs[0]` — what the reader wrote, so the message points at
+ * something they can find. Anything more elaborate is called "this", which is
+ * still better than printing an approximation of their expression back at them.
+ */
+function describeTarget(expr: Expr): string {
+  switch (expr.kind) {
+    case 'Ident':
+      return '`' + expr.name + '`';
+    case 'MemberExpr':
+      return expr.target.kind === 'Ident'
+        ? '`' + expr.target.name + '.' + expr.name + '`'
+        : '`' + expr.name + '`';
+    case 'IndexExpr':
+      return expr.target.kind === 'Ident' ? '`' + expr.target.name + '[…]`' : 'this element';
+    default:
+      return 'this target';
+  }
+}
+
 /** How a type is written in a diagnostic. */
 export function showTy(ty: Ty): string {
   switch (ty.k) {
@@ -144,6 +166,23 @@ class Checker {
   private scope = new Scope(undefined);
   /** The declared return type of the function being checked, if any. */
   private returnTy: Ty = ANY;
+
+  /**
+   * What a target ends up holding after an assignment.
+   *
+   * For `=` that is the value. For a compound assignment it is the result of the
+   * operator, which for two Nums is a Num however the value is written — so
+   * `total += 1` on a `Num` is fine and does not want reporting as "Num given
+   * Num".
+   */
+  private assignedTy(op: string, target: Ty, value: Ty): Ty {
+    if (op === '=') return value;
+    if (target.k === 'num' && value.k === 'num') return NUM;
+    if (op === '+=' && target.k === 'str' && value.k === 'str') return STR;
+    if (op === '+=' && target.k === 'list' && value.k === 'list') return target;
+    // Anything else is either already reported by `checkOperands` or unknowable.
+    return ANY;
+  }
 
   /**
    * An operator whose operands cannot be what they are.
@@ -580,9 +619,36 @@ class Checker {
         return ANY;
       }
 
-      case 'AssignExpr':
-        this.typeOf(expr.target);
-        return this.typeOf(expr.value);
+      case 'AssignExpr': {
+        const target = this.typeOf(expr.target);
+        const value = this.typeOf(expr.value);
+
+        // `v += x` is `v = v + x`, so the operands have to agree as well as the
+        // result. Checking the operator here rather than leaving it to `Binary`
+        // is the only chance: the AST holds a compound assignment as one node,
+        // not as an addition and an assignment.
+        if (expr.op !== '=') {
+          const op: BinaryOp = expr.op === '+=' ? '+' : expr.op === '-=' ? '-' : expr.op === '*=' ? '*' : '/';
+          this.checkOperands(op, target, value, expr.span);
+        }
+
+        // An annotation is a promise about every value the binding will hold,
+        // not only its first. `var v: Num = 1` followed by `v = "text"` used to
+        // pass, which made the annotation decorative after line one — and a
+        // `var` is exactly where a second value arrives.
+        if (!accepts(target, this.assignedTy(expr.op, target, value))) {
+          this.report(
+            'TY006',
+            describeTarget(expr.target) + ' is ' + showTy(target) + ' but is being given ' + showTy(value),
+            expr.value.span,
+            'expected ' + showTy(target),
+            expr.op === '='
+              ? undefined
+              : ['`' + expr.op + '` means `' + describeTarget(expr.target) + ' = ' + describeTarget(expr.target) + ' ' + expr.op.slice(0, 1) + ' …`'],
+          );
+        }
+        return value;
+      }
 
       case 'LambdaExpr':
         this.fnBody(expr.params, expr.ret, expr.body);
