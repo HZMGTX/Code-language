@@ -278,7 +278,8 @@ match addBoth("2", "-1") {
 
 `?` is the closest thing to letting an error propagate: it unwraps an `Ok` or
 hands the `Err` straight back to your caller, so the happy path stays flat. It
-only works inside a function that itself returns a `Result` or `Option`.
+needs a caller to hand that `Err` to, so it only works inside a function; at the
+top level of a program it stops and tells you to `match` on the value instead.
 
 ### None, nil and Option
 
@@ -326,7 +327,8 @@ Relax about most of it. These carry over unchanged:
   `sorted`, `min`, `max`, `abs`, `round`, `enumerate`, `zip`, `input`, `type` —
   same names, same jobs, and all in scope with no import. Two small deviations:
   `type(x)` hands back a `Str` (`"List"`) rather than a type object, and `round`
-  rounds halves away from zero, so `round(2.5)` is `3` here and `2` in Python.
+  rounds halves upwards instead of to even, so `round(2.5)` is `3` here and `2`
+  in Python. Upwards, not away from zero: `round(-2.5)` is `-2` in both.
 - **Dynamic typing.** Values carry their types; you do not declare them.
   (Annotations parse, but nothing checks them yet — the roadmap is honest about
   this.)
@@ -385,7 +387,8 @@ What it buys: no function has a hidden second exit. A signature tells you
 whether a call can fail, and you cannot forget the failure path because the
 value will not unwrap without it.
 
-(`panic` does stop the program, and `assert` raises. They are for "this cannot
+(`panic` does stop the program, and a failed `assert` stops it the same way —
+as a runtime error, not as anything you could catch. They are for "this cannot
 happen", not for ordinary failure.)
 
 ### 3. Immutable by default

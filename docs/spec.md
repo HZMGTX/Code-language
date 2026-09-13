@@ -402,6 +402,38 @@ Explicit structured concurrency is a v0.2 topic.
 
 ---
 
+## 7.5 Static checks
+
+Before a program runs, it is checked. Lumen is fully lexically scoped and has
+no `eval`, no dynamic scope and no runtime name construction, so every name a
+program uses can be resolved without running it.
+
+| Code | Reported when |
+|---|---|
+| `RS001` | A name is not defined anywhere in scope |
+| `RS002` | A `match` over an enum does not cover every variant |
+| `RS003` | A `match` arm can never be reached |
+| `RS004` | A name is declared twice in the same scope |
+| `RS005` | A binding introduced with `let` is assigned to |
+
+The value is that a mistake is reported whether or not execution reaches it: a
+typo on a branch that never runs is still a typo.
+
+Two rules bound what is checked, both in the direction of never rejecting a
+valid program:
+
+- **Exhaustiveness is only checked when it can be proved.** Every arm must name
+  variants of one enum the resolver can see. A `match` whose arms mix patterns,
+  or whose enum cannot be determined, is left to `RT020` at run time.
+- **A guarded arm covers nothing.** `Light.Amber if hurry => ...` does not make
+  a `match` exhaustive, because the guard may be false.
+
+`_` may be re-declared freely; it is the conventional throwaway name. Shadowing
+an outer binding in an inner scope is not an error, and never will be.
+
+The interpreter still enforces all of these at run time as well, so a host that
+embeds the interpreter directly without resolving first is not left unguarded.
+
 ## 8. Diagnostics
 
 Every diagnostic carries a stable code, a source span, a caret, and usually a
@@ -411,6 +443,7 @@ note suggesting the fix. Codes are grouped by phase:
 |---|---|
 | `LX` | Lexical |
 | `PA` | Parsing |
+| `RS` | Static checks, before execution |
 | `RT` | Run time |
 
 Codes are part of the language's contract: a code is never reused for a

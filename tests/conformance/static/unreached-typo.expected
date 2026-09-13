@@ -1,0 +1,6 @@
+error[RS001]: `treshold` is not defined
+ --> unreached-typo.lm:5:29
+  |
+5 |     "huge, according to " + treshold
+  |                             ^^^^^^^^ not found in this scope
+  |

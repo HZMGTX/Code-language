@@ -1,4 +1,4 @@
-error[RT029]: cannot assign to `total`
+error[RS005]: cannot assign to `total`
  --> immutable-assign.lm:2:1
   |
 2 | total = 2

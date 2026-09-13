@@ -13,6 +13,7 @@ import {
   Env,
   Interpreter,
   LumenError,
+  checkModule,
   inspect,
   lex,
   parse,
@@ -95,6 +96,8 @@ export async function startRepl(): Promise<void> {
     const currentUnit: SourceUnit = { file: '<repl>', source };
     try {
       const module = parse(source, '<repl>');
+      // Everything bound in the session so far counts as already in scope.
+      checkModule(module, source, { globals: scope.visibleNames() });
       const value = await interpreter.runStatements(module.stmts, scope, currentUnit);
       if (value.k !== 'nil') process.stdout.write(inspect(value) + '\n');
     } catch (error) {

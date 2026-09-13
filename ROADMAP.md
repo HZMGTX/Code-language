@@ -10,8 +10,8 @@ decisions, not oversights.
 | Limitation | Detail |
 |---|---|
 | **Type annotations are not enforced** | `fn add(a: Num, b: Num) -> Num` parses and is retained, but nothing checks it. Arity, struct fields and operand types are checked at run time. |
-| **`match` exhaustiveness is a run-time check** | A value that matches no arm raises `RT020` when it happens, rather than being rejected before the program runs. Static exhaustiveness needs the type checker. |
-| **No undefined-name checking before running** | `RT005` fires when the name is reached, not at load time. |
+| **`match` exhaustiveness is checked, but only where it can be proved** | The resolver reports a missing variant (`RS002`) when every arm names variants of one enum it can see. A `match` over a value whose enum it cannot determine — a parameter with no annotation, say — still falls back to the run-time `RT020`. Closing that gap needs the type checker. |
+| **Type annotations are still not enforced** | Names, mutability, arm reachability and enum coverage are checked before a program runs (`RS001`-`RS005`); *types* are not. `fn add(a: Num, b: Num)` will happily be handed two strings. |
 | **Ranges are materialised** | `0..n` builds a list, capped at 10,000,000 elements. Large spans need a `while` loop. |
 | **No methods on built-in types** | `len(x)`, not `x.len()`. Pipelines cover most of the ergonomics. |
 | **Performance** | A tree-walking interpreter in which every evaluation is a promise. Correctness and capability were the v0.1 priorities; speed is v0.3's. |
@@ -27,10 +27,10 @@ written against v0.1.
 
 - Type inference and checking for annotated code; gradual, so unannotated code
   keeps working
-- Static `match` exhaustiveness, using the checker's knowledge of enums
-- Undefined-name and unreachable-arm checks before execution
+- Full `match` exhaustiveness, including values whose enum only the type checker
+  can determine (the resolver already covers the cases it can prove)
 - Generics and traits, and with traits, method syntax (`x.len()`)
-- A resolver pass that reports duplicate declarations and shadowing warnings
+- Unused-binding warnings (the resolver already reports duplicate declarations)
 
 ## v0.3 — Speed
 

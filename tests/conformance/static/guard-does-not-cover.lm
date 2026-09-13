@@ -1,0 +1,10 @@
+// A guarded arm may not fire, so it cannot be what makes a match exhaustive.
+enum Light { Red, Amber, Green }
+fn act(l, hurry) {
+  match l {
+    Light.Red   => "stop",
+    Light.Amber if hurry => "go",
+    Light.Green => "go",
+  }
+}
+print(act(Light.Red, false))

@@ -1,0 +1,7 @@
+error[RS003]: this match arm can never be reached
+ --> unreachable-arm.lm:5:3
+  |
+5 |   Colour.Green => "green",
+  |   ^^^^^^^^^^^^^^^^^^^^^^^ unreachable
+  |
+  = note: an earlier arm on line 4 matches everything

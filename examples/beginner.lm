@@ -3,8 +3,8 @@
 //   lumen run examples/beginner.lm
 //
 // Read it top to bottom, then change something: add a student, lower the pass
-// mark, widen the bars. It is all prelude functions and method calls, and
-// `x.f(a)` is only ever another way of writing `f(x, a)`.
+// mark, widen the bars. Nothing is imported because a method call `x.f(a)` is
+// just another way of writing `f(x, a)`, and the prelude is always there.
 
 // Marks as somebody actually types them: ragged spacing, careless capitals.
 // Tidying that up in code is kinder than asking people to type carefully.
@@ -21,20 +21,15 @@ struct Student { name: Str, mark: Num }
 // "  grace hopper " becomes "Grace Hopper". Each method works on whatever the
 // one before it produced, so the chain runs in reading order.
 fn titleCase(name) {
-  name.trim().split(" ")
-    .map(fn(word) { word.slice(0, 1).upper() + word.slice(1) })
-    .join(" ")
+  name.trim().split(" ").map(fn(w) { w.slice(0, 1).upper() + w.slice(1) }).join(" ")
 }
 
 fn parse(line) {
   let parts = line.split(",")
-  // Nothing is ever thrown in Lumen. toNum gives back Ok(number) or Err(why),
-  // and match makes you answer both — so one unreadable mark cannot take the
+  // Nothing is ever thrown in Lumen: toNum gives back Ok(number) or Err(why),
+  // and match makes you answer both, so one unreadable mark cannot take the
   // whole report down with it.
-  let mark = match parts[1].trim().toNum() {
-    Ok(n)  => n,
-    Err(_) => 0,
-  }
+  let mark = match parts[1].trim().toNum() { Ok(n) => n, Err(_) => 0 }
   Student { name: titleCase(parts[0]), mark: mark }
 }
 
@@ -49,23 +44,19 @@ fn grade(mark, passMark = 50) {
   }
 }
 
-fn bar(mark, width = 20) { "#".repeat(round(mark / 100 * width)) }
+// A bar is easier to compare at a glance than a column of numbers.
+fn bar(mark, width = 20) { "#".repeat(round(mark / 100 * width)).padEnd(width) }
 
 fn main() {
   let students = raw.lines().map(parse)
+  var tally = {}          // how many of each grade, filled in as we print
 
   print("Marks")
   for s in students {
-    print("  ${s.name.padEnd(18)} ${str(s.mark).padEnd(4)} ${bar(s.mark).padEnd(21)} ${grade(s.mark)}")
-  }
-
-  // A map counts how many of each grade there were. A key that was never set
-  // reads as nil, which is why the first sighting has to start the count at 0.
-  var tally = {}
-  for s in students {
     let g = grade(s.mark)
-    let seen = if tally[g] == nil { 0 } else { tally[g] }
-    tally[g] = seen + 1
+    print("  ${s.name.padEnd(18)} ${str(s.mark).padEnd(4)} ${bar(s.mark)} ${g}")
+    // A key that was never set reads as nil, so the first sighting starts at 1.
+    tally[g] = if tally[g] == nil { 1 } else { tally[g] + 1 }
   }
 
   print("")
@@ -73,9 +64,10 @@ fn main() {
   for [name, count] in tally { print("  ${name.padEnd(10)} ${count}") }
 
   let marks = students.map(fn(s) { s.mark })
+  let average = round(marks.sum() / len(marks) * 10) / 10
   let best = students.filter(fn(s) { s.mark >= 90 }).map(fn(s) { s.name }).join(", ")
 
   print("")
-  print("${len(students)} students, average ${round(marks.sum() / len(marks) * 10) / 10}")
-  print("Highest ${max(marks)}, lowest ${min(marks)}, top of the class ${best}")
+  print("${len(students)} students, ${min(marks)} to ${max(marks)}, average ${average}")
+  print("Top of the class: ${best}")
 }

@@ -1,0 +1,522 @@
+/**
+ * The resolver: static checks that run before a program does.
+ *
+ * Until now a typo was only reported when execution reached it, so a mistake on
+ * a branch that happened not to run stayed hidden. Lumen is fully lexically
+ * scoped and has no `eval`, no dynamic scope and no runtime name construction,
+ * so every name a program uses can be resolved without running it.
+ *
+ * What is reported:
+ *   RS001  a name that is not defined anywhere in scope
+ *   RS002  a `match` over an enum that does not cover every variant
+ *   RS003  a `match` arm that cannot be reached
+ *   RS004  a name declared twice in the same scope
+ *   RS005  assignment to a binding introduced with `let`
+ *
+ * The guiding rule is **no false positives**. A check that rejects a valid
+ * program is worse than one that misses an invalid one, so anything the
+ * resolver cannot be certain about it leaves to the interpreter. That is why
+ * exhaustiveness is only checked when every arm names variants of one enum the
+ * resolver can actually see, and why a guarded arm never counts as covering a
+ * variant — the guard might be false.
+ */
+
+import type {
+  Block,
+  EnumDecl,
+  Expr,
+  MatchArm,
+  Module,
+  Param,
+  Pattern,
+  Stmt,
+} from './ast.js';
+import { type Diagnostic, type Note, type Span, LumenError } from './diagnostics.js';
+import { suggest } from './values.js';
+
+interface Binding {
+  readonly mutable: boolean;
+  readonly span: Span;
+  /** What introduced it, for the "already declared" message. */
+  readonly kind: string;
+}
+
+class Scope {
+  private readonly names = new Map<string, Binding>();
+
+  constructor(readonly parent: Scope | undefined) {}
+
+  declare(name: string, binding: Binding): void {
+    this.names.set(name, binding);
+  }
+
+  own(name: string): Binding | undefined {
+    return this.names.get(name);
+  }
+
+  lookup(name: string): Binding | undefined {
+    let scope: Scope | undefined = this;
+    while (scope !== undefined) {
+      const found = scope.names.get(name);
+      if (found !== undefined) return found;
+      scope = scope.parent;
+    }
+    return undefined;
+  }
+
+  visible(): string[] {
+    const out: string[] = [];
+    let scope: Scope | undefined = this;
+    while (scope !== undefined) {
+      out.push(...scope.names.keys());
+      scope = scope.parent;
+    }
+    return out;
+  }
+}
+
+export interface ResolveOptions {
+  /** Names available with no declaration — the prelude. */
+  readonly globals: readonly string[];
+  /**
+   * Names a module is known to export, keyed by module path. Imports of a
+   * module not listed here are trusted rather than guessed at.
+   */
+  readonly moduleExports?: ReadonlyMap<string, readonly string[]>;
+}
+
+class Resolver {
+  private readonly diagnostics: Diagnostic[] = [];
+  private readonly enums = new Map<string, readonly string[]>();
+  private scope: Scope;
+
+  constructor(options: ResolveOptions) {
+    const root = new Scope(undefined);
+    for (const name of options.globals) {
+      root.declare(name, { mutable: false, span: ZERO_SPAN, kind: 'built-in' });
+    }
+    this.scope = new Scope(root);
+    // Result and Option are always matchable, whatever the prelude holds.
+    this.enums.set('Result', ['Ok', 'Err']);
+    this.enums.set('Option', ['Some', 'None']);
+  }
+
+  private report(
+    code: string,
+    message: string,
+    span: Span,
+    label?: string,
+    notes?: readonly string[],
+  ): void {
+    this.diagnostics.push({
+      severity: 'error',
+      code,
+      message,
+      span,
+      ...(label === undefined ? {} : { label }),
+      ...(notes === undefined ? {} : { notes: notes.map((m): Note => ({ message: m })) }),
+    });
+  }
+
+  private pushScope(): void {
+    this.scope = new Scope(this.scope);
+  }
+
+  private popScope(): void {
+    this.scope = this.scope.parent ?? this.scope;
+  }
+
+  private declare(name: string, span: Span, mutable: boolean, kind: string): void {
+    // `_` is the conventional throwaway and may be repeated freely.
+    if (name !== '_') {
+      const existing = this.scope.own(name);
+      if (existing !== undefined && existing.kind !== 'built-in') {
+        this.report(
+          'RS004',
+          '`' + name + '` is already declared in this scope',
+          span,
+          'declared twice',
+          ['the earlier one is on line ' + existing.span.start.line],
+        );
+      }
+    }
+    this.scope.declare(name, { mutable, span, kind });
+  }
+
+  private use(name: string, span: Span): void {
+    if (this.scope.lookup(name) !== undefined) return;
+    const hint = suggest(name, this.scope.visible());
+    this.report(
+      'RS001',
+      '`' + name + '` is not defined',
+      span,
+      'not found in this scope',
+      hint === undefined ? undefined : ['did you mean `' + hint + '`?'],
+    );
+    // Declare it so the same typo is not reported at every later use.
+    this.scope.declare(name, { mutable: true, span, kind: 'unresolved' });
+  }
+
+  // ------------------------------------------------------------------ module
+
+  resolveModule(module: Module): readonly Diagnostic[] {
+    this.hoist(module.stmts);
+    for (const stmt of module.stmts) this.stmt(stmt);
+    return this.diagnostics;
+  }
+
+  /** Pre-declare functions and types, matching the interpreter's hoisting. */
+  private hoist(stmts: readonly Stmt[]): void {
+    for (const stmt of stmts) {
+      const decl = stmt.kind === 'ExportDecl' ? stmt.declaration : stmt;
+      switch (decl.kind) {
+        case 'FnDecl':
+          this.declare(decl.name, decl.span, false, 'function');
+          break;
+        case 'StructDecl':
+          this.declare(decl.name, decl.span, false, 'struct');
+          break;
+        case 'EnumDecl':
+          this.declare(decl.name, decl.span, false, 'enum');
+          this.enums.set(decl.name, (decl as EnumDecl).variants.map((v) => v.name));
+          break;
+        default:
+          break;
+      }
+    }
+  }
+
+  private block(block: Block): void {
+    this.pushScope();
+    this.hoist(block.stmts);
+    for (const stmt of block.stmts) this.stmt(stmt);
+    this.popScope();
+  }
+
+  private stmt(stmt: Stmt): void {
+    switch (stmt.kind) {
+      case 'LetDecl':
+        this.expr(stmt.value);
+        this.declare(stmt.name, stmt.span, stmt.mutable, stmt.mutable ? 'var' : 'let');
+        return;
+
+      case 'FnDecl':
+        this.fnBody(stmt.params, stmt.body);
+        return;
+
+      case 'StructDecl':
+      case 'EnumDecl':
+        return; // handled by hoisting
+
+      case 'ReturnStmt':
+        if (stmt.value !== undefined) this.expr(stmt.value);
+        return;
+
+      case 'WhileStmt':
+        this.expr(stmt.condition);
+        this.block(stmt.body);
+        return;
+
+      case 'ForStmt':
+        this.expr(stmt.iterable);
+        this.pushScope();
+        this.pattern(stmt.binding);
+        this.block(stmt.body);
+        this.popScope();
+        return;
+
+      case 'BreakStmt':
+      case 'ContinueStmt':
+        return;
+
+      case 'ExprStmt':
+        this.expr(stmt.expr);
+        return;
+
+      case 'ImportDecl':
+        for (const spec of stmt.specifiers) {
+          this.declare(spec.alias ?? spec.name, spec.span, false, 'import');
+        }
+        return;
+
+      case 'ExportDecl':
+        this.stmt(stmt.declaration);
+        return;
+    }
+  }
+
+  private fnBody(params: readonly Param[], body: Block): void {
+    this.pushScope();
+    for (const param of params) {
+      if (param.defaultValue !== undefined) this.expr(param.defaultValue);
+      this.declare(param.name, param.span, false, 'parameter');
+    }
+    // The body gets its own scope so a local may shadow a parameter.
+    this.block(body);
+    this.popScope();
+  }
+
+  // -------------------------------------------------------------- expressions
+
+  private expr(expr: Expr): void {
+    switch (expr.kind) {
+      case 'NumberLit':
+      case 'StringLit':
+      case 'BoolLit':
+      case 'NilLit':
+        return;
+
+      case 'TemplateLit':
+        for (const part of expr.parts) if (part.kind === 'expr') this.expr(part.expr);
+        return;
+
+      case 'Ident':
+        this.use(expr.name, expr.span);
+        return;
+
+      case 'Unary':
+        this.expr(expr.operand);
+        return;
+
+      case 'Binary':
+      case 'Logical':
+        this.expr(expr.left);
+        this.expr(expr.right);
+        return;
+
+      case 'PipelineExpr':
+        this.expr(expr.left);
+        this.expr(expr.right);
+        return;
+
+      case 'RangeExpr':
+        this.expr(expr.start);
+        this.expr(expr.end);
+        return;
+
+      case 'ListLit':
+        for (const item of expr.items) this.expr(item);
+        return;
+
+      case 'MapLit':
+        for (const entry of expr.entries) {
+          // A bare-name key is a string, not a variable reference.
+          if (entry.key.kind !== 'StringLit') this.expr(entry.key);
+          this.expr(entry.value);
+        }
+        return;
+
+      case 'StructLit':
+        this.use(expr.name, expr.span);
+        for (const field of expr.fields) this.expr(field.value);
+        return;
+
+      case 'CallExpr':
+        this.expr(expr.callee);
+        for (const arg of expr.args) this.expr(arg.value);
+        return;
+
+      case 'IndexExpr':
+        this.expr(expr.target);
+        this.expr(expr.index);
+        return;
+
+      case 'MemberExpr':
+        // Only the target is a name; `.field` is not resolved here.
+        this.expr(expr.target);
+        return;
+
+      case 'AssignExpr':
+        this.assign(expr.target, expr.value);
+        return;
+
+      case 'LambdaExpr':
+        this.fnBody(expr.params, expr.body);
+        return;
+
+      case 'BlockExpr':
+        this.block(expr.block);
+        return;
+
+      case 'IfExpr':
+        this.expr(expr.condition);
+        this.block(expr.then);
+        if (expr.otherwise !== undefined) {
+          if (expr.otherwise.kind === 'Block') this.block(expr.otherwise);
+          else this.expr(expr.otherwise);
+        }
+        return;
+
+      case 'MatchExpr':
+        this.match(expr.subject, expr.arms, expr.span);
+        return;
+
+      case 'TryExpr':
+      case 'AwaitExpr':
+        this.expr(expr.operand);
+        return;
+    }
+  }
+
+  private assign(target: Expr, value: Expr): void {
+    this.expr(value);
+    if (target.kind === 'Ident') {
+      const binding = this.scope.lookup(target.name);
+      if (binding === undefined) {
+        this.use(target.name, target.span);
+        return;
+      }
+      if (!binding.mutable && binding.kind !== 'unresolved' && binding.kind !== 'built-in') {
+        this.report(
+          'RS005',
+          'cannot assign to `' + target.name + '`',
+          target.span,
+          'declared with `' + (binding.kind === 'let' ? 'let' : binding.kind) + '`',
+          ['values bound with `let` never change; use `var` if it needs to'],
+        );
+      }
+      return;
+    }
+    this.expr(target);
+  }
+
+  // ------------------------------------------------------------------- match
+
+  private match(subject: Expr, arms: readonly MatchArm[], span: Span): void {
+    this.expr(subject);
+
+    let catchAllAt: number | undefined;
+    arms.forEach((arm, index) => {
+      this.pushScope();
+      this.pattern(arm.pattern);
+      if (arm.guard !== undefined) this.expr(arm.guard);
+      this.expr(arm.body);
+      this.popScope();
+
+      // An unguarded wildcard or plain binding matches everything after it.
+      const isCatchAll =
+        arm.guard === undefined &&
+        (arm.pattern.kind === 'PWildcard' || arm.pattern.kind === 'PBinding');
+      if (isCatchAll && catchAllAt === undefined && index < arms.length - 1) {
+        catchAllAt = index;
+      }
+    });
+
+    if (catchAllAt !== undefined) {
+      const dead = arms[catchAllAt + 1];
+      if (dead !== undefined) {
+        this.report(
+          'RS003',
+          'this match arm can never be reached',
+          dead.span,
+          'unreachable',
+          ['an earlier arm on line ' + (arms[catchAllAt]?.span.start.line ?? 0) + ' matches everything'],
+        );
+      }
+      return; // A catch-all makes the match exhaustive by construction.
+    }
+
+    this.checkExhaustive(arms, span);
+  }
+
+  /**
+   * Report a match that misses an enum variant.
+   *
+   * Only fires when every arm names a variant of exactly one enum the resolver
+   * can see. Anything less certain is left alone, because a false "not
+   * exhaustive" on a valid program is worse than missing one.
+   */
+  private checkExhaustive(arms: readonly MatchArm[], span: Span): void {
+    const named = new Set<string>();
+    const covered = new Set<string>();
+
+    for (const arm of arms) {
+      if (arm.pattern.kind !== 'PEnum') return; // mixed patterns: cannot judge
+      const { enumName, variant } = arm.pattern;
+      if (enumName !== undefined) {
+        named.add(enumName);
+      } else {
+        // A bare variant: find which visible enum owns it, if exactly one does.
+        const owners = [...this.enums].filter(([, variants]) => variants.includes(variant));
+        if (owners.length !== 1) return;
+        const owner = owners[0];
+        if (owner === undefined) return;
+        named.add(owner[0]);
+      }
+      // A guarded arm may not fire, so it covers nothing.
+      if (arm.guard === undefined) covered.add(variant);
+    }
+
+    if (named.size !== 1) return;
+    const enumName = [...named][0];
+    if (enumName === undefined) return;
+    const variants = this.enums.get(enumName);
+    if (variants === undefined) return;
+
+    const missing = variants.filter((v) => !covered.has(v));
+    if (missing.length === 0) return;
+
+    this.report(
+      'RS002',
+      'this `match` does not cover ' +
+        (missing.length === 1 ? 'the variant ' : 'the variants ') +
+        missing.map((v) => '`' + enumName + '.' + v + '`').join(', '),
+      span,
+      'not exhaustive',
+      [
+        'add ' + (missing.length === 1 ? 'an arm' : 'arms') + ' for ' + missing.join(', ') +
+          ', or a `_ => ...` catch-all',
+        arms.some((a) => a.guard !== undefined)
+          ? 'an arm with a guard does not count as covering a variant, because the guard may be false'
+          : 'every variant of an enum must be handled',
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------- patterns
+
+  private pattern(pattern: Pattern): void {
+    switch (pattern.kind) {
+      case 'PWildcard':
+        return;
+      case 'PBinding':
+        this.declare(pattern.name, pattern.span, false, 'pattern binding');
+        return;
+      case 'PLiteral':
+        return; // always a literal; nothing to resolve
+      case 'PEnum':
+        for (const sub of pattern.args) this.pattern(sub);
+        return;
+      case 'PStruct':
+        for (const field of pattern.fields) this.pattern(field.pattern);
+        return;
+      case 'PList':
+        for (const item of pattern.items) this.pattern(item);
+        if (pattern.rest !== undefined) {
+          this.declare(pattern.rest, pattern.span, false, 'pattern binding');
+        }
+        return;
+    }
+  }
+}
+
+const ZERO_SPAN: Span = {
+  start: { offset: 0, line: 1, col: 1 },
+  end: { offset: 0, line: 1, col: 1 },
+};
+
+/**
+ * Check a module. Returns the diagnostics found; an empty array means the
+ * module passed every static check.
+ */
+export function resolve(module: Module, options: ResolveOptions): readonly Diagnostic[] {
+  return new Resolver(options).resolveModule(module);
+}
+
+/** Check a module and throw if anything was found. */
+export function checkModule(module: Module, source: string, options: ResolveOptions): void {
+  const diagnostics = resolve(module, options);
+  if (diagnostics.length > 0) {
+    throw new LumenError(diagnostics, module.file, source);
+  }
+}

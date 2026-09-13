@@ -60,8 +60,11 @@ print("\${a()} \${b()}")`;
     assert.equal(await out('let x = "out"\nfn f() { let x = "in"\n x }\nprint("${f()} ${x}")'), 'in out');
   });
 
-  it('refuses to assign to a let binding', async () => {
-    assert.equal(await code('let a = 1\na = 2'), 'RT029');
+  it('refuses to assign to a let binding, before the program runs', async () => {
+    // RS005 is the resolver's static check. The interpreter still enforces the
+    // same rule (RT029) as a backstop for any path that reaches it without
+    // being resolved first, such as a host embedding the interpreter directly.
+    assert.equal(await code('let a = 1\na = 2'), 'RS005');
   });
 
   it('allows assignment to a var binding', async () => {

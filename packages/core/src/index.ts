@@ -38,6 +38,8 @@ export { Lexer, lex } from './lexer.js';
 
 export { Parser, parse, parseExpression } from './parser.js';
 
+export { resolve, checkModule, type ResolveOptions } from './resolver.js';
+
 export type * as ast from './ast.js';
 export type {
   Arg,

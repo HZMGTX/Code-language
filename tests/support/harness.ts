@@ -9,7 +9,7 @@
 import { promises as fsp } from 'node:fs';
 import * as path from 'node:path';
 
-import { LumenError, parse, type Host } from '@lumen-lang/core';
+import { LumenError, checkModule, parse, type Host } from '@lumen-lang/core';
 import { createInterpreter } from '@lumen-lang/stdlib';
 
 /** The environment every fixture sees. `mock` keeps `std/ai` offline. */
@@ -58,6 +58,7 @@ export async function runSource(
 
   try {
     const module = parse(source, fileName);
+    checkModule(module, source, { globals: interpreter.globals.ownNames() });
     await interpreter.runModule(module, source);
     return { output, failed: false };
   } catch (error) {

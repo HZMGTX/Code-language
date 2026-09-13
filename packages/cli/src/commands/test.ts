@@ -9,7 +9,7 @@
 import { promises as fsp } from 'node:fs';
 import * as path from 'node:path';
 
-import { LumenError, parse } from '@lumen-lang/core';
+import { LumenError, checkModule, parse } from '@lumen-lang/core';
 import { newInterpreter, useColor } from '../support.js';
 
 async function collect(target: string, found: string[]): Promise<void> {
@@ -50,7 +50,9 @@ export async function runTests(target: string): Promise<void> {
     const source = await fsp.readFile(file, 'utf8');
     try {
       const module = parse(source, file);
-      await newInterpreter().runModule(module, source);
+      const interpreter = newInterpreter();
+      checkModule(module, source, { globals: interpreter.globals.ownNames() });
+      await interpreter.runModule(module, source);
       passed += 1;
       process.stdout.write('ok   ' + relative + '\n');
     } catch (error) {

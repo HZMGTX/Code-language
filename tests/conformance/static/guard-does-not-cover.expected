@@ -1,0 +1,8 @@
+error[RS002]: this `match` does not cover the variant `Light.Amber`
+ --> guard-does-not-cover.lm:4:3
+  |
+4 |   match l {
+  |   ^^^^^^^^^ not exhaustive
+  |
+  = note: add an arm for Amber, or a `_ => ...` catch-all
+  = note: an arm with a guard does not count as covering a variant, because the guard may be false

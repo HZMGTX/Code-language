@@ -1,4 +1,4 @@
-error[RT005]: `cuont` is not defined
+error[RS001]: `cuont` is not defined
  --> undefined-variable.lm:2:7
   |
 2 | print(cuont)

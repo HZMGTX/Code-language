@@ -1,0 +1,24 @@
+// Covering every variant passes, with no catch-all needed.
+enum Light { Red, Amber, Green }
+
+fn act(l) {
+  match l {
+    Light.Red   => "stop",
+    Light.Amber => "wait",
+    Light.Green => "go",
+  }
+}
+
+print(act(Light.Red))
+print(act(Light.Amber))
+print(act(Light.Green))
+
+// Result and Option are enums too, and are checked the same way.
+fn show(r) {
+  match r {
+    Ok(v)  => "ok ${v}",
+    Err(e) => "err ${e}",
+  }
+}
+print(show(Ok(1)))
+print(show(Err("no")))

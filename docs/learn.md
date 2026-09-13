@@ -196,12 +196,17 @@ print("a,b,c" |> split(","))
 ["a", "b", "c"]
 ```
 
-The only difference is bookkeeping: the dotted form always works, while the
-plain-call form needs the name to be in scope. `split` is one of the names Lumen
-gives you everywhere; `upper` lives in a module, so `upper("hi")` would need an
-import while `"hi".upper()` never does. That is a good reason to prefer the dot.
+The only difference is bookkeeping. The plain-call form needs the name to be in
+scope: `split` is one of the names Lumen gives you everywhere, but `upper` lives
+in a module, so `upper("hi")` would need an import while `"hi".upper()` never
+does. That is a good reason to prefer the dot.
 
-It also lets you write a sequence of steps left to right:
+It does not go both ways for everything, mind. A method has to be one the type
+actually has, and a few of the everywhere-names are not methods on every type —
+`len("abc")` works, `"abc".len()` does not. When you are unsure, `help("abc")`
+lists exactly what that value will answer to.
+
+The dot also lets you write a sequence of steps left to right:
 
 ```lumen
 print("  Hello World  ".trim().lower().split(" ").join("_"))
@@ -945,10 +950,16 @@ Ok(5)
 Err("`ten` is not a number")
 ```
 
-Two lines of work, with the failure handled, and no nesting. `?` only works
-inside a function that itself returns a `Result` or an `Option`, which is exactly
-the point: the obligation to deal with the problem moves up one level rather
-than disappearing.
+Two lines of work, with the failure handled, and no nesting. `?` needs a
+function to return from: used at the top level of a program there is nowhere for
+the failure to go, so Lumen stops with `RT001` rather than quietly dropping it.
+That is the point of it — the obligation to deal with the problem moves up one
+level rather than disappearing.
+
+There is one gap worth knowing about. Lumen does not yet check that the function
+you used `?` in returns a `Result` or an `Option` on its other paths, so that
+part is down to you. Write one that does: a function handing back a bare number
+when it works and an `Err` when it does not is awkward for whoever calls it.
 
 Some things are genuinely mistakes rather than expected failures, and those do
 stop the program with a message that points at the line — dividing by zero,

@@ -425,11 +425,19 @@ export function editDistance(a: string, b: string): number {
   return prev[b.length] ?? 0;
 }
 
-/** The closest candidate to `name`, if any is close enough to be worth showing. */
+/**
+ * The closest candidate to `name`, if any is close enough to be worth showing.
+ *
+ * The threshold is deliberately tight: at least 2, so an ordinary typo or
+ * transposition is still caught (`cuont` finds `count`), but never more than 3,
+ * so a long name cannot drift far enough to match something unrelated. A
+ * confident wrong suggestion costs more than no suggestion — it sends the
+ * reader after the wrong thing.
+ */
 export function suggest(name: string, candidates: readonly string[]): string | undefined {
   let best: string | undefined;
   let bestScore = Number.POSITIVE_INFINITY;
-  const limit = Math.max(2, Math.floor(name.length / 2));
+  const limit = Math.max(2, Math.min(3, Math.floor(name.length / 3)));
   for (const candidate of candidates) {
     const score = editDistance(name.toLowerCase(), candidate.toLowerCase());
     if (score < bestScore && score <= limit) {

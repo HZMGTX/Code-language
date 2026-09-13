@@ -26,6 +26,27 @@ The first working version. Everything below runs today.
 - Modules: `import`/`export`, `std/*` modules and relative `.lm` files
 - No async colouring — I/O is awaited implicitly
 
+### Static checks
+
+Programs are now checked before they run, so a mistake is reported whether or
+not execution happens to reach it.
+
+- `RS001` a name that is not defined anywhere in scope, with a suggestion
+- `RS002` a `match` over an enum that misses a variant. A guarded arm does not
+  count as covering one, because the guard may be false
+- `RS003` a `match` arm that can never be reached
+- `RS004` a name declared twice in one scope
+- `RS005` assignment to a binding introduced with `let`
+
+The guiding rule is no false positives: anything the resolver cannot be certain
+about it leaves to the interpreter, which still enforces every one of these at
+run time as a backstop. Verified against every Lumen file in the repository —
+56 valid programs, none flagged.
+
+Diagnostic suggestions were also tightened. The "did you mean" threshold now
+caps at an edit distance of 3, so a long name can no longer match something
+unrelated; a confident wrong suggestion costs more than none.
+
 ### Ergonomics
 
 - **Method-call syntax.** `x.f(a)` means `f(x, a)`. Because every standard-library
@@ -82,7 +103,7 @@ The first working version. Everything below runs today.
 ### Project
 
 - Zero runtime dependencies
-- 181 tests and 59 conformance fixtures, green on Node 20/22/24 across Linux,
+- 191 tests and 65 conformance fixtures, green on Node 20/22/24 across Linux,
   macOS and Windows
 - Specification, tour, standard-library reference and design rationale
 - Proprietary licence; every package marked private, enforced by CI

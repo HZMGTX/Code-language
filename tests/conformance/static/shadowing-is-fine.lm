@@ -1,0 +1,31 @@
+// None of this is an error. A checker that rejected any of it would be worse
+// than no checker, so these shapes are pinned.
+let x = "outer"
+
+fn inner() {
+  let x = "inner"       // shadows, does not clash
+  x
+}
+
+fn params(x, y = 2) {   // parameters shadow outer names
+  let y = x + y         // a local may shadow a parameter
+  y
+}
+
+for x in [1, 2] {       // loop bindings are scoped to the loop
+  let y = x * 2
+  print(y)
+}
+
+print(match [1, 2] {
+  [x, ..rest] => "${x} then ${rest}",   // pattern bindings are scoped to the arm
+  _ => "none",
+})
+
+print(inner())
+print(x)
+print(params(1))
+
+// Declared later, used earlier: functions and types are hoisted.
+print(later())
+fn later() { "hoisted" }
