@@ -14,7 +14,7 @@ decisions, not oversights.
 | **Type checking is gradual and shallow** | Annotations are enforced where written (`TY001`-`TY004`), and an unannotated `let` takes its value's type. But there is no inference for parameters or `var`, the standard library carries no signatures, method calls are unchecked, and there is no flow analysis or generics. An unannotated program is never type-checked at all, by design. |
 | **Ranges are materialised** | `0..n` builds a list, capped at 10,000,000 elements. Large spans need a `while` loop. |
 | **No methods on built-in types** | `len(x)`, not `x.len()`. Pipelines cover most of the ergonomics. |
-| **Performance** | A tree-walking interpreter in which every evaluation is a promise. Correctness and capability were the v0.1 priorities; speed is v0.3's. |
+| **Performance** | A tree-walking interpreter in which every evaluation is a promise. `npm run bench` measures it. Profiling the `while` benchmark puts roughly **37% of non-library ticks in promise machinery** alone (`RunMicrotasks`, `AsyncFunctionAwait*`, `FulfillPromise`, `EnqueueMicrotask`, `PerformPromiseThen`), which is what the v0.3 work below is aimed at. |
 | **`await` is inert** | Accepted and evaluates to its operand. I/O is awaited implicitly. |
 | **No package manager** | Imports are `std/*` modules or relative `.lm` paths. |
 | **Distribution artifacts are not published** | There is now both a single-file bundle (`npm run bundle` -> `build/lumen.cjs`, produced by `scripts/bundle.mjs`, a small purpose-built bundler that adds no dependency) and a native standalone binary (`npm run binary` -> `build/lumen`, compiled by bun at build time only). Neither is hosted anywhere, signed or notarised: you build them, or you use `npm link --workspace @lumen-lang/cli`. |
@@ -37,9 +37,23 @@ depth: knowing the types of things nobody annotated.
 
 ## v0.3 — Speed
 
-- A bytecode compiler and VM to replace tree-walking
-- A synchronous fast path, so pure code stops paying the promise tax
+Measured, not guessed. `npm run bench` is the baseline; profile before and after.
+
+- **Return `Value | Promise<Value>` rather than always a promise.** The
+  interpreter awaits I/O so user code needs no `async`, and that must not
+  change — but almost nothing it evaluates is actually asynchronous. Awaiting a
+  plain value still costs a microtask, and the profile above attributes ~37% of
+  the work to exactly that. A micro-benchmark of the same tree walk in both
+  shapes puts the ceiling at 6.5x for the walk machinery in isolation; the real
+  gain on whole programs will be nearer the 37%. Roughly 80 `await` sites in
+  `packages/core/src/interp.ts`, made safe by the conformance suite.
+- A bytecode compiler and VM to replace tree-walking. This is the change that
+  alters the category rather than the constant factor.
 - Constant folding and inline caches for member access
+
+Already done, and worth ~13-28%: scopes allocate their slot table on first
+declaration instead of eagerly, since a loop body and the block inside it
+created two throwaway Maps per iteration.
 
 ## v0.4 — Reach
 

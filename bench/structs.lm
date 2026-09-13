@@ -1,0 +1,9 @@
+struct Point { x: Num, y: Num }
+fn lengthSquared(p) { p.x * p.x + p.y * p.y }
+var total = 0
+var i = 0
+while i < 100000 {
+  total += lengthSquared(Point { x: i, y: i })
+  i += 1
+}
+print(total)

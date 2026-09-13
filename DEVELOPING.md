@@ -30,6 +30,7 @@ npm run build
 | `npm run binary` | Build `build/lumen`, the native standalone executable (needs bun) |
 | `npm run binary:all` | Cross-compile the native binary for all five targets |
 | `npm run dist` | Build both: bundle, then binary |
+| `npm run bench` | Time the interpreter on five representative programs |
 | `npm run ci` | Run every check CI runs, locally |
 | `npm run ci:full` | The same, plus building and proving the native binary (needs bun) |
 | `npm run clean` | Delete all build output |

@@ -21,6 +21,7 @@
     "test:update": "npm run build && node scripts/run-tests.mjs --update",
     "ci": "node scripts/ci.mjs",
     "ci:full": "node scripts/ci.mjs --full",
+    "bench": "npm run build && node scripts/bench.mjs",
     "lumen": "node packages/cli/dist/index.js",
     "examples": "npm run build && node scripts/run-examples.mjs",
     "bundle": "npm run build && node scripts/bundle.mjs",

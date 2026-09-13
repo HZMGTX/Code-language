@@ -1,0 +1,8 @@
+// Arithmetic and loop overhead.
+var total = 0
+var i = 0
+while i < 300000 {
+  total += i * 2 - 1
+  i += 1
+}
+print(total)

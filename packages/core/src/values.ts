@@ -341,21 +341,30 @@ export interface Slot {
   readonly mutable: boolean;
 }
 
-/** A lexical scope. Lookup walks the parent chain. */
+/**
+ * A lexical scope. Lookup walks the parent chain.
+ *
+ * The slot table is allocated on first declaration rather than in the
+ * constructor. Most scopes never hold anything — a loop body creates one per
+ * iteration, and a block inside it creates another — so allocating a Map
+ * eagerly meant two throwaway Maps per iteration of every loop. Profiling the
+ * `while` benchmark showed that cost as `MapConstructor` and
+ * `FindOrderedHashMapEntry`; an empty scope now costs one object.
+ */
 export class Env {
-  private readonly slots = new Map<string, Slot>();
+  private slots: Map<string, Slot> | undefined;
 
   constructor(readonly parent?: Env) {}
 
   /** Declare in this scope. Redeclaring the same name shadows the old slot. */
   declare(name: string, value: Value, mutable: boolean): void {
-    this.slots.set(name, { value, mutable });
+    (this.slots ??= new Map<string, Slot>()).set(name, { value, mutable });
   }
 
   lookup(name: string): Slot | undefined {
     let scope: Env | undefined = this;
     while (scope !== undefined) {
-      const slot = scope.slots.get(name);
+      const slot = scope.slots?.get(name);
       if (slot !== undefined) return slot;
       scope = scope.parent;
     }
@@ -367,18 +376,18 @@ export class Env {
     const names: string[] = [];
     let scope: Env | undefined = this;
     while (scope !== undefined) {
-      for (const key of scope.slots.keys()) names.push(key);
+      if (scope.slots !== undefined) for (const key of scope.slots.keys()) names.push(key);
       scope = scope.parent;
     }
     return names;
   }
 
   ownNames(): string[] {
-    return [...this.slots.keys()];
+    return this.slots === undefined ? [] : [...this.slots.keys()];
   }
 
   hasOwn(name: string): boolean {
-    return this.slots.has(name);
+    return this.slots?.has(name) ?? false;
   }
 }
 
