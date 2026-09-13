@@ -1,0 +1,7 @@
+error[RT002]: module "std/list" has no export named `nope`
+ --> missing-import.lm:1:10
+  |
+1 | import { nope } from "std/list"
+  |          ^^^^ not exported
+  |
+  = note: did you mean `pop`?

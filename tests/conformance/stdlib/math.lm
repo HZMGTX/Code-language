@@ -1,0 +1,17 @@
+import { abs, floor, ceil, round, trunc, sign, sqrt, pow, min, max, clamp, log, PI, E } from "std/math"
+
+print(abs(-3))
+print(floor(2.7))
+print(ceil(2.1))
+print(round(2.5))
+print(trunc(-2.7))
+print(sign(-9))
+print(sqrt(16))
+print(pow(2, 10))
+print(min(3, 7))
+print(max(3, 7))
+print(clamp(15, 0, 10))
+print(clamp(-5, 0, 10))
+print(log(100, 10))
+print(floor(PI * 100) / 100)
+print(floor(E * 100) / 100)

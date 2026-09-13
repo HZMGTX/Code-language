@@ -1,0 +1,7 @@
+error[RT039]: `greet` has no parameter named `nmae`
+ --> unknown-named-argument.lm:2:13
+  |
+2 | print(greet(nmae: "Ada"))
+  |             ^^^^^^^^^^^ unknown argument
+  |
+  = note: did you mean `name`?

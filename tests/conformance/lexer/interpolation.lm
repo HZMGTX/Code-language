@@ -1,0 +1,10 @@
+let who = "world"
+let n = 3
+print("simple ${who}")
+print("expr ${n * 2}")
+print("nested ${"inner ${who}"}")
+print("call ${len("abcd")}")
+print("brace inside string ${ len("}") }")
+print("adjacent ${n}${n}")
+print("${n} at the start")
+print("at the end ${n}")

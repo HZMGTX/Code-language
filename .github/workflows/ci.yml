@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push to the same branch supersedes an in-flight run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # The language must behave identically on every Node we claim to support and
+  # on every OS. The conformance goldens are byte-compared, so any host-specific
+  # output would fail here rather than in someone's editor.
+  test:
+    name: test (node ${{ matrix.node }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, node: '20' }
+          - { os: ubuntu-latest, node: '22' }
+          - { os: ubuntu-latest, node: '24' }
+          - { os: macos-latest, node: '22' }
+          - { os: windows-latest, node: '22' }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: node scripts/run-tests.mjs
+
+      # The language's own test suite, written in Lumen and run by `lumen test`.
+      # This exercises the CLI end to end on every supported platform.
+      - name: Lumen test suite
+        run: node packages/cli/dist/index.js test tests/lumen
+        env:
+          LUMEN_AI_PROVIDER: mock
+
+  # `tsc --build` already type-checks, but forcing a clean rebuild catches
+  # errors that incremental output would otherwise hide.
+  typecheck:
+    name: typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+
+  # Run every example through the real CLI. This is the fastest signal that
+  # something user-visible broke.
+  examples:
+    name: examples
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Run examples
+        run: node scripts/run-examples.mjs
+        env:
+          LUMEN_AI_PROVIDER: mock
+
+      # The stdlib reference is generated from the modules themselves, so it
+      # cannot silently drift from what the library actually exports.
+      - name: Check the generated docs are current
+        run: node scripts/gen-stdlib-docs.mjs --check
+
+  # This repository is proprietary. Every package is marked private, and this
+  # job fails if that ever stops being true, so an accidental `npm publish`
+  # cannot be the thing that discovers it.
+  private:
+    name: packages stay private
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check every package.json is private
+        run: node scripts/check-private.mjs

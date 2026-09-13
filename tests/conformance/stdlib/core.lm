@@ -1,0 +1,16 @@
+import { now, env, inspect, clone, isNil } from "std/core"
+
+print(now())
+print(env("LUMEN_AI_PROVIDER"))
+print(env("DEFINITELY_NOT_SET_12345"))
+print(inspect("quoted"))
+print(inspect([1, "a"]))
+print(isNil(nil))
+print(isNil(0))
+
+// clone is deep: mutating the copy leaves the original alone.
+var original = [[1], [2]]
+let copy = clone(original)
+copy[0][0] = 99
+print(original)
+print(copy)

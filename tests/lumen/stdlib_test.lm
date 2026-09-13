@@ -1,0 +1,44 @@
+// Standard-library behaviour, checked from Lumen itself.
+
+import { get, keys, set } from "std/map"
+import { first, last, find, unique, join } from "std/list"
+import { parse, stringify } from "std/json"
+import { abs, clamp, sqrt } from "std/math"
+import { toNum, trim } from "std/str"
+import { chat, provider } from "std/ai"
+
+fn check(name, actual, expected) {
+  assert(actual == expected, "${name}: expected ${expected}, got ${actual}")
+}
+
+// Absence is an Option, not a nil you might forget about.
+check("get present", get({ a: 1 }, "a"), Some(1))
+check("get absent", get({ a: 1 }, "b"), None)
+check("first of empty", first([]), None)
+check("last", last([1, 2]), Some(2))
+check("find miss", find([1, 2], fn(n) { n > 9 }), None)
+
+check("keys", keys({ a: 1, b: 2 }), ["a", "b"])
+check("set is pure", keys(set({ a: 1 }, "b", 2)), ["a", "b"])
+check("unique", unique([1, 1, 2]), [1, 2])
+check("join", join(["a", "b"], "-"), "a-b")
+
+// Failure is a Result, not an exception.
+check("json round trip", parse(stringify({ a: 1 })), Ok({ a: 1 }))
+check("json failure", parse("nope"), Err("invalid JSON"))
+check("toNum ok", toNum("42"), Ok(42))
+check("toNum err", toNum("abc"), Err("`abc` is not a number"))
+
+check("abs", abs(-3), 3)
+check("clamp high", clamp(99, 0, 10), 10)
+check("sqrt", sqrt(9), 3)
+check("trim", trim("  x  "), "x")
+
+// std/ai works with no API key at all.
+check("mock provider", provider(), "mock")
+match chat(prompt: "hello") {
+  Ok(reply) => assert(len(reply) > 0, "mock reply should not be empty"),
+  Err(why)  => panic("mock provider should not fail: ${why}"),
+}
+
+print("stdlib_test.lm: all checks passed")

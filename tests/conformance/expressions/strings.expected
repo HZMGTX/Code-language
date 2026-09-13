@@ -1,0 +1,12 @@
+plain
+ab
+hello world
+sum is 3, nested in world
+tab:	here
+newline:
+here
+quote:"here"
+dollar:${not interpolated}
+unicode: 🚀
+multi
+line

@@ -1,0 +1,21 @@
+HELLO
+hello
+padded
+["a", "b", "c"]
+["one", "two"]
+["a", "b", "c"]
+true
+true
+true
+a+b+c
+bcd
+cdef
+2
+ababab
+007
+7..
+cba
+true
+false
+Ok(42)
+Err("`nope` is not a number")

@@ -1,0 +1,17 @@
+Lumen Programming Language
+Copyright (c) 2026 HZMGTX. All rights reserved.
+
+This is proprietary, closed-source software. See LICENSE for terms.
+
+NOT FOR DISTRIBUTION.
+
+Do not publish this repository, its packages, or any build artifact derived
+from it to any public registry, package index, mirror, paste service, or
+public code host. Every package manifest in this repository is marked
+`"private": true`, which causes `npm publish` to fail by design. Do not
+remove that field.
+
+THIRD-PARTY CODE
+  None. Lumen has zero runtime dependencies. The only build-time
+  dependencies are TypeScript and the Node.js type definitions, neither of
+  which is redistributed as part of this Software.

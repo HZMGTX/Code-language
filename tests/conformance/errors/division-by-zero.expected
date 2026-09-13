@@ -1,0 +1,6 @@
+error[RT018]: division by zero
+ --> division-by-zero.lm:1:7
+  |
+1 | print(10 / 0)
+  |       ^^^^^^ the right operand is 0
+  |

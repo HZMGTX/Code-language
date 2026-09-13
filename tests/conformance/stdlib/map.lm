@@ -1,0 +1,18 @@
+import { keys, values, entries, get, has, set, remove, merge, len as mapLen,
+         isEmpty, fromEntries } from "std/map"
+
+let m = { b: 2, a: 1 }
+print(keys(m))
+print(values(m))
+print(entries(m))
+print(get(m, "a"))
+print(get(m, "zz"))
+print(has(m, "b"))
+print(set(m, "c", 3))
+print(m)
+print(remove(m, "a"))
+print(merge({ a: 1 }, { b: 2 }))
+print(merge({ a: 1 }, { a: 9 }))
+print(mapLen(m))
+print(isEmpty({}))
+print(fromEntries([["x", 1], ["y", 2]]))

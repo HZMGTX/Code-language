@@ -1,0 +1,83 @@
+// Tests written in Lumen, run with:  lumen test tests/lumen
+//
+// A file passes if it runs to completion. `assert` is all the framework a small
+// program needs — it raises a located error, which fails the file.
+
+import { map, filter, sum, sort } from "std/list"
+import { upper, split } from "std/str"
+
+fn check(name, actual, expected) {
+  assert(actual == expected, "${name}: expected ${expected}, got ${actual}")
+}
+
+// -------------------------------------------------------------- arithmetic
+check("precedence", 1 + 2 * 3, 7)
+check("grouping", (1 + 2) * 3, 9)
+check("modulo", 7 % 3, 1)
+check("unary", -(3 - 5), 2)
+
+// ----------------------------------------------------------------- strings
+check("concat", "a" + "b", "ab")
+check("interpolation", "n=${1 + 1}", "n=2")
+check("upper", upper("hi"), "HI")
+check("split", split("a,b", ","), ["a", "b"])
+
+// ------------------------------------------------------------- collections
+check("list len", len([1, 2, 3]), 3)
+check("negative index", [1, 2, 3][-1], 3)
+check("map read", { a: 1 }["a"], 1)
+check("missing key is nil", { a: 1 }["zz"], nil)
+check("deep equality", [1, [2]], [1, [2]])
+check("pipeline", [1, 2, 3, 4] |> filter(fn(n) { n % 2 == 0 }) |> sum(), 6)
+check("sort", sort([3, 1, 2]), [1, 2, 3])
+check("map over list", map([1, 2], fn(n) { n * 2 }), [2, 4])
+
+// --------------------------------------------------------------- functions
+fn withDefault(a, b = 10) { a + b }
+check("default argument", withDefault(1), 11)
+check("named argument", withDefault(1, b: 5), 6)
+
+fn counter() {
+  var n = 0
+  fn() { n += 1
+    n }
+}
+let next = counter()
+next()
+check("closure state", next(), 2)
+
+// ---------------------------------------------------------------- matching
+struct Task { title: Str, done: Bool }
+enum Status { Todo, Done }
+
+fn statusOf(t) { if t.done { Status.Done } else { Status.Todo } }
+check("enum from struct", statusOf(Task { title: "x", done: true }), Status.Done)
+
+fn shape(value) {
+  match value {
+    []              => "empty",
+    [only]          => "one",
+    [a, ..rest]     => "many",
+    Task { title }  => title,
+    _               => "other",
+  }
+}
+check("empty list pattern", shape([]), "empty")
+check("single list pattern", shape([1]), "one")
+check("rest pattern", shape([1, 2]), "many")
+check("struct pattern", shape(Task { title: "hi", done: false }), "hi")
+check("wildcard", shape(42), "other")
+
+// ------------------------------------------------------------------ errors
+fn positive(n) { if n > 0 { Ok(n) } else { Err("not positive") } }
+fn addBoth(a, b) {
+  let x = positive(a)?
+  let y = positive(b)?
+  Ok(x + y)
+}
+check("ok path", addBoth(1, 2), Ok(3))
+check("err propagates", addBoth(1, -1), Err("not positive"))
+check("option some", Some(1), Some(1))
+check("option none", None, None)
+
+print("language_test.lm: all checks passed")

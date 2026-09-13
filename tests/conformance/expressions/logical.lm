@@ -1,0 +1,16 @@
+print(true && false)
+print(true and true)
+print(false || true)
+print(false or false)
+print(not true)
+print(!false)
+
+// Short-circuit: the right side never runs.
+fn boom() { panic("should not run") }
+print(false && boom())
+print(true || boom())
+
+// nil and false are the only falsy values.
+print(if 0 { "zero is truthy" } else { "zero is falsy" })
+print(if "" { "empty string is truthy" } else { "empty string is falsy" })
+print(if nil { "nil is truthy" } else { "nil is falsy" })

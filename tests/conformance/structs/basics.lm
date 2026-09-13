@@ -1,0 +1,18 @@
+struct Point { x: Num, y: Num }
+
+let p = Point { x: 1, y: 2 }
+print(p)
+print(p.x)
+print(p.y)
+
+var q = Point { x: 0, y: 0 }
+q.x = 10
+q.y += 5
+print(q)
+
+print(Point { x: 1, y: 2 } == Point { x: 1, y: 2 })
+print(Point { x: 1, y: 2 } == Point { x: 9, y: 2 })
+print(type(p))
+
+// Field order in a literal does not matter.
+print(Point { y: 4, x: 3 })

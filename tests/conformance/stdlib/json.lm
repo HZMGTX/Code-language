@@ -1,0 +1,17 @@
+import { parse, stringify } from "std/json"
+
+print(stringify({ a: 1, b: [1, 2], c: "x" }))
+print(stringify([1, true, nil]))
+print(stringify({ a: 1 }, 2))
+
+print(parse("{\"a\": 1}"))
+print(parse("[1, 2, 3]"))
+print(parse("not json"))
+
+struct Point { x: Num, y: Num }
+print(stringify(Point { x: 1, y: 2 }))
+
+match parse("{\"n\": 7}") {
+  Ok(data) => print("n is ${data.n}"),
+  Err(why) => print("failed: ${why}"),
+}

@@ -1,0 +1,15 @@
+fn divide(a, b) {
+  if b == 0 { Err("cannot divide by zero") } else { Ok(a / b) }
+}
+
+print(divide(10, 2))
+print(divide(10, 0))
+
+fn show(r) {
+  match r {
+    Ok(value) => "ok: ${value}",
+    Err(why)  => "err: ${why}",
+  }
+}
+print(show(divide(9, 3)))
+print(show(divide(9, 0)))

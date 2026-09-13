@@ -1,0 +1,25 @@
+import { upper, lower, trim, split, lines, chars, contains, startsWith, endsWith,
+         replace, slice, indexOf, repeat, padStart, padEnd, reverse, isEmpty, toNum } from "std/str"
+
+print(upper("hello"))
+print(lower("HELLO"))
+print(trim("  padded  "))
+print(split("a,b,c", ","))
+print(lines("one
+two"))
+print(chars("abc"))
+print(contains("hello", "ell"))
+print(startsWith("hello", "he"))
+print(endsWith("hello", "lo"))
+print(replace("a-b-c", "-", "+"))
+print(slice("abcdef", 1, 4))
+print(slice("abcdef", 2))
+print(indexOf("hello", "l"))
+print(repeat("ab", 3))
+print(padStart("7", 3, "0"))
+print(padEnd("7", 3, "."))
+print(reverse("abc"))
+print(isEmpty(""))
+print(isEmpty("x"))
+print(toNum("42"))
+print(toNum("nope"))

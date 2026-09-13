@@ -1,0 +1,7 @@
+error[RT022]: index 5 is out of bounds for a list of length 2
+ --> index-out-of-bounds.lm:2:7
+  |
+2 | print(xs[5])
+  |       ^^^^^ out of range
+  |
+  = note: negative indices count from the end, so `-1` is the last element

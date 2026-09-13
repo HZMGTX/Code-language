@@ -1,0 +1,13 @@
+literal zero
+literal string
+literal true
+literal nil
+empty list
+one item: 7
+first 1, rest [2, 3]
+task write
+some 9
+none
+bound: 3.5
+done
+pending

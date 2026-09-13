@@ -1,0 +1,6 @@
+error[RT015]: `Point` is missing field `y`
+ --> missing-field.lm:2:9
+  |
+2 | let p = Point { x: 1 }
+  |         ^^^^^^^^^^^^^^ incomplete struct literal
+  |

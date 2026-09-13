@@ -1,0 +1,7 @@
+error[RT029]: cannot assign to `total`
+ --> immutable-assign.lm:2:1
+  |
+2 | total = 2
+  | ^^^^^ declared with `let`
+  |
+  = note: values bound with `let` never change; use `var` if it needs to

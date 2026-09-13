@@ -1,0 +1,7 @@
+error[RT024]: `Point` has no field `z`
+ --> unknown-field.lm:3:7
+  |
+3 | print(p.z)
+  |       ^^^ unknown field
+  |
+  = note: did you mean `x`?

@@ -1,0 +1,11 @@
+false
+true
+true
+false
+false
+true
+false
+true
+zero is truthy
+empty string is truthy
+nil is falsy

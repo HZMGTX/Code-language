@@ -1,0 +1,19 @@
+var i = 0
+while i < 3 {
+  print("while ${i}")
+  i += 1
+}
+
+for ch in "abc" { print("char ${ch}") }
+
+for pair in { x: 1, y: 2 } { print("entry ${pair}") }
+
+for [k, v] in { p: 10 } { print("${k} = ${v}") }
+
+var total = 0
+for n in [1, 2, 3, 4, 5, 6] {
+  if n % 2 == 0 { continue }
+  if n > 4 { break }
+  total += n
+}
+print(total)

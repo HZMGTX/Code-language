@@ -1,0 +1,3 @@
+// The smallest Lumen program. Run it with:  lumen run examples/hello.lm
+
+print("Hello from Lumen!")

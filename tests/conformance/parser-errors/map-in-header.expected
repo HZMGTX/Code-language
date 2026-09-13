@@ -1,0 +1,28 @@
+error[PA009]: a map literal cannot appear here
+ --> map-in-header.lm:1:4
+  |
+1 | if { a: 1 } { print("x") }
+  |    ^ unexpected `{`
+  |
+  = note: inside an `if`, `while`, `for` or `match` header a `{` starts the body; wrap the map in parentheses if you meant a value
+
+error[PA014]: unmatched `}`
+ --> map-in-header.lm:1:11
+  |
+1 | if { a: 1 } { print("x") }
+  |           ^ no block is open here
+  |
+
+error[PA001]: expected `:` after a map key, found `(`
+ --> map-in-header.lm:1:20
+  |
+1 | if { a: 1 } { print("x") }
+  |                    ^ expected `:`
+  |
+
+error[PA014]: unmatched `}`
+ --> map-in-header.lm:1:26
+  |
+1 | if { a: 1 } { print("x") }
+  |                          ^ no block is open here
+  |

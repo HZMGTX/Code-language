@@ -1,0 +1,22 @@
+enum Status { Todo, Doing, Done }
+enum Shape { Circle(Num), Rect(Num, Num) }
+
+let s = Status.Done
+print(s)
+print(type(s))
+
+let c = Shape.Circle(2)
+let r = Shape.Rect(3, 4)
+print(c)
+print(r)
+
+fn area(shape) {
+  match shape {
+    Shape.Circle(radius) => 3 * radius * radius,
+    Shape.Rect(w, h)     => w * h,
+  }
+}
+print(area(c))
+print(area(r))
+print(Status.Done == Status.Done)
+print(Status.Done == Status.Todo)

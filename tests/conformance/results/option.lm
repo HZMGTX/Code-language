@@ -1,0 +1,30 @@
+import { find, first, last } from "std/list"
+import { get } from "std/map"
+
+let xs = [1, 2, 3]
+print(first(xs))
+print(last(xs))
+print(first([]))
+print(find(xs, fn(n) { n > 2 }))
+print(find(xs, fn(n) { n > 9 }))
+
+let m = { a: 1 }
+print(get(m, "a"))
+print(get(m, "b"))
+
+fn unwrapOr(option, fallback) {
+  match option {
+    Some(v) => v,
+    None    => fallback,
+  }
+}
+print(unwrapOr(get(m, "a"), 0))
+print(unwrapOr(get(m, "b"), 0))
+
+// `?` works on Option as well as Result.
+fn firstDoubled(list) {
+  let head = first(list)?
+  Some(head * 2)
+}
+print(firstDoubled([5, 6]))
+print(firstDoubled([]))

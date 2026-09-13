@@ -1,0 +1,14 @@
+import { chat, converse, message, provider, providers } from "std/ai"
+
+print(provider())
+print(providers())
+
+match chat(prompt: "What is 2 + 2?") {
+  Ok(reply) => print(reply),
+  Err(why)  => print("failed: ${why}"),
+}
+
+match converse([message("user", "Say hi.")]) {
+  Ok(reply) => print(reply),
+  Err(why)  => print("failed: ${why}"),
+}

@@ -1,0 +1,7 @@
+error[PA003]: unexpected `let` after statement
+ --> statement-run-on.lm:1:11
+  |
+1 | let a = 1 let b = 2
+  |           ^^^ expected a line break or `;` here
+  |
+  = note: statements in Lumen end at the end of the line; semicolons are optional

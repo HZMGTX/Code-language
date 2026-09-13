@@ -1,0 +1,39 @@
+// Declarations are hoisted, so `main`-style code can come first.
+print(later())
+fn later() { "defined below" }
+
+fn greet(name, greeting = "Hello") { "${greeting}, ${name}!" }
+print(greet("Ada"))
+print(greet("Ada", "Yo"))
+print(greet("Ada", greeting: "Hi"))
+print(greet(greeting: "Hey", name: "Bob"))
+
+// Mutual recursion.
+fn isEven(n) { if n == 0 { true } else { isOdd(n - 1) } }
+fn isOdd(n) { if n == 0 { false } else { isEven(n - 1) } }
+print(isEven(10))
+print(isOdd(10))
+
+// Closures capture by reference.
+fn counter() {
+  var n = 0
+  fn() { n += 1
+    n }
+}
+let next = counter()
+print(next())
+print(next())
+
+// Functions are values.
+fn apply(f, x) { f(x) }
+print(apply(fn(n) { n * n }, 9))
+
+// `return` exits early.
+fn firstNegative(xs) {
+  for x in xs {
+    if x < 0 { return x }
+  }
+  nil
+}
+print(firstNegative([1, -2, 3]))
+print(firstNegative([1, 2]))

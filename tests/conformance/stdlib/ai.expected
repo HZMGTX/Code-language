@@ -1,0 +1,4 @@
+mock
+["anthropic", "openai", "mock"]
+(mock) No AI provider is configured, so this is a canned reply. You asked: "What is 2 + 2?". Set ANTHROPIC_API_KEY or OPENAI_API_KEY for a real answer.
+(mock) No AI provider is configured, so this is a canned reply. You asked: "Say hi.". Set ANTHROPIC_API_KEY or OPENAI_API_KEY for a real answer.

@@ -1,0 +1,7 @@
+error[RT042]: cannot find module "std/nowhere"
+ --> unknown-module.lm:1:1
+  |
+1 | import { thing } from "std/nowhere"
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not found
+  |
+  = note: standard modules look like "std/list"; local files like "./helper.lm"

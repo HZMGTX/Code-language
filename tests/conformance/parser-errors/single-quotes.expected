@@ -1,0 +1,15 @@
+error[LX001]: unexpected character `'`
+ --> single-quotes.lm:1:9
+  |
+1 | let s = 'nope'
+  |         ^ not valid here
+  |
+  = note: Lumen strings use double quotes
+
+error[LX001]: unexpected character `'`
+ --> single-quotes.lm:1:14
+  |
+1 | let s = 'nope'
+  |              ^ not valid here
+  |
+  = note: Lumen strings use double quotes

@@ -1,0 +1,4 @@
+Ok(5)
+Err("cannot divide by zero")
+ok: 3
+err: cannot divide by zero

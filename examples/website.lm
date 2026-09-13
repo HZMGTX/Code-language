@@ -1,0 +1,68 @@
+// A real website in one file.
+//
+//   lumen serve examples/website.lm
+//   curl http://127.0.0.1:3000
+//
+// `serve` keeps running until you stop it with Ctrl-C.
+
+import { serve, page, json, notFound, escape } from "std/web"
+import { map, join, find } from "std/list"
+import { startsWith, slice } from "std/str"
+
+struct Post {
+  slug:  Str,
+  title: Str,
+  body:  Str,
+}
+
+let posts = [
+  Post {
+    slug:  "why-lumen",
+    title: "Why Lumen",
+    body:  "One language for scripts, servers, websites, and AI — with no exceptions, no async colouring, and no dependencies.",
+  },
+  Post {
+    slug:  "no-exceptions",
+    title: "Errors are values",
+    body:  "Anything that can fail returns a Result. `?` unwraps it or hands the error back to your caller.",
+  },
+]
+
+fn postLink(p) -> Str {
+  "<li><a href='/post/${p.slug}'>${escape(p.title)}</a></li>"
+}
+
+fn indexPage() {
+  let items = posts |> map(postLink) |> join("")
+  page(
+    title: "Lumen",
+    body: "<h1>Lumen</h1>
+           <p>A site served by a language that is only a few hundred lines old.</p>
+           <ul>${items}</ul>
+           <p><a href='/health'>health check</a></p>",
+  )
+}
+
+fn postPage(slug) {
+  match posts |> find(fn(p) { p.slug == slug }) {
+    Some(p) => page(
+      title: p.title,
+      body:  "<h1>${escape(p.title)}</h1><p>${escape(p.body)}</p><p><a href='/'>back</a></p>",
+    ),
+    None => notFound("<h1>404</h1><p>No post called <code>${escape(slug)}</code>.</p>"),
+  }
+}
+
+fn handle(req) {
+  if req.path == "/" {
+    indexPage()
+  } else if req.path == "/health" {
+    json({ ok: true, posts: len(posts) })
+  } else if startsWith(req.path, "/post/") {
+    postPage(slice(req.path, 6))
+  } else {
+    notFound("<h1>404</h1><p>Nothing at <code>${escape(req.path)}</code>.</p>")
+  }
+}
+
+serve(handler: handle, port: 3000)

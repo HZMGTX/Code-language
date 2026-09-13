@@ -1,0 +1,6 @@
+error[RT033]: cannot call Num
+ --> not-callable.lm:2:7
+  |
+2 | print(x())
+  |       ^^^ not a function
+  |

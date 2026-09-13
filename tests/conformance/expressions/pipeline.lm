@@ -1,0 +1,15 @@
+import { map, filter, sum } from "std/list"
+
+fn double(n) { n * 2 }
+fn inc(n) { n + 1 }
+
+print(5 |> double())
+print(5 |> double() |> inc())
+print(5 |> double)
+print([1, 2, 3, 4] |> filter(fn(n) { n % 2 == 0 }) |> map(double) |> sum())
+
+// A pipeline may be written down the page.
+let total = [1, 2, 3]
+  |> map(double)
+  |> sum()
+print(total)

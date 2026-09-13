@@ -1,0 +1,9 @@
+0
+Some("mock")
+None
+"quoted"
+[1, "a"]
+true
+false
+[[1], [2]]
+[[99], [2]]

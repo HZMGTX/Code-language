@@ -1,0 +1,57 @@
+error[PA009]: a map literal cannot appear here
+ --> loops.lm:9:13
+  |
+9 | for pair in { x: 1, y: 2 } { print("entry ${pair}") }
+  |             ^ unexpected `{`
+  |
+  = note: inside an `if`, `while`, `for` or `match` header a `{` starts the body; wrap the map in parentheses if you meant a value
+
+error[PA014]: unmatched `}`
+ --> loops.lm:9:26
+  |
+9 | for pair in { x: 1, y: 2 } { print("entry ${pair}") }
+  |                          ^ no block is open here
+  |
+
+error[PA001]: expected `:` after a map key, found `(`
+ --> loops.lm:9:35
+  |
+9 | for pair in { x: 1, y: 2 } { print("entry ${pair}") }
+  |                                   ^ expected `:`
+  |
+
+error[PA014]: unmatched `}`
+ --> loops.lm:9:53
+  |
+9 | for pair in { x: 1, y: 2 } { print("entry ${pair}") }
+  |                                                     ^ no block is open here
+  |
+
+error[PA009]: a map literal cannot appear here
+  --> loops.lm:11:15
+   |
+11 | for [k, v] in { p: 10 } { print("${k} = ${v}") }
+   |               ^ unexpected `{`
+   |
+   = note: inside an `if`, `while`, `for` or `match` header a `{` starts the body; wrap the map in parentheses if you meant a value
+
+error[PA014]: unmatched `}`
+  --> loops.lm:11:23
+   |
+11 | for [k, v] in { p: 10 } { print("${k} = ${v}") }
+   |                       ^ no block is open here
+   |
+
+error[PA001]: expected `:` after a map key, found `(`
+  --> loops.lm:11:32
+   |
+11 | for [k, v] in { p: 10 } { print("${k} = ${v}") }
+   |                                ^ expected `:`
+   |
+
+error[PA014]: unmatched `}`
+  --> loops.lm:11:48
+   |
+11 | for [k, v] in { p: 10 } { print("${k} = ${v}") }
+   |                                                ^ no block is open here
+   |

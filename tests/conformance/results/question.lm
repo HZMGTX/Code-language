@@ -1,0 +1,15 @@
+fn parsePositive(text) {
+  let n = num(text)?
+  if n <= 0 { Err("${n} is not positive") } else { Ok(n) }
+}
+
+// `?` unwraps Ok, or hands the Err straight back to the caller.
+fn addBoth(a, b) {
+  let x = parsePositive(a)?
+  let y = parsePositive(b)?
+  Ok(x + y)
+}
+
+print(addBoth("2", "3"))
+print(addBoth("oops", "3"))
+print(addBoth("2", "-1"))

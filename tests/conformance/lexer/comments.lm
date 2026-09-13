@@ -1,0 +1,7 @@
+// a line comment
+let a = 1 // trailing comment
+/* a block comment */
+let b = 2
+/* nested /* block */ comments */
+let c = 3
+print(a + b + c)

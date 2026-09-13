@@ -1,0 +1,14 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist",
+    "types": ["node"]
+  },
+  "include": ["unit/**/*.ts", "support/**/*.ts"],
+  "references": [
+    { "path": "../packages/core" },
+    { "path": "../packages/stdlib" },
+    { "path": "../packages/cli" }
+  ]
+}

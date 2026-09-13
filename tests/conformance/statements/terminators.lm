@@ -1,0 +1,22 @@
+// Semicolons are optional.
+let a = 1
+let b = 2;
+print(a + b);
+
+// Calls may span lines freely.
+fn add3(x, y, z) { x + y + z }
+print(add3(
+  1,
+  2,
+  3,
+))
+
+// A trailing operator continues the expression.
+print(1 +
+  2 +
+  3)
+
+// So does a leading `.` or `|>`.
+let s = "hello world"
+print(s
+  |> len())

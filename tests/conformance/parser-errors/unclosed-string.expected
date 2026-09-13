@@ -1,0 +1,7 @@
+error[LX002]: unterminated string
+ --> unclosed-string.lm:1:9
+  |
+1 | let s = "never closed
+  |         ^^^^^^^^^^^^^ this string is never closed
+  |
+  = note: add a closing `"`; Lumen strings may span multiple lines

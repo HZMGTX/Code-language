@@ -1,0 +1,7 @@
+error[RT005]: `cuont` is not defined
+ --> undefined-variable.lm:2:7
+  |
+2 | print(cuont)
+  |       ^^^^^ not found in this scope
+  |
+  = note: did you mean `count`?

@@ -1,0 +1,11 @@
+print(0)
+print(42)
+print(3.14159)
+print(1_000_000)
+print(0xFF)
+print(0b1111)
+print(0o777)
+print(1e6)
+print(2.5e-3)
+// `..` must not be read as a decimal point.
+print(1..4)

@@ -1,0 +1,421 @@
+# The Lumen Language Specification
+
+**Version 0.1.0**
+
+This document defines Lumen. Where the implementation and this document
+disagree, that is a bug in one of them — please say which. The conformance
+suite in `tests/conformance/` is the executable half of this specification.
+
+---
+
+## 1. Source text
+
+A Lumen source file is UTF-8 text with the extension `.lm`.
+
+### 1.1 Line structure
+
+Line breaks are significant: a statement ends at a line break. Semicolons are
+therefore optional, and `;` is accepted as an explicit terminator.
+
+A line break is **not** significant in three cases:
+
+1. Inside `(`, `[`, or an argument list.
+2. After a trailing operator (`1 +` continues on the next line).
+3. Before a leading `|>`, `.`, or `?.` on the next line.
+
+Rule 3 is what lets a pipeline be written down the page:
+
+```lumen
+let names = users
+  |> filter(fn(u) { u.active })
+  |> map(fn(u) { u.name })
+```
+
+Runs of blank lines collapse into a single terminator.
+
+### 1.2 Comments
+
+```lumen
+// to the end of the line
+/* block, which /* nests */ correctly */
+```
+
+### 1.3 Identifiers and keywords
+
+An identifier starts with a letter or `_` and continues with letters, digits or
+`_`. The reserved words are:
+
+```
+let var fn return if else while for in match struct enum
+import export from break continue true false nil and or not async await
+```
+
+`async` and `await` are reserved for future explicit concurrency; see §7.4.
+
+### 1.4 Literals
+
+| Form | Examples |
+|---|---|
+| Number | `42` `3.14` `1_000_000` `0xFF` `0b1010` `0o17` `1e6` `2.5e-3` |
+| String | `"text"` `"multi\nline"` `"interpolated ${expr}"` |
+| Boolean | `true` `false` |
+| Nil | `nil` |
+| List | `[1, 2, 3]` |
+| Map | `{ key: value, "quoted": 2, [computed]: 3 }` |
+
+All numbers are IEEE-754 doubles. `_` may separate digits anywhere between them.
+
+A `.` is only part of a number when a digit follows, so `0..10` is a range, not
+a malformed float.
+
+### 1.5 Strings
+
+Strings are double-quoted and may span lines. Escapes are `\n` `\t` `\r` `\0`
+`\\` `\"` `\$` `\u{...}`, and a backslash before a line break swallows that
+break.
+
+`${expr}` interpolates any expression. Brace nesting and nested string literals
+are tracked, so `"${ pick("}") }"` is read correctly.
+
+---
+
+## 2. Values and types
+
+| Type | Description |
+|---|---|
+| `Nil` | The single value `nil` |
+| `Bool` | `true` or `false` |
+| `Num` | A double-precision number |
+| `Str` | An immutable UTF-8 string |
+| `List` | An ordered, mutable sequence |
+| `Map` | String-keyed, insertion-ordered |
+| *struct* | A named record, its type name being the struct's name |
+| *enum* | A tagged union value |
+| `Fn` | A function, whether written in Lumen or native |
+| `Module` | The result of an import |
+
+`type(x)` returns this name as a `Str`.
+
+### 2.1 Truthiness
+
+**Only `nil` and `false` are falsy.** `0`, `""` and `[]` are all true. This is
+deliberate: it removes the class of bugs where an empty or zero value silently
+takes the wrong branch.
+
+### 2.2 Equality
+
+`==` is structural and deep for `List`, `Map`, struct and enum values, and
+compares by identity for functions and modules. It never coerces: `1 == "1"` is
+`false`.
+
+---
+
+## 3. Declarations
+
+### 3.1 Bindings
+
+```lumen
+let total = 1          // immutable — reassignment is an error
+var count = 0          // mutable
+count += 1
+```
+
+An inner scope may shadow an outer name. Assigning to a `let` binding is
+error `RT029`.
+
+### 3.2 Functions
+
+```lumen
+fn add(a: Num, b: Num = 2) -> Num { a + b }
+let double = fn(n) { n * 2 }
+```
+
+- A function's value is the value of its last statement; `return` exits early.
+- Parameters may have type annotations (§6) and default values.
+- Declarations are **hoisted**, so order within a scope does not matter and
+  mutual recursion needs no forward declaration.
+- Arguments may be passed positionally or by name; all positional arguments must
+  precede all named ones.
+
+If a module declares `fn main()`, it is called after the module's top-level
+statements have run.
+
+### 3.3 Structs
+
+```lumen
+struct Task { title: Str, done: Bool }
+
+let t = Task { title: "ship", done: false }
+t.done = true
+```
+
+A literal must supply every field exactly once; field order is free. An unknown
+field is `RT013`, a missing one `RT015`.
+
+### 3.4 Enums
+
+```lumen
+enum Status { Todo, Done }
+enum Shape { Circle(Num), Rect(Num, Num) }
+
+let a = Status.Done
+let b = Shape.Rect(3, 4)
+```
+
+Variants are referenced through their enum (`Status.Done`). A variant with a
+payload is a constructor function.
+
+`Result` and `Option` are built in, and their constructors — `Ok`, `Err`,
+`Some`, `None` — are global, so they need no qualifier.
+
+### 3.5 Modules
+
+```lumen
+import { map, filter as keep } from "std/list"
+import { helper } from "./helper.lm"
+
+export fn publicThing() { 1 }
+```
+
+A path beginning `std/` names a standard module (§9); anything else is a path to
+a `.lm` file relative to the importing file. Only `export`ed names are visible.
+A module is evaluated once and cached. Import cycles are an error (`RT043`).
+
+---
+
+## 4. Expressions
+
+### 4.1 Precedence
+
+Loosest to tightest:
+
+| Level | Operators | Associativity |
+|---|---|---|
+| 1 | `=` `+=` `-=` `*=` `/=` | right |
+| 2 | `\|>` | left |
+| 3 | `\|\|` `or` | left |
+| 4 | `&&` `and` | left |
+| 5 | `==` `!=` | left |
+| 6 | `<` `<=` `>` `>=` | left |
+| 7 | `..` | left |
+| 8 | `+` `-` | left |
+| 9 | `*` `/` `%` | left |
+| 10 | unary `-` `!` `not` | right |
+| 11 | call `()`, index `[]`, member `.` `?.`, postfix `?` | left |
+
+`&&`/`and` and `||`/`or` are the same operator spelled two ways, and both
+short-circuit.
+
+### 4.2 Arithmetic
+
+`+` adds two `Num`s, concatenates two `Str`s, or concatenates two `List`s.
+Mixing types is `RT016` — to build a string from mixed values, use
+interpolation.
+
+Division or remainder by zero is `RT018`, not `Infinity` or `NaN`.
+
+### 4.3 Comparison
+
+`<` `<=` `>` `>=` accept two `Num`s or two `Str`s. Anything else is `RT019`.
+
+### 4.4 Pipeline
+
+`x |> f(a)` calls `f(x, a)`; `x |> f` calls `f(x)`. Standard-library functions
+take their subject first specifically so pipelines read left to right.
+
+### 4.5 Range
+
+`a..b` produces the list `[a, a+1, ..., b-1]`. Bounds must be whole numbers. The
+range is **materialised as a list** in v0.1 and capped at 10,000,000 elements
+(`RT008`); see [ROADMAP.md](../ROADMAP.md).
+
+### 4.6 Indexing and members
+
+- `list[i]` — `i` may be negative to count from the end. Out of range is `RT022`.
+- `str[i]` — yields a one-character `Str`, by code point.
+- `map[k]` — `k` must be a `Str`. **A missing key yields `nil`**; use
+  `std/map.get` for an `Option` instead.
+- `value.field` — struct fields, map keys, module exports, enum variants.
+- `value?.field` — yields `nil` if `value` is `nil` instead of erroring.
+
+### 4.7 Conditionals
+
+`if` is an expression:
+
+```lumen
+let label = if n < 0 { "negative" } else if n == 0 { "zero" } else { "positive" }
+```
+
+With no `else`, a false condition yields `nil`.
+
+### 4.8 Match
+
+```lumen
+match value {
+  0                => "zero",
+  [first, ..rest]  => "list starting ${first}",
+  Task { title }   => "task ${title}",
+  Shape.Rect(w, h) => "rect ${w}x${h}",
+  Some(inner)      => "some ${inner}",
+  n if n > 100     => "large",
+  _                => "something else",
+}
+```
+
+Arms are tried in order; the first whose pattern matches **and** whose guard is
+truthy wins. If none matches, that is `RT020`.
+
+Patterns:
+
+| Pattern | Matches |
+|---|---|
+| `_` | anything, binding nothing |
+| `name` | anything, binding it |
+| `1` `"a"` `true` `nil` | that literal, by `==` |
+| `[a, b]` | a list of exactly that length |
+| `[a, ..rest]` | a list of at least that length; `rest` takes the remainder |
+| `Name { field }` | a struct of that type; shorthand binds the field |
+| `Name { field: pattern }` | a struct field matched against a nested pattern |
+| `Enum.Variant(a, b)` | that variant, binding its payload |
+| `Variant(a)` | that variant of any enum |
+
+> **Naming rule.** A bare capitalised name in a pattern is a nullary variant
+> (`None`, `Done`); anything else binds a variable. This is why Lumen types and
+> variants are `UpperCamel` and bindings are `lowerCamel`.
+
+> **Guards are ordinary expressions.** A guard that raises raises the whole
+> `match`. Write guards that are total for the values that can reach them — in
+> practice, put shape patterns above value guards.
+
+### 4.9 Error propagation
+
+Postfix `?` applies to a `Result` or an `Option`:
+
+- `Ok(v)` / `Some(v)` → evaluates to `v`
+- `Err(e)` / `None` → **returns that value from the enclosing function**
+
+Anything else is `RT010`. Used at the top level of a program with nothing to
+return to, it is `RT001`.
+
+---
+
+## 5. Statements
+
+```lumen
+while condition { ... }
+for pattern in iterable { ... }
+break
+continue
+return value
+```
+
+`for` iterates a `List`, a `Str` (by character), a `Map` (as `[key, value]`
+pairs), or a range. Anything else is `RT004`. The binding is a full pattern, so
+`for [k, v] in someMap { ... }` destructures.
+
+---
+
+## 6. Type annotations
+
+Annotations are accepted everywhere a binding is introduced:
+
+```lumen
+let n: Num = 1
+fn add(a: Num, b: Num) -> Num { a + b }
+struct Task { title: Str, done: Bool }
+```
+
+**In v0.1 annotations are parsed and retained but not enforced.** This is a
+deliberate scoping decision, not an oversight: fixing the *syntax* now means the
+v0.2 checker can start enforcing without changing a single line of existing
+Lumen source. Do not read an annotation as a guarantee yet. Arity, field names,
+and operand types *are* checked — at run time, with located diagnostics.
+
+---
+
+## 7. Execution model
+
+### 7.1 Program start
+
+Top-level statements run in order; then `main`, if declared, is called.
+
+### 7.2 Scope
+
+Lexical, with closures capturing by reference — a closure over a `var` sees
+later changes to it.
+
+### 7.3 Evaluation order
+
+Strictly left to right, except that `&&`, `||` and `match` guards
+short-circuit.
+
+### 7.4 Concurrency
+
+Lumen has **no async colouring**. I/O-performing functions are awaited by the
+interpreter, so `chat(...)` and `read(...)` compose exactly like pure functions
+and no `async` marker propagates through your call stack.
+
+`await expr` is accepted and evaluates to its operand. `async` is reserved.
+Explicit structured concurrency is a v0.2 topic.
+
+---
+
+## 8. Diagnostics
+
+Every diagnostic carries a stable code, a source span, a caret, and usually a
+note suggesting the fix. Codes are grouped by phase:
+
+| Prefix | Phase |
+|---|---|
+| `LX` | Lexical |
+| `PA` | Parsing |
+| `RT` | Run time |
+
+Codes are part of the language's contract: a code is never reused for a
+different meaning. Selected codes:
+
+| Code | Meaning |
+|---|---|
+| `LX001` | Unexpected character |
+| `LX002` | Unterminated string |
+| `LX003` | Unterminated interpolation |
+| `LX004` | Unknown escape sequence |
+| `LX006` | Unterminated block comment |
+| `PA001` | Expected a specific token |
+| `PA003` | Two statements run together on one line |
+| `PA008` | Invalid assignment target |
+| `PA009` | Map literal in a control-flow header |
+| `PA014` | Unmatched `}` |
+| `RT005` | Name is not defined |
+| `RT010` | `?` applied to a non-Result/Option |
+| `RT016` | Cannot add these types |
+| `RT018` | Division by zero |
+| `RT020` | No match arm matched |
+| `RT022` | Index out of bounds |
+| `RT029` | Assignment to a `let` binding |
+| `RT036` | Missing a required argument |
+| `RT039` | No parameter of that name |
+| `RT040` | Too many arguments |
+| `RT044` | One parameter supplied both positionally and by name |
+
+The parser reports multiple errors per run, suppressing duplicates and bounding
+cascades at 25.
+
+---
+
+## 9. Standard library
+
+See [stdlib.md](stdlib.md) for the full reference. The modules are
+`std/core`, `std/str`, `std/list`, `std/map`, `std/math`, `std/json`, `std/fs`,
+`std/http`, `std/web` and `std/ai`.
+
+`print`, `len`, `type`, `str`, `num`, `bool`, `assert`, `panic`, `Ok`, `Err`,
+`Some` and `None` are global and need no import.
+
+---
+
+## 10. Stability
+
+Within `0.x`, a **minor** release may change the language; a **patch** release
+may not. From `1.0`, source that runs on `1.x` keeps running on every later
+`1.y`. Diagnostic codes are stable from now.

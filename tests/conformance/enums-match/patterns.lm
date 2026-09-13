@@ -1,0 +1,39 @@
+struct Task { title: Str, done: Bool }
+
+fn describe(value) {
+  match value {
+    0                => "literal zero",
+    "hi"             => "literal string",
+    true             => "literal true",
+    nil              => "literal nil",
+    []               => "empty list",
+    [one]            => "one item: ${one}",
+    [first, ..rest]  => "first ${first}, rest ${rest}",
+    Task { title }   => "task ${title}",
+    Some(inner)      => "some ${inner}",
+    None             => "none",
+    other            => "bound: ${other}",
+  }
+}
+
+print(describe(0))
+print(describe("hi"))
+print(describe(true))
+print(describe(nil))
+print(describe([]))
+print(describe([7]))
+print(describe([1, 2, 3]))
+print(describe(Task { title: "write", done: false }))
+print(describe(Some(9)))
+print(describe(None))
+print(describe(3.5))
+
+// Struct patterns can match on a field's value too.
+fn isDone(t) {
+  match t {
+    Task { done: true } => "done",
+    Task { done: false } => "pending",
+  }
+}
+print(isDone(Task { title: "a", done: true }))
+print(isDone(Task { title: "b", done: false }))

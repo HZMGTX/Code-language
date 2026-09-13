@@ -1,0 +1,24 @@
+fn classify(n) {
+  if n < 0 {
+    "negative"
+  } else if n == 0 {
+    "zero"
+  } else {
+    "positive"
+  }
+}
+print(classify(-1))
+print(classify(0))
+print(classify(1))
+
+// `if` with no else yields nil when the condition is false.
+print(if false { 1 })
+
+// The value of a block is its last statement.
+let v = if true {
+  let a = 2
+  a * 21
+} else {
+  0
+}
+print(v)

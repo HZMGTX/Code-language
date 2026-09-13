@@ -1,0 +1,7 @@
+error[RT016]: cannot add Str and Num
+ --> type-mismatch.lm:1:7
+  |
+1 | print("count: " + 1)
+  |       ^^^^^^^^^^^^^ mismatched operands
+  |
+  = note: to build a string from mixed values use interpolation: "${a}${b}"

@@ -1,0 +1,136 @@
+// A tour of Lumen in one file.
+//
+//   lumen run examples/tour.lm
+//
+// Everything below is v0.1 — no part of this is aspirational.
+
+import { filter, map, sortBy, sum } from "std/list"
+import { upper } from "std/str"
+
+// ---------------------------------------------------------------- data types
+
+struct Task {
+  title: Str,
+  done:  Bool,
+  cost:  Num,
+}
+
+enum Status { Todo, Done }
+
+// `if` is an expression, so this needs no `return`.
+fn statusOf(t: Task) -> Status {
+  if t.done { Status.Done } else { Status.Todo }
+}
+
+// --------------------------------------------------------------- collections
+
+fn summarize(tasks) -> Str {
+  // `|>` pipes the value on the left into the call on the right, so this reads
+  // left to right: take tasks, keep the done ones, count them.
+  let finished = tasks |> filter(fn(t) { t.done }) |> len()
+  "${finished}/${len(tasks)} complete"
+}
+
+// ------------------------------------------------------- errors without throw
+
+// Lumen has no exceptions. Anything that can fail returns a Result, and `?`
+// unwraps an `Ok` or returns the `Err` from the enclosing function.
+fn priceOf(name) {
+  let prices = { lexer: 3, parser: 5 }
+  match prices[name] {
+    nil => Err("no price for ${name}"),
+    n   => Ok(n),
+  }
+}
+
+fn totalPrice(names) {
+  var total = 0
+  for name in names {
+    total += priceOf(name)?
+  }
+  Ok(total)
+}
+
+// ------------------------------------------------------------------ patterns
+
+// A guard is an ordinary expression, evaluated only once the pattern has
+// matched. Note that a guard which raises will raise the whole `match` — so
+// write guards that are total for the values that can actually reach them.
+// Here the arms above already narrowed `n` to a number.
+fn sizeOf(n) -> Str {
+  match n {
+    0             => "zero",
+    x if x < 0    => "negative",
+    x if x > 1000 => "huge",
+    _             => "ordinary",
+  }
+}
+
+// Patterns match on shape: lists (with a rest binding), structs by field, and
+// enum variants with their payloads.
+fn describe(value) -> Str {
+  match value {
+    [first, ..rest] => "a list starting with ${first} and ${len(rest)} more",
+    Task { title }  => "a task called ${title}",
+    Some(inner)     => "something: ${inner}",
+    None            => "nothing",
+    _               => "a ${type(value)}",
+  }
+}
+
+// ------------------------------------------------------------------ closures
+
+fn counter() {
+  var n = 0
+  fn() {
+    n += 1
+    n
+  }
+}
+
+// ---------------------------------------------------------------------- main
+
+fn main() {
+  let tasks = [
+    Task { title: "write the lexer",  done: true,  cost: 3 },
+    Task { title: "write the parser", done: true,  cost: 5 },
+    Task { title: "ship it",          done: false, cost: 8 },
+  ]
+
+  print("Tasks")
+  for t in tasks {
+    let mark = match statusOf(t) {
+      Status.Done => "x",
+      Status.Todo => " ",
+    }
+    print("  [${mark}] ${t.title}")
+  }
+  print("  ${summarize(tasks)}")
+  print("")
+
+  print("Pipelines")
+  print("  total cost: ${tasks |> map(fn(t) { t.cost }) |> sum()}")
+  print("  by cost:    ${tasks |> sortBy(fn(t) { t.cost }) |> map(fn(t) { t.title })}")
+  print("  shouted:    ${upper("done")}")
+  print("")
+
+  print("Results")
+  print("  ${totalPrice(["lexer", "parser"])}")
+  print("  ${totalPrice(["lexer", "linker"])}")
+  print("")
+
+  print("Patterns")
+  print("  ${sizeOf(0)}")
+  print("  ${sizeOf(-4)}")
+  print("  ${sizeOf(5000)}")
+  print("  ${describe([1, 2, 3])}")
+  print("  ${describe(Task { title: "tidy up", done: false, cost: 1 })}")
+  print("  ${describe(Some(42))}")
+  print("  ${describe(None)}")
+  print("  ${describe("plain text")}")
+  print("")
+
+  print("Closures")
+  let next = counter()
+  print("  ${next()} ${next()} ${next()}")
+}

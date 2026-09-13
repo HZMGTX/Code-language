@@ -1,0 +1,29 @@
+{
+  "name": "lumen-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Lumen \u2014 one language for scripts, servers, websites, and AI.",
+  "license": "SEE LICENSE IN LICENSE",
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "workspaces": [
+    "packages/core",
+    "packages/stdlib",
+    "packages/cli"
+  ],
+  "scripts": {
+    "build": "tsc --build",
+    "typecheck": "tsc --build --force",
+    "clean": "tsc --build --clean && node -e \"for (const p of ['packages/core/dist','packages/stdlib/dist','packages/cli/dist','tests/dist']) require('node:fs').rmSync(p,{recursive:true,force:true})\"",
+    "test": "npm run build && node scripts/run-tests.mjs",
+    "test:update": "npm run build && node scripts/run-tests.mjs --update",
+    "lumen": "node packages/cli/dist/index.js",
+    "examples": "npm run build && node scripts/run-examples.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  }
+}

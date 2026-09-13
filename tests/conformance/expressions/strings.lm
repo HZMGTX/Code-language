@@ -1,0 +1,12 @@
+print("plain")
+print("a" + "b")
+let name = "world"
+print("hello ${name}")
+print("sum is ${1 + 2}, nested ${"in ${name}"}")
+print("tab:\there")
+print("newline:\nhere")
+print("quote:\"here\"")
+print("dollar:\${not interpolated}")
+print("unicode: \u{1F680}")
+print("multi
+line")

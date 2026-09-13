@@ -1,0 +1,14 @@
+fn size(n) {
+  match n {
+    x if x < 0    => "negative",
+    0             => "zero",
+    x if x < 10   => "small",
+    x if x < 100  => "medium",
+    _             => "large",
+  }
+}
+print(size(-5))
+print(size(0))
+print(size(5))
+print(size(50))
+print(size(500))

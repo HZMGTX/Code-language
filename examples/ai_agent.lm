@@ -1,0 +1,42 @@
+// Talking to a language model.
+//
+//   lumen run examples/ai_agent.lm
+//
+// With no API key this uses the built-in `mock` provider, so it runs anywhere
+// — including CI. Set ANTHROPIC_API_KEY or OPENAI_API_KEY for a real answer.
+
+import { chat, converse, message, provider } from "std/ai"
+import { join, map } from "std/list"
+
+// `?` hands any Err straight back to the caller, so the happy path stays flat.
+fn summarize(topic) {
+  let reply = chat(
+    prompt: "Explain ${topic} in one sentence.",
+    system: "You are terse. One sentence, no preamble.",
+    maxTokens: 200,
+  )?
+  Ok("${topic}: ${reply}")
+}
+
+fn main() {
+  print("provider: ${provider()}")
+  print("")
+
+  // Handling the Result explicitly, so a failure prints rather than vanishes.
+  match summarize("recursion") {
+    Ok(text) => print(text),
+    Err(why) => print("could not summarize: ${why}"),
+  }
+  print("")
+
+  // A multi-turn conversation is just a list of messages.
+  let history = [
+    message("user", "Name one benefit of immutability."),
+    message("assistant", "Fewer bugs from unexpected mutation."),
+    message("user", "Name one cost."),
+  ]
+  match converse(history, maxTokens: 200) {
+    Ok(reply) => print("follow-up: ${reply}"),
+    Err(why)  => print("conversation failed: ${why}"),
+  }
+}

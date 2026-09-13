@@ -1,0 +1,7 @@
+error[PA008]: cannot assign to this expression
+ --> bad-assignment.lm:1:1
+  |
+1 | 1 = 2
+  | ^ not a place that can hold a value
+  |
+  = note: assignment targets are variables, fields, or index expressions
