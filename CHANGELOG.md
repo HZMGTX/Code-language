@@ -92,6 +92,14 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
 - **A long source line buried the caret it was pointing at.** A diagnostic on a
   minified or generated line printed the whole line, pushing the `^` off the
   screen. Lines past 120 characters are now shown as a window around the caret.
+- **The REPL could not be escaped from a half-written line.** Typing `1 +` put
+  it into continuation mode, and every line after that — `:quit` included — was
+  swallowed as more of the same expression. A blank line abandons it now.
+- **A mistyped command was reported as a missing file.** `lumen tets` said
+  `cannot read \`tets\``, sending the reader hunting for a file they never meant
+  to create. It says `unknown command \`tets\` — did you mean \`test\`?`. An
+  unknown option after a command (`lumen run --weird app.lm`) was read as the
+  filename; it is now reported as an option.
 - **`std/fs` leaked Node's error text.** `ENOENT: no such file or directory,
   open '/x'` names an errno, a syscall and a quoting style that vary by
   platform and version — so the same Lumen program said different things on

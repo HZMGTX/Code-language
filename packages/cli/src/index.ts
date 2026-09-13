@@ -10,6 +10,9 @@ import { runFile } from './commands/run.js';
 import { dumpAst, dumpTokens } from './commands/inspect.js';
 import { startRepl } from './commands/repl.js';
 import { runTests } from './commands/test.js';
+import { existsSync } from 'node:fs';
+
+import { suggest } from '@lumen-lang/core';
 import { setServeMode } from '@lumen-lang/stdlib';
 import { VERSION, reportError } from './support.js';
 
@@ -40,6 +43,25 @@ function usageError(message: string): never {
   process.exit(2);
 }
 
+/** Every word `lumen` accepts in the first position. */
+const COMMANDS = [
+  'run', 'serve', 'repl', 'test', 'tokens', 'ast', 'help', 'version',
+] as const;
+
+/**
+ * The file argument for a command, rejecting options.
+ *
+ * Without this, `lumen run --colour app.lm` took `--colour` for the filename
+ * and reported that it could not read it, which sends the reader looking for a
+ * file that was never meant to exist.
+ */
+function fileArg(command: string, rest: readonly string[]): string {
+  const file = rest[0];
+  if (file === undefined) usageError('`' + command + '` needs a file');
+  if (file.startsWith('-')) usageError('unknown option `' + file + '`');
+  return file;
+}
+
 async function main(argv: readonly string[]): Promise<void> {
   const [first, ...rest] = argv;
 
@@ -63,8 +85,7 @@ async function main(argv: readonly string[]): Promise<void> {
 
     case 'run':
     case 'serve': {
-      const file = rest[0];
-      if (file === undefined) usageError('`' + first + '` needs a file');
+      const file = fileArg(first, rest);
       // The two commands run the same program; the difference is what the
       // program is told. `isServer()` from std/web reports which was used, so
       // one file can serve its routes and also print them for inspection.
@@ -77,24 +98,31 @@ async function main(argv: readonly string[]): Promise<void> {
       await runTests(rest[0] ?? '.');
       return;
 
-    case 'tokens': {
-      const file = rest[0];
-      if (file === undefined) usageError('`tokens` needs a file');
-      await dumpTokens(file);
+    case 'tokens':
+      await dumpTokens(fileArg('tokens', rest));
       return;
-    }
 
-    case 'ast': {
-      const file = rest[0];
-      if (file === undefined) usageError('`ast` needs a file');
-      await dumpAst(file);
+    case 'ast':
+      await dumpAst(fileArg('ast', rest));
       return;
-    }
 
-    default:
+    default: {
       // `lumen app.lm` is shorthand for `lumen run app.lm`.
       if (first.startsWith('-')) usageError('unknown option `' + first + '`');
+
+      // A bare word that names no file is far more likely a mistyped command
+      // than a file someone meant to create. Saying "cannot read `tets`" sends
+      // the reader hunting for a missing file instead of their own typo.
+      const looksLikeAPath =
+        first.endsWith('.lm') || first.includes('/') || first.includes('\\') || first === '.';
+      if (!looksLikeAPath && !existsSync(first)) {
+        const near = suggest(first, [...COMMANDS]);
+        usageError(
+          'unknown command `' + first + '`' + (near === undefined ? '' : ' — did you mean `' + near + '`?'),
+        );
+      }
       await runFile(first);
+    }
   }
 }
 

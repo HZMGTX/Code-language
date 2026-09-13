@@ -66,6 +66,7 @@ const HELP = [
   '  :quit            leave (Ctrl-D also works)',
   '',
   'Anything else is evaluated. Definitions persist across inputs.',
+  'An unfinished line continues on the next one; a blank line abandons it.',
 ].join('\n');
 
 export async function startRepl(): Promise<void> {
@@ -112,6 +113,17 @@ export async function startRepl(): Promise<void> {
   rl.prompt();
   for await (const line of rl) {
     const trimmed = line.trim();
+
+    // A blank line abandons a half-written expression. Without this there is
+    // no way out of a continuation but to finish it: typing `1 +` by mistake
+    // left every later line, `:quit` included, being swallowed as more of it.
+    if (buffer !== '' && trimmed === '') {
+      buffer = '';
+      process.stdout.write('(abandoned)\n');
+      rl.setPrompt('lumen> ');
+      rl.prompt();
+      continue;
+    }
 
     // Meta commands are only recognised at the start of a fresh input.
     if (buffer === '' && trimmed.startsWith(':')) {
