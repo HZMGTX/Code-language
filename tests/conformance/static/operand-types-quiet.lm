@@ -1,0 +1,46 @@
+// Everything here passes the checker, and that is the point: an unannotated
+// program can produce no type diagnostic at all. TY005 speaks only when both
+// operand types are known.
+//
+// These two are never called, because calling them would fail at run time —
+// which is the trade the gradual rule makes. The checker is silent about what it
+// cannot know rather than guessing, and the interpreter still catches it: see
+// `errors/type-mismatch.lm`.
+fn unknownParam(a) { a + "x" }
+fn unknownVar() {
+  var v = 1
+  v - "x"
+}
+
+// Every valid combination stays silent too.
+let n = 1
+let s = "text"
+let xs = [1]
+let ys = [2]
+print(n + n)
+print(s + s)
+print(xs + ys)
+print(n - n)
+print(n ** n)
+print(n < n)
+print(s < s)
+
+// `==` and `!=` compare anything: values of different types are unequal, which
+// is an answer rather than an error.
+print(n == s)
+print(n != s)
+
+// Interpolation is how a string is built from mixed values, so it is never a
+// mismatch however many types go into it.
+print("${n} and ${s} and ${xs}")
+
+// A loop or pattern binding that shadows an outer name takes its own type, not
+// the outer one's. Without that, `x * 2` below looked like multiplying a Str.
+let x = "outer"
+for x in [1, 2] { print(x * 2) }
+print(match [1, 2] { [x, ..rest] => x * 10, _ => 0 })
+print(x)
+
+// A parameter shadows an outer name the same way.
+fn shadows(x) { x * 3 }
+print(shadows(2))

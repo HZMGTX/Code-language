@@ -60,6 +60,33 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
 
 ### Static checks
 
+- **`TY005`: an operator whose operands cannot be what they are.** `fn f(a: Num)
+  { a + "x" }` passed every check and failed when it ran. The checker had both
+  types in hand and threw them away, because the `Binary` case only asked whether
+  they were *both* Num or *both* Str and answered `Any` otherwise.
+
+  It fires only when **both** types are known: `1 - "x"` is reported, `a - "x"`
+  for an unannotated `a` is not. That restraint is what makes the check sound
+  rather than merely useful — `Num - Str` has no reading under which it works, so
+  reporting it can never be wrong, while guessing about an `Any` could be. The
+  rules are the ones the interpreter already enforced, moved earlier. `==` and
+  `!=` still accept anything, deliberately: comparing values of different types is
+  `false`, not an error.
+
+- **The type checker was not declaring loop or pattern bindings.** Found
+  immediately by TY005, which reported `x * 2` inside `for x in [1, 2]` as
+  multiplying a `Str` — because an outer `let x = "outer"` was still what `x`
+  meant. Both `for` and `match` opened a scope and put nothing in it. They now
+  declare what they bind: a loop variable takes the list's element type where it
+  is known, and pattern bindings are `Any`, which is always safe.
+
+- **One problem is now reported once.** A function's last statement is checked
+  twice on purpose — once as a statement, once as the function's value — so
+  `fn f(a: Num) -> Num { a + "x" }` reported the same message at the same place
+  twice. Deduplicating in `report` rather than restructuring the walk, so any
+  later pass that revisits an expression is covered without knowing about this
+  one.
+
 - **`main()` at the top level of a module that defines `main` is now `RS008`.**
   A module that declares `fn main` has it called once the file has been read, so
   writing the call as well ran the whole program twice. Nothing raised — the

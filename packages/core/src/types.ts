@@ -25,10 +25,12 @@
  */
 
 import type {
+  BinaryOp,
   Block,
   Expr,
   Module,
   Param,
+  Pattern,
   Stmt,
   TypeExpr,
 } from './ast.js';
@@ -135,12 +137,91 @@ class Scope {
 
 class Checker {
   private readonly diagnostics: Diagnostic[] = [];
+  /** Keys of diagnostics already recorded, so one problem is reported once. */
+  private readonly reported = new Set<string>();
   private readonly structs = new Map<string, StructInfo>();
   private readonly enums = new Set<string>();
   private scope = new Scope(undefined);
   /** The declared return type of the function being checked, if any. */
   private returnTy: Ty = ANY;
 
+  /**
+   * An operator whose operands cannot be what they are.
+   *
+   * Only when **both** types are known: if either is `Any` this says nothing, so
+   * an unannotated program still produces no diagnostics. That restraint is what
+   * makes the check sound rather than merely useful — `Num - Str` has no reading
+   * under which it works, so reporting it can never be a false positive, while
+   * guessing about an `Any` could be.
+   *
+   * The same three rules the interpreter enforces, moved earlier: `+` joins two
+   * Nums, two Strs or two Lists; the other arithmetic wants two Nums; ordering
+   * wants two Nums or two Strs. `==` and `!=` accept anything, deliberately —
+   * comparing values of different types is false, not an error.
+   */
+  private checkOperands(op: BinaryOp, left: Ty, right: Ty, span: Span): void {
+    if (left.k === 'any' || right.k === 'any') return;
+    if (op === '==' || op === '!=') return;
+
+    const shown = showTy(left) + ' and ' + showTy(right);
+
+    if (op === '+') {
+      const joinable =
+        (left.k === 'num' && right.k === 'num') ||
+        (left.k === 'str' && right.k === 'str') ||
+        (left.k === 'list' && right.k === 'list');
+      if (joinable) return;
+      this.report(
+        'TY005',
+        'cannot add ' + shown,
+        span,
+        'mismatched operands',
+        left.k === 'str' || right.k === 'str'
+          ? [
+              '`+` joins two Nums, two Strs or two Lists',
+              'to build a string from mixed values use interpolation: "${a}${b}"',
+            ]
+          : ['`+` joins two Nums, two Strs or two Lists'],
+      );
+      return;
+    }
+
+    if (op === '-' || op === '*' || op === '/' || op === '%' || op === '**') {
+      if (left.k === 'num' && right.k === 'num') return;
+      this.report(
+        'TY005',
+        'cannot apply `' + op + '` to ' + shown,
+        span,
+        'mismatched operands',
+        ['`' + op + '` wants two Nums'],
+      );
+      return;
+    }
+
+    // `<`, `<=`, `>`, `>=`.
+    if ((left.k === 'num' && right.k === 'num') || (left.k === 'str' && right.k === 'str')) return;
+    this.report(
+      'TY005',
+      'cannot compare ' + shown,
+      span,
+      'not comparable',
+      ['`<`, `<=`, `>` and `>=` work on two Nums or two Strs'],
+    );
+  }
+
+  /**
+   * Record a diagnostic, unless the very same one is already there.
+   *
+   * Some expressions are legitimately visited twice: a function's last
+   * statement is checked once as a statement and once as the function's value,
+   * because the implicit-return check needs its type. Without this, a body of
+   * `{ a + "x" }` reported the mismatched operands twice — the same message at
+   * the same place, which reads as two problems and is one.
+   *
+   * Deduping here rather than restructuring the walk, because the walk is right:
+   * any later pass that revisits an expression gets the same protection without
+   * having to know about this one.
+   */
   private report(
     code: string,
     message: string,
@@ -148,6 +229,9 @@ class Checker {
     label: string,
     notes?: readonly string[],
   ): void {
+    const key = code + '@' + String(span.start.offset) + ':' + String(span.end.offset) + ' ' + message;
+    if (this.reported.has(key)) return;
+    this.reported.add(key);
     this.diagnostics.push({
       severity: 'error',
       code,
@@ -305,9 +389,14 @@ class Checker {
         return;
 
       case 'ForStmt': {
-        this.typeOf(stmt.iterable);
+        const over = this.typeOf(stmt.iterable);
         const saved = this.scope;
         this.scope = new Scope(saved);
+        // The loop binding has to be declared, not merely scoped. Without it, a
+        // loop variable that shadows an outer name kept the outer name's type:
+        // `let x = "outer"` followed by `for x in [1, 2] { x * 2 }` looked like
+        // multiplying a Str.
+        this.declarePattern(stmt.binding, over.k === 'list' ? over.of : ANY);
         this.block(stmt.body);
         this.scope = saved;
         return;
@@ -366,6 +455,37 @@ class Checker {
     }
   }
 
+  /**
+   * Declare every name a pattern binds, in the current scope.
+   *
+   * `ty` is what the whole pattern matches against. It is only passed through to
+   * a plain binding — the pieces of a destructuring are `Any`, because working
+   * out the type of the third element of a list or the payload of an enum
+   * variant is inference, which this pass deliberately does not do. `Any` is
+   * always safe: it is compatible in both directions, so it can produce no
+   * diagnostic at all.
+   */
+  private declarePattern(pattern: Pattern, ty: Ty): void {
+    switch (pattern.kind) {
+      case 'PBinding':
+        this.scope.declare(pattern.name, ty);
+        return;
+      case 'PEnum':
+        for (const arg of pattern.args) this.declarePattern(arg, ANY);
+        return;
+      case 'PStruct':
+        for (const field of pattern.fields) this.declarePattern(field.pattern, ANY);
+        return;
+      case 'PList':
+        for (const item of pattern.items) this.declarePattern(item, ANY);
+        if (pattern.rest !== undefined) this.scope.declare(pattern.rest, { k: 'list', of: ANY });
+        return;
+      case 'PWildcard':
+      case 'PLiteral':
+        return;
+    }
+  }
+
   // ------------------------------------------------------------- expressions
 
   /** The type of an expression, or Any when it cannot be determined. */
@@ -399,12 +519,16 @@ class Checker {
       case 'Binary': {
         const left = this.typeOf(expr.left);
         const right = this.typeOf(expr.right);
+        this.checkOperands(expr.op, left, right, expr.span);
         if (expr.op === '==' || expr.op === '!=') return BOOL;
         if (expr.op === '<' || expr.op === '<=' || expr.op === '>' || expr.op === '>=') return BOOL;
         // `+` is also string and list concatenation, so it only yields Num when
         // both sides are known to be numbers.
         if (left.k === 'num' && right.k === 'num') return NUM;
         if (expr.op === '+' && left.k === 'str' && right.k === 'str') return STR;
+        if (expr.op === '+' && left.k === 'list' && right.k === 'list') {
+          return accepts(left.of, right.of) ? left : { k: 'list', of: ANY };
+        }
         return ANY;
       }
 
@@ -482,6 +606,11 @@ class Checker {
         for (const arm of expr.arms) {
           const saved = this.scope;
           this.scope = new Scope(saved);
+          // Every name the pattern binds, as Any: what a pattern narrows a value
+          // to is not something this pass works out. Declaring them is still
+          // necessary, because a pattern name that shadows an outer one would
+          // otherwise be checked as the outer one's type.
+          this.declarePattern(arm.pattern, ANY);
           if (arm.guard !== undefined) this.typeOf(arm.guard);
           this.typeOf(arm.body);
           this.scope = saved;

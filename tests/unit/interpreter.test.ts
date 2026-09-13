@@ -5,7 +5,7 @@ import { describe, it } from 'node:test';
 
 import { editDistance, suggest } from '@lumen-lang/core';
 
-import { runSource } from '../support/harness.js';
+import { runSource, runUnchecked } from '../support/harness.js';
 
 /** Run a snippet and return its trimmed output. */
 async function out(source: string): Promise<string> {
@@ -16,7 +16,11 @@ async function out(source: string): Promise<string> {
 
 /** Run a snippet expected to fail, returning the diagnostic code. */
 async function code(source: string): Promise<string> {
-  const result = await runSource(source);
+  return codeOf(await runSource(source));
+}
+
+/** The diagnostic code a run produced, asserting that it produced one. */
+function codeOf(result: { failed: boolean; output: string }): string {
   assert.equal(result.failed, true, 'expected failure but got:\n' + result.output);
   const match = /error\[([A-Z]{2}\d{3})\]/.exec(result.output);
   return match?.[1] ?? '(none)';
@@ -168,8 +172,21 @@ describe('arithmetic guards', () => {
     assert.equal(await code('print(1 / 0)'), 'RT018');
   });
 
-  it('rejects adding mismatched types', async () => {
-    assert.equal(await code('print("a" + 1)'), 'RT016');
+  it('rejects adding mismatched types, statically and at run time', async () => {
+    // The checker now catches this before the program runs, which is the better
+    // place. But the interpreter must still catch it on its own, because the
+    // specification promises a host that embeds the interpreter without the
+    // static passes is not left unguarded — and nothing else exercises that.
+    assert.equal(await code('print("a" + 1)'), 'TY005');
+    assert.equal(codeOf(await runUnchecked('print("a" + 1)')), 'RT016');
+  });
+
+  it('rejects the other mismatched operands at run time too', async () => {
+    assert.equal(codeOf(await runUnchecked('print("a" - 1)')), 'RT017');
+    assert.equal(codeOf(await runUnchecked('print("a" * 1)')), 'RT017');
+    assert.equal(codeOf(await runUnchecked('print("a" ** 1)')), 'RT017');
+    assert.equal(codeOf(await runUnchecked('print("a" < 1)')), 'RT019');
+    assert.equal(codeOf(await runUnchecked('print(true + true)')), 'RT016');
   });
 
   it('caps the size of a materialised range', async () => {

@@ -1129,12 +1129,13 @@ print("you are " + 30 + " years old")
 ```
 
 ```
-error[RT016]: cannot add Str and Num
+error[TY005]: cannot add Str and Num
  --> hello.lm:1:7
   |
 1 | print("you are " + 30 + " years old")
   |       ^^^^^^^^^^^^^^^ mismatched operands
   |
+  = note: `+` joins two Nums, two Strs or two Lists
   = note: to build a string from mixed values use interpolation: "${a}${b}"
 ```
 

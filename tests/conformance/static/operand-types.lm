@@ -1,0 +1,13 @@
+// TY005 reports an operator whose operands cannot be what they are — but only
+// when both types are known, which is what keeps it from ever being wrong.
+let n = 1
+let s = "text"
+let b = true
+let xs = [1]
+
+print(n + s)
+print(n * s)
+print(n ** s)
+print(n < s)
+print(b + b)
+print(xs + n)

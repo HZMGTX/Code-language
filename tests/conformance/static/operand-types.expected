@@ -1,0 +1,48 @@
+error[TY005]: cannot add Num and Str
+ --> operand-types.lm:8:7
+  |
+8 | print(n + s)
+  |       ^^^^^ mismatched operands
+  |
+  = note: `+` joins two Nums, two Strs or two Lists
+  = note: to build a string from mixed values use interpolation: "${a}${b}"
+
+error[TY005]: cannot apply `*` to Num and Str
+ --> operand-types.lm:9:7
+  |
+9 | print(n * s)
+  |       ^^^^^ mismatched operands
+  |
+  = note: `*` wants two Nums
+
+error[TY005]: cannot apply `**` to Num and Str
+  --> operand-types.lm:10:7
+   |
+10 | print(n ** s)
+   |       ^^^^^^ mismatched operands
+   |
+   = note: `**` wants two Nums
+
+error[TY005]: cannot compare Num and Str
+  --> operand-types.lm:11:7
+   |
+11 | print(n < s)
+   |       ^^^^^ not comparable
+   |
+   = note: `<`, `<=`, `>` and `>=` work on two Nums or two Strs
+
+error[TY005]: cannot add Bool and Bool
+  --> operand-types.lm:12:7
+   |
+12 | print(b + b)
+   |       ^^^^^ mismatched operands
+   |
+   = note: `+` joins two Nums, two Strs or two Lists
+
+error[TY005]: cannot add List<Num> and Num
+  --> operand-types.lm:13:7
+   |
+13 | print(xs + n)
+   |       ^^^^^^ mismatched operands
+   |
+   = note: `+` joins two Nums, two Strs or two Lists

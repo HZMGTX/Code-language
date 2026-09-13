@@ -50,6 +50,33 @@ export async function runSource(
   fileName = 'fixture.lm',
   stdin: readonly string[] = [],
 ): Promise<RunResult> {
+  return await execute(source, fileName, stdin, true);
+}
+
+/**
+ * Run without the static checks, the way a host that embedded the interpreter
+ * directly would.
+ *
+ * The specification promises the interpreter enforces operand types, arity and
+ * field names itself, so that such a host is not left unguarded (§6). Once the
+ * type checker started catching `"a" + 1` before it ran, nothing exercised that
+ * promise any more: every test went through `checkModule` first and saw the
+ * static error instead. This is how both layers get tested.
+ */
+export async function runUnchecked(
+  source: string,
+  fileName = 'fixture.lm',
+  stdin: readonly string[] = [],
+): Promise<RunResult> {
+  return await execute(source, fileName, stdin, false);
+}
+
+async function execute(
+  source: string,
+  fileName: string,
+  stdin: readonly string[],
+  check: boolean,
+): Promise<RunResult> {
   let output = '';
   const host = makeHost((text) => {
     output += text;
@@ -58,7 +85,7 @@ export async function runSource(
 
   try {
     const module = parse(source, fileName);
-    checkModule(module, source, { globals: interpreter.globals.ownNames() });
+    if (check) checkModule(module, source, { globals: interpreter.globals.ownNames() });
     await interpreter.runModule(module, source);
     return { output, failed: false };
   } catch (error) {
