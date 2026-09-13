@@ -1026,9 +1026,9 @@ the bottom is usually the answer.
 
 ## 13. Putting it together
 
-A small mark book. It uses a struct, an enum-free `match` with guards, a list
-chain, an `Option` for the awkward case, and a `for` loop to print — most of
-this guide in thirty lines.
+A small mark book. It uses a struct, `match` with guards, list methods, an
+`Option` for the awkward case, and a `for` loop to print it — most of this guide
+in a few dozen lines.
 
 ```lumen
 struct Student {

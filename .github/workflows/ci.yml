@@ -160,6 +160,15 @@ jobs:
           echo "$output"
           test "$output" = 'Hello from Lumen!'
 
+      # tests/unit/distribution.test.ts makes the same claims in far more
+      # detail — it compares both artefacts byte for byte against the ordinary
+      # CLI, including a program that imports the standard library. It skips
+      # itself wherever the artefacts do not exist, which is every other job, so
+      # this is the one place in CI where it can actually run. Running it here
+      # keeps the suite from quietly being dead weight.
+      - name: Distribution test suite, with both artefacts present
+        run: node --test tests/dist/unit/distribution.test.js
+
   # This repository is proprietary. Every package is marked private, and this
   # job fails if that ever stops being true, so an accidental `npm publish`
   # cannot be the thing that discovers it.
