@@ -410,6 +410,20 @@ export interface Host {
   getEnv(name: string): string | undefined;
   now(): number;
   /**
+   * The arguments the program was given, not counting its own name.
+   *
+   * The host decides what those are, because only the host knows: a CLI has to
+   * work out how many words of its own command line it consumed, and a browser
+   * or a build step has none at all. Reading them from `process.argv` at a fixed
+   * offset looks like it works and does not — `lumen run x.lm a b` and
+   * `lumen x.lm a b` put them in different places, so the same program saw
+   * different arguments depending on how it was started.
+   *
+   * Optional: a host with no notion of arguments omits it, and `args()` is
+   * empty rather than wrong.
+   */
+  args?(): readonly string[];
+  /**
    * Read one line from the console, without its trailing newline, or undefined
    * at end of input. Optional: a host with no console (a browser, a build step)
    * simply omits it, and `input()` reports that rather than hanging.

@@ -79,6 +79,17 @@ money or percentages needs, and it is in the prelude.
 
 For width, compose: `fixed(x, 2).padStart(8)`.
 
+### `std/core`
+
+`args()` is the arguments after your script's name, and nothing else — the script
+path is never in it. It is the same list however the program was started, so
+`lumen run app.lm --verbose` and `lumen app.lm --verbose` both give
+`["--verbose"]`. Anything the CLI would otherwise read as its own option is
+still the program's once a filename has been seen.
+
+`now()` is milliseconds since 1970. Under the test harness it is `0`, so a
+golden file cannot depend on the clock.
+
 ### `std/list` and `std/map`
 
 `first`, `last`, `at`, `find` and `map.get` return an `Option`, so "there wasn't

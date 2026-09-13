@@ -15,10 +15,24 @@ export function useColor(): boolean {
   return process.stderr.isTTY === true;
 }
 
+/**
+ * The arguments to hand the program, set once the command line is understood.
+ *
+ * The CLI is the only thing that knows how many words were its own: `run` takes
+ * one more than the bare `lumen script.lm` shorthand. Working it out from a
+ * fixed offset into `process.argv` is what made `args()` return the script's own
+ * path for one spelling and not the other.
+ */
+let programArgs: readonly string[] = [];
+
+export function setProgramArgs(args: readonly string[]): void {
+  programArgs = args;
+}
+
 export function newInterpreter(): Interpreter {
   // The factory installs the prelude and the method tables, so the CLI, the
   // REPL and the tests all agree on what is in scope.
-  return createInterpreter();
+  return createInterpreter({ args: programArgs });
 }
 
 /**

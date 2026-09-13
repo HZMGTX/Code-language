@@ -45,7 +45,16 @@ export function stdCore(): Map<string, Value> {
     }),
 
     /** Command-line arguments passed after the script name. */
-    fn('args', [], () => list(process.argv.slice(3).map((a) => str(a)))),
+    /**
+     * The arguments after the script's own name.
+     *
+     * Asked of the host rather than read out of `process.argv`, because the
+     * offset is not a constant: `lumen run x.lm a b` and `lumen x.lm a b` are
+     * the same program with the same arguments and put them one place apart.
+     * This used to be `process.argv.slice(3)`, which gave `["x.lm", "a", "b"]`
+     * for the first and `["a", "b"]` for the second.
+     */
+    fn('args', [], (_a, c) => list((c.host.args?.() ?? []).map((value) => str(value)))),
 
     fn('exit', [{ name: 'code', defaultValue: num(0) }], (a, c) => {
       process.exit(expectNum(arg(a, 0), c, 'exit code'));

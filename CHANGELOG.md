@@ -69,6 +69,21 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
 
 ### Fixed
 
+- **`args()` no longer depends on how the program was started.** It was
+  `process.argv.slice(3)`, a fixed offset that is one word further along for
+  `lumen run app.lm a b` than for `lumen app.lm a b` — so the first spelling
+  handed the program its own path as `args()[0]` and the second did not. The same
+  script therefore saw different arguments depending on which way it was
+  launched, silently.
+
+  The offset was never knowable from the standard library: only the CLI knows how
+  many words of the command line were its own. So `args` joins the `Host`
+  interface alongside `getEnv` and `now`, the CLI supplies it after parsing, and
+  a host with no notion of arguments — a browser, a build step — omits it and
+  gets an empty list rather than a wrong one. Both spellings are now tested
+  through the real command, since a test covering one of them would have gone on
+  passing.
+
 - **`serve` on a port already in use now says so.** It reported `internal error`
   followed by a Node stack trace through `node:net`, which answers a question
   about the machine with a trace into the runtime. It is by a wide margin the

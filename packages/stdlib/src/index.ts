@@ -26,8 +26,14 @@ export { setServeMode } from './web.js';
 export { setKeyForTesting } from './set.js';
 export { STD_MODULES, STD_MODULE_NAMES } from './modules.js';
 
-/** A `Host` backed by the Node process: stdout, stderr, env, and the clock. */
-export function createNodeHost(): Host {
+/**
+ * A `Host` backed by the Node process: stdout, stderr, env, the clock, and the
+ * program's arguments.
+ *
+ * `args` is passed in rather than read from `process.argv`, because only the
+ * caller knows how much of the command line was its own.
+ */
+export function createNodeHost(options: { args?: readonly string[] } = {}): Host {
   // Created on first use and reused, so a program that calls input() in a loop
   // does not stack up readline interfaces on the same stdin.
   let console_: readline.Interface | undefined;
@@ -76,6 +82,7 @@ export function createNodeHost(): Host {
     },
     getEnv: (name: string): string | undefined => process.env[name],
     now: (): number => Date.now(),
+    args: (): readonly string[] => options.args ?? [],
     readLine: async (prompt: string): Promise<string | undefined> => {
       const iface = openConsole();
       // At a terminal readline owns the line it is editing, so it has to be
@@ -145,8 +152,10 @@ export function createNodeResolver(): ModuleResolver {
  * Everything that runs Lumen — the CLI, the REPL, the test harness — goes
  * through here, so they cannot drift apart on what is in scope.
  */
-export function createInterpreter(options: { host?: Host; resolver?: ModuleResolver } = {}): Interpreter {
-  const host = options.host ?? createNodeHost();
+export function createInterpreter(
+  options: { host?: Host; resolver?: ModuleResolver; args?: readonly string[] } = {},
+): Interpreter {
+  const host = options.host ?? createNodeHost({ ...(options.args === undefined ? {} : { args: options.args }) });
   const resolver = options.resolver ?? createNodeResolver();
   const interpreter = new Interpreter({ host, resolver });
 

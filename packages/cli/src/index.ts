@@ -16,7 +16,7 @@ import { existsSync } from 'node:fs';
 
 import { suggest } from '@lumen-lang/core';
 import { setServeMode } from '@lumen-lang/stdlib';
-import { VERSION, reportError } from './support.js';
+import { VERSION, reportError, setProgramArgs } from './support.js';
 
 const USAGE = `Lumen ${VERSION} — one language for scripts, servers, websites, and AI.
 
@@ -94,6 +94,8 @@ async function main(argv: readonly string[]): Promise<void> {
       // program is told. `isServer()` from std/web reports which was used, so
       // one file can serve its routes and also print them for inspection.
       setServeMode(first === 'serve');
+      // Everything after the filename is the program's, not ours.
+      setProgramArgs(rest.slice(1));
       await runFile(file);
       return;
     }
@@ -140,6 +142,11 @@ async function main(argv: readonly string[]): Promise<void> {
           'unknown command `' + first + '`' + (near === undefined ? '' : ' — did you mean `' + near + '`?'),
         );
       }
+      // `lumen app.lm a b` — the filename was the first word, so the
+      // program's arguments are everything after it. One word less than
+      // `lumen run app.lm a b`, which is the whole reason this is set here
+      // rather than counted from `process.argv`.
+      setProgramArgs(rest);
       await runFile(first);
     }
   }

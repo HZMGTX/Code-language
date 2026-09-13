@@ -8,6 +8,9 @@
  */
 
 import { spawn } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
@@ -28,6 +31,64 @@ async function run(args: readonly string[]): Promise<{ code: number; out: string
     child.on('exit', (code) => resolve({ code: code ?? 0, out }));
   });
 }
+
+/**
+ * `args()` has to mean the same thing whichever way the program was started.
+ *
+ * It did not: it was `process.argv.slice(3)`, which is one word further along
+ * for `lumen run x.lm a b` than for `lumen x.lm a b`, so the first spelling
+ * handed the program its own path as `args()[0]`. A test that only exercised one
+ * of the two would have gone on passing, which is why this exercises both
+ * through the real command.
+ */
+describe('program arguments', () => {
+  const script = (): { dir: string; file: string } => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'lumen-args-'));
+    const file = path.join(dir, 'a.lm');
+    writeFileSync(file, 'import { args } from "std/core"\nprint(args())\n', 'utf8');
+    return { dir, file };
+  };
+
+  it('is the same list for `run file` and for a bare `file`', async () => {
+    const { dir, file } = script();
+    try {
+      const viaRun = await run(['run', file, 'one', 'two']);
+      const viaShorthand = await run([file, 'one', 'two']);
+      assert.equal(viaRun.code, 0, viaRun.out);
+      assert.equal(viaShorthand.code, 0, viaShorthand.out);
+      assert.equal(viaRun.out.trim(), '["one", "two"]');
+      assert.equal(viaShorthand.out.trim(), viaRun.out.trim());
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('never includes the script’s own path', async () => {
+    const { dir, file } = script();
+    try {
+      for (const argv of [['run', file], [file]]) {
+        const { code, out } = await run(argv);
+        assert.equal(code, 0, out);
+        assert.equal(out.trim(), '[]', 'from `lumen ' + argv.join(' ') + '`');
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('passes flag-shaped arguments through to the program', async () => {
+    // The CLI rejects unknown options of its own, so these have to be
+    // recognised as the program's rather than its.
+    const { dir, file } = script();
+    try {
+      const { code, out } = await run(['run', file, '--verbose', '-n', '3']);
+      assert.equal(code, 0, out);
+      assert.equal(out.trim(), '["--verbose", "-n", "3"]');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
 
 describe('the lumen command', () => {
   it('prints a version', async () => {
