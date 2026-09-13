@@ -1,0 +1,7 @@
+error[RS001]: `nmae` is not defined
+ --> forward-reference-typo.lm:5:13
+  |
+5 |   "Hello, ${nmae}"
+  |             ^^^^ not found in this scope
+  |
+  = note: did you mean `name`?

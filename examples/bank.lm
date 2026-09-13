@@ -1,0 +1,115 @@
+// A small account ledger. Everything that can fail returns a Result, so the
+// failures here are ordinary values — returned, printed, matched on. Nothing is
+// thrown, and nothing fails quietly: the only way to read a Result is to say
+// what happens when it is an Err.
+//
+//   lumen run examples/bank.lm
+
+// The failure cases as an enum, not strings: a misspelt message is something you
+// find in the output weeks later, a misspelt variant Lumen refuses to run.
+enum LedgerError {
+  NoSuchAccount(Str),
+  InvalidAmount(Num),
+  InsufficientFunds(Str, Num, Num),   // account, balance, amount wanted
+}
+
+// The one place a failure turns into English, with no `_` arm on purpose: add a
+// fourth variant above and Lumen will not run this until you have described it.
+fn explain(e) {
+  match e {
+    LedgerError.NoSuchAccount(id)                 => "no account called ${id}",
+    LedgerError.InvalidAmount(n)                  => "${n} is not an amount: give a positive number",
+    LedgerError.InsufficientFunds(id, have, want) => "${id} holds ${money(have)} but ${money(want)} was asked for",
+  }
+}
+
+fn money(n) { "£${n}" }
+
+// A missing key reads as nil; turning that into an Err here, once, is what lets
+// everything below assume it has a real balance in hand.
+fn balanceOf(accounts, id) {
+  match accounts[id] {
+    nil => Err(LedgerError.NoSuchAccount(id)),
+    n   => Ok(n),
+  }
+}
+
+fn checked(amount) {
+  if amount <= 0 { Err(LedgerError.InvalidAmount(amount)) } else { Ok(amount) }
+}
+
+fn deposit(accounts, id, wanted) {
+  let balance = balanceOf(accounts, id)?
+  let amount  = checked(wanted)?
+  accounts[id] = balance + amount
+  Ok(accounts[id])
+}
+
+fn withdraw(accounts, id, wanted) {
+  let balance = balanceOf(accounts, id)?
+  let amount  = checked(wanted)?
+  if amount > balance {
+    Err(LedgerError.InsufficientFunds(id, balance, amount))
+  } else {
+    accounts[id] = balance - amount
+    Ok(accounts[id])
+  }
+}
+
+// The destination is checked before any money moves: `?` returns on the first
+// failure, and a withdrawal that has already happened would stay happened.
+fn transfer(accounts, payer, payee, amount) {
+  balanceOf(accounts, payee)?
+  withdraw(accounts, payer, amount)?
+  deposit(accounts, payee, amount)?
+  Ok(amount)
+}
+
+// A morning's business, flat. Each `?` is a branch nobody had to write: on an Err
+// the rest never runs and the reason goes back to whoever called this.
+fn morning(accounts) {
+  deposit(accounts, "alice", 400)?
+  transfer(accounts, "alice", "bob", 120)?
+  withdraw(accounts, "bob", 35)?
+  Ok("wages in, rent across, a little cash out")
+}
+
+// The same shape, failing partway: the deposit stands, the transfer is refused —
+// bob is nowhere near that rich — and the line after it never happens.
+fn afternoon(accounts) {
+  deposit(accounts, "bob", 20)?
+  transfer(accounts, "bob", "alice", 5000)?
+  deposit(accounts, "carol", 10)?
+  Ok("bob buys the pub")
+}
+
+fn report(label, outcome) {
+  match outcome {
+    Ok(what) => print("  ${label.padEnd(10)} ok       ${what}"),
+    Err(e)   => print("  ${label.padEnd(10)} refused  ${explain(e)}"),
+  }
+}
+
+fn showLedger(title, accounts) {
+  print(title)
+  for [id, balance] in accounts {
+    print("  ${id.padEnd(10)} ${money(balance).padStart(7)}")
+  }
+  print("  ${"total".padEnd(10)} ${money(accounts.values().sum()).padStart(7)}")
+  print("")
+}
+
+fn main() {
+  var accounts = { alice: 120, bob: 40 }
+  showLedger("Opening", accounts)
+
+  print("Trading")
+  report("morning", morning(accounts))
+  report("afternoon", afternoon(accounts))
+  report("stranger", deposit(accounts, "carol", 10))
+  report("nonsense", withdraw(accounts, "alice", -5))
+  print("")
+
+  showLedger("Closing", accounts)
+  print("Only the accepted lines moved money: every refusal came back as a value.")
+}

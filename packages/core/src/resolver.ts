@@ -44,11 +44,31 @@ interface Binding {
 
 class Scope {
   private readonly names = new Map<string, Binding>();
+  /**
+   * Everything this scope will declare, known before its statements are walked.
+   *
+   * A function body does not run where it is written, so a name declared later
+   * in an enclosing scope is perfectly visible to it:
+   *
+   *     fn greet() { "Hello, ${name}" }   // `name` does not exist yet...
+   *     let name = "world"
+   *     print(greet())                    // ...but it does by the time this runs
+   *
+   * Reporting that as undefined would reject a valid program, so lookups from
+   * inside a function body consult this as well. Lookups at statement level,
+   * which do run where they are written, do not.
+   */
+  private readonly future = new Map<string, boolean>();
 
   constructor(readonly parent: Scope | undefined) {}
 
   declare(name: string, binding: Binding): void {
     this.names.set(name, binding);
+  }
+
+  /** Record that `name` is declared somewhere in this scope. */
+  expect(name: string, mutable: boolean): void {
+    this.future.set(name, mutable);
   }
 
   own(name: string): Binding | undefined {
@@ -65,11 +85,41 @@ class Scope {
     return undefined;
   }
 
+  /** As `lookup`, but also accepting names this scope has yet to declare. */
+  lookupDeferred(name: string): Binding | undefined {
+    let scope: Scope | undefined = this;
+    while (scope !== undefined) {
+      const found = scope.names.get(name);
+      if (found !== undefined) return found;
+      const later = scope.future.get(name);
+      if (later !== undefined) {
+        return { mutable: later, span: ZERO_SPAN, kind: later ? 'var' : 'let' };
+      }
+      scope = scope.parent;
+    }
+    return undefined;
+  }
+
   visible(): string[] {
     const out: string[] = [];
     let scope: Scope | undefined = this;
     while (scope !== undefined) {
       out.push(...scope.names.keys());
+      scope = scope.parent;
+    }
+    return out;
+  }
+
+  /**
+   * As `visible`, but also naming declarations still ahead of us. A typo in a
+   * function body should be able to suggest a name declared later in the file,
+   * since that body can legitimately reach it.
+   */
+  visibleDeferred(): string[] {
+    const out: string[] = [];
+    let scope: Scope | undefined = this;
+    while (scope !== undefined) {
+      out.push(...scope.names.keys(), ...scope.future.keys());
       scope = scope.parent;
     }
     return out;
@@ -90,6 +140,8 @@ class Resolver {
   private readonly diagnostics: Diagnostic[] = [];
   private readonly enums = new Map<string, readonly string[]>();
   private scope: Scope;
+  /** Greater than zero while walking a function body, whose execution is deferred. */
+  private deferred = 0;
 
   constructor(options: ResolveOptions) {
     const root = new Scope(undefined);
@@ -145,8 +197,13 @@ class Resolver {
   }
 
   private use(name: string, span: Span): void {
-    if (this.scope.lookup(name) !== undefined) return;
-    const hint = suggest(name, this.scope.visible());
+    const found =
+      this.deferred > 0 ? this.scope.lookupDeferred(name) : this.scope.lookup(name);
+    if (found !== undefined) return;
+    const hint = suggest(
+      name,
+      this.deferred > 0 ? this.scope.visibleDeferred() : this.scope.visible(),
+    );
     this.report(
       'RS001',
       '`' + name + '` is not defined',
@@ -161,9 +218,24 @@ class Resolver {
   // ------------------------------------------------------------------ module
 
   resolveModule(module: Module): readonly Diagnostic[] {
+    this.expectAll(module.stmts);
     this.hoist(module.stmts);
     for (const stmt of module.stmts) this.stmt(stmt);
     return this.diagnostics;
+  }
+
+  /**
+   * Note every binding this scope will introduce, so a function body written
+   * above one of them can still see it.
+   */
+  private expectAll(stmts: readonly Stmt[]): void {
+    for (const stmt of stmts) {
+      const decl = stmt.kind === 'ExportDecl' ? stmt.declaration : stmt;
+      if (decl.kind === 'LetDecl') this.scope.expect(decl.name, decl.mutable);
+      else if (decl.kind === 'ImportDecl') {
+        for (const spec of decl.specifiers) this.scope.expect(spec.alias ?? spec.name, false);
+      }
+    }
   }
 
   /** Pre-declare functions and types, matching the interpreter's hoisting. */
@@ -189,6 +261,7 @@ class Resolver {
 
   private block(block: Block): void {
     this.pushScope();
+    this.expectAll(block.stmts);
     this.hoist(block.stmts);
     for (const stmt of block.stmts) this.stmt(stmt);
     this.popScope();
@@ -249,11 +322,19 @@ class Resolver {
   private fnBody(params: readonly Param[], body: Block): void {
     this.pushScope();
     for (const param of params) {
-      if (param.defaultValue !== undefined) this.expr(param.defaultValue);
+      // A default value is evaluated at call time, like the body.
+      if (param.defaultValue !== undefined) {
+        this.deferred += 1;
+        this.expr(param.defaultValue);
+        this.deferred -= 1;
+      }
       this.declare(param.name, param.span, false, 'parameter');
     }
-    // The body gets its own scope so a local may shadow a parameter.
+    // The body gets its own scope so a local may shadow a parameter, and runs
+    // when called rather than where it is written.
+    this.deferred += 1;
     this.block(body);
+    this.deferred -= 1;
     this.popScope();
   }
 
@@ -362,7 +443,8 @@ class Resolver {
   private assign(target: Expr, value: Expr): void {
     this.expr(value);
     if (target.kind === 'Ident') {
-      const binding = this.scope.lookup(target.name);
+      const binding =
+        this.deferred > 0 ? this.scope.lookupDeferred(target.name) : this.scope.lookup(target.name);
       if (binding === undefined) {
         this.use(target.name, target.span);
         return;

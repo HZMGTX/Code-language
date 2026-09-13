@@ -1,0 +1,35 @@
+// FizzBuzz, the classic, and a small argument for `match`.
+//
+//   lumen run examples/fizzbuzz.lm
+
+// Four rules, read top to bottom. As nested ifs the reader has to carry the
+// negatives — "not three, not five" — down the chain; as guarded arms each rule
+// is one line, and the order on the page is the order of precedence.
+fn fizzbuzz(n) {
+  match n {
+    x if x % 15 == 0 => "FizzBuzz",
+    x if x % 3 == 0  => "Fizz",
+    x if x % 5 == 0  => "Buzz",
+    _                => str(n),
+  }
+}
+
+fn main() {
+  // range(1, 101) counts 1 to 100: the end is excluded, the way a slice is.
+  let answers = range(1, 101).map(fizzbuzz)
+  let words = ["Fizz", "Buzz", "FizzBuzz"]
+
+  print("FizzBuzz 1-100")
+  // Five to a line, right-aligned. Sharing a column edge makes the pattern the
+  // rules produce visible down the page rather than only along each row.
+  for start in range(0, len(answers), 5) {
+    print("  " + answers.slice(start, start + 5).map(fn(a) { a.padStart(9) }).join(""))
+  }
+
+  print("")
+  print("Tally")
+  for word in words {
+    print("  ${word.padEnd(10)} ${answers.count(fn(a) { a == word })}")
+  }
+  print("  ${"number".padEnd(10)} ${answers.count(fn(a) { !words.contains(a) })}")
+}

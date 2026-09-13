@@ -1,0 +1,32 @@
+// A function body may name things declared later in an enclosing scope,
+// because the body does not run until the name exists.
+
+fn greet() {
+  "Hello, ${name}"
+}
+
+let name = "world"
+print(greet())
+
+// Mutual recursion is the same rule: `isOdd` is not declared yet
+// at the point `isEven` names it.
+fn isEven(n) {
+  if n == 0 { true } else { isOdd(n - 1) }
+}
+
+fn isOdd(n) {
+  if n == 0 { false } else { isEven(n - 1) }
+}
+
+print(isEven(10))
+print(isOdd(10))
+
+// The rule is scoped to function bodies. Inside a block, a later `let`
+// is still visible to a function declared before it.
+fn outer() {
+  fn inner() { total }
+  let total = 42
+  inner()
+}
+
+print(outer())
