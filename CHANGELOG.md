@@ -159,6 +159,21 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   reference listed the signature and said nothing, which is the one thing anybody
   needs to know about a clone.
 
+- **`TY005` and `TY006` shipped without reaching the specification.** The §6 table
+  lists the type checks exhaustively — it had `TY001` through `TY004` — and two
+  more were added to the implementation without being added to it. The patch that
+  was meant to do so silently matched nothing, and nothing noticed, so for several
+  commits the document that defines the language did not mention two of the checks
+  it performs.
+
+  Both are now in the table with the prose that was meant to accompany them, and
+  `check-counts.mjs` compares every `RS` and `TY` code the implementation can emit
+  against the spec, so it cannot happen again. Only those two families: §8 says
+  "selected codes" of `LX`, `PA` and `RT` and means it — there are eighty, and
+  tabulating every one would make a worse document — but the static checks are the
+  set a reader needs complete, because they are what `lumen check` can say about a
+  program that has not run.
+
 - **The README was telling three lies, and now cannot.** It claimed "207 tests, 74
   conformance fixtures" when there were 799 and 116; it said type annotations were
   "parsed but not yet enforced", which stopped being true when TY001 landed; and it

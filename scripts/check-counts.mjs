@@ -15,6 +15,8 @@
  *   - every `examples/*.lm` appears in the README's table, and the table names
  *     nothing that does not exist
  *   - every `std/*` module has a row in the generated stdlib reference
+ *   - every `RS` and `TY` diagnostic the implementation can emit is named in the
+ *     specification
  *
  * Run it with `--fix` to rewrite the counts rather than only reporting them.
  */
@@ -127,6 +129,36 @@ for (const name of listed) {
   if (!onDisk.includes(name)) problems.push('the README table names ' + name + ', which does not exist');
 }
 
+// --------------------------------------- every static check is in the spec
+
+/**
+ * The `RS` and `TY` families, compared against the specification.
+ *
+ * Only those two. The spec's own §8 says "selected codes" of the `LX`, `PA` and
+ * `RT` families and means it — there are eighty of them and tabulating every one
+ * would be a worse document. But §7.5 and §6 list the static checks exhaustively,
+ * because those are the diagnostics a reader needs to know the complete set of:
+ * they are what `lumen check` can say about a program that has not run.
+ *
+ * This exists because `TY005` and `TY006` shipped without reaching the spec. The
+ * patch that was supposed to add them silently matched nothing, and there was no
+ * check to notice — so two static checks existed that the document defining the
+ * language did not mention.
+ */
+const spec = readFileSync(path.join(ROOT, 'docs', 'spec.md'), 'utf8');
+const emitted = new Set();
+for (const file of collect(path.join(ROOT, 'packages'), '.ts')) {
+  if (file.includes('/dist/')) continue;
+  for (const match of readFileSync(file, 'utf8').matchAll(/'((?:RS|TY)\d{3})'/g)) {
+    emitted.add(match[1]);
+  }
+}
+for (const code of [...emitted].sort()) {
+  if (!spec.includes('`' + code + '`')) {
+    problems.push(code + ' can be emitted but is not named in docs/spec.md');
+  }
+}
+
 // ------------------------------------------------ every module is documented
 
 const stdlib = readFileSync(path.join(ROOT, 'docs', 'stdlib.md'), 'utf8');
@@ -145,7 +177,8 @@ if (FIX && fixed !== readme) {
 
 const summary =
   String(actual.tests) + ' tests, ' + String(actual.fixtures) + ' fixtures, ' +
-  String(actual.examples) + ' examples, ' + String(actual.modules) + ' modules';
+  String(actual.examples) + ' examples, ' + String(actual.modules) + ' modules, ' +
+  String(emitted.size) + ' static checks';
 
 if (problems.length === 0) {
   process.stdout.write('README matches the repository (' + summary + ')\n');

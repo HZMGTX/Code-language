@@ -572,6 +572,35 @@ Annotations are **checked where they are written**, before the program runs:
 | `TY002` | A returned value does not match the declared return type |
 | `TY003` | An initialiser does not match a binding's declared type |
 | `TY004` | A struct literal field does not match the field's declared type |
+| `TY005` | An operator's operands cannot be what they are |
+| `TY006` | An assignment does not match the target's declared type |
+
+`TY005` speaks only when **both** operand types are known. `1 - "x"` is reported;
+`a - "x"` for an unannotated `a` is not, because `a` is `Any`. That restraint is
+what keeps the check sound rather than merely useful: `Num - Str` has no reading
+under which it works, so reporting it can never be wrong, while guessing about an
+`Any` could be. The rules are the ones §4.2 and §4.3 already state, moved earlier:
+`+` joins two `Num`s, two `Str`s or two `List`s; the other arithmetic wants two
+`Num`s; ordering wants two `Num`s or two `Str`s. `==` and `!=` accept anything,
+deliberately — comparing values of different types is `false`, not an error.
+
+`TY006` applies the same promise to assignments, not only to declarations. An
+annotation says what a binding holds for its whole life, and a `var` is where the
+second value arrives:
+
+```text
+var v: Num = 1
+v = "text"          TY006: `v` is Num but is being given Str
+
+struct P { x: Num }
+var p: P = P { x: 1 }
+p.x = "text"        TY006: `p.x` is Num but is being given Str
+```
+
+A compound assignment is an operator *as well as* a store, so `total += "x"` on a
+`Num` is reported by `TY005` for the operands. An unannotated `var` is `Any`, so
+reassigning it to another type stays silent and stays legal — a `var` really can
+hold anything, and nothing about it promised otherwise.
 
 The checking is **gradual**, and one rule makes it so: anything the checker
 cannot determine has type `Any`, and `Any` is compatible with everything in
@@ -707,8 +736,8 @@ different meaning. Selected codes:
 | `PA015` | Struct literal in a control-flow header |
 | `PA016` | Source nested more than 250 levels deep |
 | `PA017` | A `..` parameter that is not last, or that has a default |
-| `PA018` | A unary operator directly before `**`, where the grouping is ambiguous |
 | `PA014` | Unmatched `}` |
+| `PA018` | A unary operator directly before `**`, where the grouping is ambiguous |
 | `RT005` | Name is not defined |
 | `RT010` | `?` applied to a non-Result/Option |
 | `RT016` | Cannot add these types |
