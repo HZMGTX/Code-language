@@ -1,0 +1,51 @@
+import { router, route, html, text, json, notFound, escape } from "std/web"
+
+let app = router([
+  route("GET", "/", fn(req) { html("<h1>home</h1>") }),
+  // The specific route goes above the one with the hole, or the hole wins.
+  route("GET", "/post/new", fn(req) { html("new post form") }),
+  route("GET", "/post/:slug", fn(req) { html("post: ${req.params.slug}") }),
+  route("GET POST", "/both", fn(req) { text("method was ${req.method}") }),
+  route("POST", "/only-post", fn(req) { text("posted") }),
+  route("GET", "/static/*path", fn(req) { text("file: ${req.params.path}") }),
+  route("GET", "/health", fn(req) { json({ ok: true }) }),
+])
+
+fn ask(method, path) {
+  let res = app({ method: method, path: path, query: {}, headers: {}, body: "" })
+  let allow = res.headers.getOr("allow", "")
+  print("${method} ${path} -> ${res.status}${if allow == "" { "" } else { " (allow ${allow})" }} ${res.body}")
+}
+
+ask("GET", "/")
+ask("GET", "/post/new")
+ask("GET", "/post/hello")
+// A percent-escaped segment arrives decoded: the link meant "a b".
+ask("GET", "/post/a%20b")
+ask("GET", "/both")
+ask("POST", "/both")
+ask("GET", "/static/css/site.css")
+ask("GET", "/health")
+
+// A trailing or doubled slash is not a different route.
+ask("GET", "/health/")
+ask("GET", "//health//")
+
+// The path exists but the method does not: 405 with the methods that would
+// have worked, which is a different mistake from a wrong URL.
+ask("GET", "/only-post")
+ask("DELETE", "/health")
+
+// Nothing there at all.
+ask("GET", "/nope")
+
+// The method is matched without regard to case.
+ask("get", "/")
+
+// A custom 404, which sees the request and can say what was missing.
+let custom = router(
+  [route("GET", "/", fn(req) { text("home") })],
+  notFound: fn(req) { notFound("nothing at ${escape(req.path)}") },
+)
+let missing = custom({ method: "GET", path: "/gone", query: {}, headers: {}, body: "" })
+print("${missing.status} ${missing.body}")

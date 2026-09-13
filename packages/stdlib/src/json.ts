@@ -21,8 +21,30 @@ function fromJson(input: unknown): Value {
 }
 
 /**
- * Convert Lumen values into JSON-ready data. Structs become objects, enums
- * become `{"variant": ..., "values": [...]}`, and functions have no JSON form.
+ * Convert Lumen values into JSON-ready data.
+ *
+ * Structs become objects. Enums become their variant name when they carry
+ * nothing, and `{"variant": ..., "values": [...]}` when they do. Functions have
+ * no JSON form.
+ *
+ * `Option` is the one exception, and it is worth the exception: `Some(v)`
+ * becomes `v` and `None` becomes `null`. An optional field is the single most
+ * common thing in a JSON document, JSON already has a way to spell it, and the
+ * tagged form does not read as one —
+ *
+ *     {"nickname": {"variant": "Some", "values": ["addy"]}}
+ *     {"nickname": "addy"}
+ *
+ * — so every consumer of an API built this way would have to unwrap it by hand.
+ * `Option` maps onto a concept JSON has; `Result` does not, and keeps the tagged
+ * form. There is no agreed JSON shape for "succeeded or failed" — some APIs use
+ * a status code, some an `error` key, some a wrapper — and unlike `Option`, both
+ * arms of a `Result` carry something the reader has to tell apart, so collapsing
+ * it would lose what matters rather than what does not.
+ *
+ * The cost is that `Some(nil)` and `None` both become `null`. That is JSON's
+ * limit rather than this function's: there is no second null to map the other
+ * one to.
  */
 export function toJson(value: Value): unknown {
   switch (value.k) {
@@ -45,6 +67,12 @@ export function toJson(value: Value): unknown {
       return out;
     }
     case 'enum':
+      // The variant names are checked too, not just the enum's: somebody's own
+      // `enum Option { A, B }` should keep the tagged form, and somebody's own
+      // `enum Option { Some(Num), None }` wants this one anyway.
+      if (value.enumName === 'Option' && (value.variant === 'Some' || value.variant === 'None')) {
+        return value.variant === 'None' ? null : toJson(value.values[0] ?? NIL);
+      }
       return value.values.length === 0
         ? value.variant
         : { variant: value.variant, values: value.values.map((v) => toJson(v)) };

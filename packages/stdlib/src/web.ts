@@ -18,7 +18,7 @@ import * as path from 'node:path';
 
 import { NIL, bool, display, map, num, str, type Value } from '@lumen-lang/core';
 import { toJson } from './json.js';
-import { arg, expectFn, expectInt, expectStr, fn, moduleOf } from './support.js';
+import { arg, expectFn, expectInt, expectList, expectStr, fn, moduleOf } from './support.js';
 
 /**
  * Whether this process was started as a server — `lumen serve` rather than
@@ -136,6 +136,80 @@ const CONTENT_TYPES: ReadonlyMap<string, string> = new Map([
   ['.wasm', 'application/wasm'],
 ]);
 
+
+/**
+ * One route's pattern, compiled once rather than on every request.
+ *
+ * `:name` matches one segment and records it; `*name` matches the rest of the
+ * path, which is what serving a directory of files needs.
+ */
+interface Pattern {
+  readonly segments: readonly string[];
+  readonly rest: string | undefined;
+}
+
+function compilePattern(pattern: string): Pattern {
+  const parts = splitPath(pattern);
+  const last = parts[parts.length - 1];
+  if (last !== undefined && last.startsWith('*')) {
+    return { segments: parts.slice(0, -1), rest: last.slice(1) === '' ? 'rest' : last.slice(1) };
+  }
+  return { segments: parts, rest: undefined };
+}
+
+/**
+ * A path as its segments, with the empty ones dropped.
+ *
+ * Dropping them is what makes `/a/`, `/a` and `//a` one path rather than three.
+ * A trailing slash is a thing browsers and links add and remove freely, and a
+ * router that treats the two as different routes produces 404s nobody can
+ * explain.
+ */
+function splitPath(pathname: string): string[] {
+  return pathname.split('/').filter((part) => part !== '');
+}
+
+/** The captured parameters when `pattern` matches `pathname`, or undefined. */
+function matchPattern(pattern: Pattern, pathname: string): Map<string, Value> | undefined {
+  const parts = splitPath(pathname);
+  if (pattern.rest === undefined) {
+    if (parts.length !== pattern.segments.length) return undefined;
+  } else if (parts.length < pattern.segments.length) {
+    return undefined;
+  }
+
+  const params = new Map<string, Value>();
+  for (const [i, segment] of pattern.segments.entries()) {
+    const part = parts[i] ?? '';
+    if (segment.startsWith(':')) {
+      // Percent-decoding here rather than in the handler: `/post/a%20b` should
+      // hand over `a b`, which is the name the link meant.
+      params.set(segment.slice(1), str(safeDecode(part)));
+      continue;
+    }
+    if (segment !== part) return undefined;
+  }
+  if (pattern.rest !== undefined) {
+    params.set(pattern.rest, str(parts.slice(pattern.segments.length).map(safeDecode).join('/')));
+  }
+  return params;
+}
+
+/**
+ * Percent-decoding that cannot throw.
+ *
+ * `decodeURIComponent("%")` raises, and a malformed escape in a URL is
+ * something a stranger can send. The raw segment is the honest fallback: it
+ * will not match a route, which is the right outcome.
+ */
+function safeDecode(part: string): string {
+  try {
+    return decodeURIComponent(part);
+  } catch {
+    return part;
+  }
+}
+
 /** Escape text for safe interpolation into HTML. */
 function escapeHtml(input: string): string {
   return input
@@ -187,6 +261,140 @@ export function stdWeb(): Map<string, Value> {
         ]),
       ),
     ),
+
+    /**
+     * One route: a method, a path pattern, and what to do about it.
+     *
+     * The pattern is literal segments plus two kinds of hole:
+     *
+     *     "/health"            exactly that path
+     *     "/post/:slug"        one segment, captured as `slug`
+     *     "/static/*path"      the rest of the path, captured as `path`
+     *
+     * The handler is called with the request, and finds what was captured in
+     * `req.params`. That keeps every handler the same shape — one argument —
+     * whether it has parameters or not.
+     *
+     * `method` may be a single method or several separated by spaces, so
+     * `"GET POST"` is one route for a page that both renders and accepts a form.
+     */
+    fn('route', ['method', 'path', 'handler'], (a, c) => {
+      const methods = expectStr(arg(a, 0), c, 'route(method)')
+        .toUpperCase()
+        .split(' ')
+        .filter((m) => m !== '');
+      if (methods.length === 0) return c.panic('route(method) cannot be empty');
+      const pattern = expectStr(arg(a, 1), c, 'route(path)');
+      if (!pattern.startsWith('/')) {
+        return c.panic('route path must start with "/", got ' + JSON.stringify(pattern));
+      }
+      const handler = expectFn(arg(a, 2), c, 'route(handler)');
+      return map(
+        new Map<string, Value>([
+          ['method', str(methods.join(' '))],
+          ['path', str(pattern)],
+          ['handler', handler],
+        ]),
+      );
+    }),
+
+    /**
+     * Turn a list of routes into a handler `serve` can take.
+     *
+     * Routes are tried in order, so put the specific ones first: `/post/new`
+     * before `/post/:slug`, or the second will answer for both.
+     *
+     * Two things it does that a hand-written `if` chain usually does not:
+     *
+     *   - **405, not 404, when the path exists but the method does not.** A
+     *     `POST` to a page that only answers `GET` is a different mistake from a
+     *     `POST` to nothing at all, and the reply says which, with an `allow`
+     *     header naming the methods that would have worked. A client debugging
+     *     against a 404 has no way to tell a wrong URL from a wrong verb.
+     *   - **A trailing slash is not a different route.** `/about` and `/about/`
+     *     are one path, because links and browsers add and remove that slash
+     *     freely.
+     *
+     * `notFound:` replaces the 404 body, and takes the request so it can say
+     * what was missing.
+     */
+    fn('router', ['routes', { name: 'notFound', defaultValue: NIL }], (a, c) => {
+      const routes = expectList(arg(a, 0), c, 'router(routes)');
+      const fallback = arg(a, 1);
+
+      // Compiled once here, not once per request: a router built at startup and
+      // called a million times should not re-parse its own patterns.
+      const compiled = routes.items.map((entry, index) => {
+        if (entry.k !== 'map') {
+          return c.panic(
+            'router(routes) item ' + String(index + 1) + ' is not a route',
+            ['build each one with `route(method, path, handler)`'],
+          );
+        }
+        const method = entry.entries.get('method');
+        const pattern = entry.entries.get('path');
+        const handler = entry.entries.get('handler');
+        if (method?.k !== 'str' || pattern?.k !== 'str' || handler === undefined) {
+          return c.panic(
+            'router(routes) item ' + String(index + 1) + ' is missing method, path or handler',
+            ['build each one with `route(method, path, handler)`'],
+          );
+        }
+        return {
+          methods: method.v.split(' '),
+          pattern: compilePattern(pattern.v),
+          handler,
+        };
+      });
+
+      return fn('handle', ['req'], async (inner, ctx) => {
+        const request = arg(inner, 0);
+        if (request.k !== 'map') return ctx.panic('a handler is called with a request Map');
+        const method = request.entries.get('method');
+        const pathValue = request.entries.get('path');
+        const wanted = method?.k === 'str' ? method.v.toUpperCase() : 'GET';
+        const pathname = pathValue?.k === 'str' ? pathValue.v : '/';
+
+        // Methods that would have matched, gathered as we go, so a 405 can name
+        // them without a second pass over the routes.
+        const allowed = new Set<string>();
+        for (const entry of compiled) {
+          const params = matchPattern(entry.pattern, pathname);
+          if (params === undefined) continue;
+          if (!entry.methods.includes(wanted)) {
+            for (const m of entry.methods) allowed.add(m);
+            continue;
+          }
+          const withParams = new Map(request.entries);
+          withParams.set('params', map(params));
+          return await ctx.call(entry.handler, [map(withParams)]);
+        }
+
+        if (allowed.size > 0) {
+          const methods = [...allowed].sort().join(', ');
+          return map(
+            new Map<string, Value>([
+              ['status', num(405)],
+              [
+                'headers',
+                map(
+                  new Map<string, Value>([
+                    ['content-type', str('text/plain; charset=utf-8')],
+                    ['allow', str(methods)],
+                  ]),
+                ),
+              ],
+              ['body', str(wanted + ' is not allowed here. Try: ' + methods + '\n')],
+            ]),
+          );
+        }
+
+        if (fallback.k === 'fn' || fallback.k === 'native') {
+          return await ctx.call(fallback, [request]);
+        }
+        return response(404, 'text/html; charset=utf-8', 'Not Found');
+      });
+    }),
 
     fn('escape', ['text'], (a, c) => str(escapeHtml(expectStr(arg(a, 0), c, 'escape(text)')))),
 
@@ -387,6 +595,33 @@ export function stdWeb(): Map<string, Value> {
         await new Promise<void>((resolve, reject) => {
           server.once('error', reject);
           server.listen(port, host, () => resolve());
+        }).catch((error: unknown) => {
+          // The commonest way starting a server fails, by a wide margin: the
+          // last one is still running, or something else owns the port. Node's
+          // `EADDRINUSE` plus a stack trace through `node:net` says none of
+          // that, and a stack trace into the runtime is never the answer to a
+          // question about the machine.
+          const code = (error as { code?: string } | null)?.code;
+          if (code === 'EADDRINUSE') {
+            return c.panic('port ' + port + ' is already in use', [
+              'something else is listening on ' + host + ':' + port,
+              'stop it, or serve on another port with `serve(handler: …, port: ' +
+                (port + 1) + ')`',
+            ]);
+          }
+          if (code === 'EACCES') {
+            return c.panic('not allowed to listen on port ' + port, [
+              'ports below 1024 need privileges on most systems',
+              'use a port above 1024 and put a reverse proxy in front for production',
+            ]);
+          }
+          if (code === 'EADDRNOTAVAIL') {
+            return c.panic('cannot listen on host ' + JSON.stringify(host), [
+              'that address does not belong to this machine',
+              'use "127.0.0.1" for local only, or "0.0.0.0" for every interface',
+            ]);
+          }
+          throw error;
         });
         c.host.writeOut('Lumen serving on http://' + host + ':' + port + '\n');
 

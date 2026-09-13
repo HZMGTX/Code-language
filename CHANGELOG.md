@@ -69,6 +69,25 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
 
 ### Fixed
 
+- **`serve` on a port already in use now says so.** It reported `internal error`
+  followed by a Node stack trace through `node:net`, which answers a question
+  about the machine with a trace into the runtime. It is by a wide margin the
+  commonest way starting a server fails — the last one is still running — and now
+  reads as a diagnostic pointing at the `serve` call, suggesting the next port.
+  `EACCES` (a port below 1024) and `EADDRNOTAVAIL` (a host that is not this
+  machine) get the same treatment.
+
+- **`stringify` renders `Option` as JSON's own optional.** `Some(v)` was
+  `{"variant": "Some", "values": [v]}` and `None` was the string `"None"`, so
+  every consumer of an API built with Lumen had to unwrap a field that JSON
+  already knows how to spell. Now `Some(v)` is `v` and `None` is `null`.
+
+  `Result` deliberately keeps the tagged form: JSON has no agreed shape for
+  "succeeded or failed", and unlike `Option` both of its arms carry something the
+  reader has to tell apart, so collapsing it would lose what matters. The enum's
+  variant names are checked as well as its name, so somebody's own
+  `enum Option { A, B }` is untouched.
+
 - **A struct field or enum variant written twice was accepted in silence.**
   `struct Book { title: Str, pages: Num, title: Num }` ran, with the second
   `title` quietly deciding the type. Neither a field nor a variant is a scope
@@ -180,6 +199,33 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   `std/http` names the failing request instead of only "fetch failed".
 
 ### Added
+
+- **`router` and `route` in `std/web`.** A site no longer needs a chain of
+  `if req.path == ...`:
+
+  ```lumen
+  let app = router([
+    route("GET", "/", fn(req) { html("<h1>home</h1>") }),
+    route("GET", "/post/:slug", fn(req) { postPage(req.params.slug) }),
+    route("GET", "/static/*path", fn(req) { file(req.params.path, root: "public") }),
+  ])
+  serve(handler: app, port: 3000)
+  ```
+
+  `:name` matches one segment and `*name` the rest of the path; both arrive in
+  `req.params`, percent-decoded, so every handler keeps the same one-argument
+  shape. A route may name several methods separated by spaces. Patterns are
+  compiled once when the router is built, not per request.
+
+  Two things it gets right that the chain in `examples/website.lm` did not. A
+  request whose path matches but whose method does not now gets **405 with an
+  `allow` header**, not 404 — a client debugging against a 404 cannot tell a
+  wrong URL from a wrong verb. And **a trailing slash is not a different
+  route**, because links and browsers add and remove it freely.
+
+  `examples/website.lm` is rewritten to use it, which removed a
+  `slice(req.path, 6)` whose 6 had to be recounted by hand every time the
+  `/post/` prefix was edited.
 
 - **`std/set`, set operations over lists.** `of`, `has`, `add`, `remove`,
   `union`, `intersection`, `difference`, `symmetricDifference`, `isSubset`,

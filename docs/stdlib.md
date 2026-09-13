@@ -97,9 +97,52 @@ be running it.
 `stringify` renders structs as objects and enums as their variant name (or
 `{variant, values}` when they carry a payload).
 
+`Option` is the exception: `Some(v)` becomes `v` and `None` becomes `null`. An
+optional field is the commonest thing in a JSON document and JSON already spells
+it, so `{"nickname": "addy"}` rather than
+`{"nickname": {"variant": "Some", "values": ["addy"]}}`. `Result` keeps the
+tagged form — there is no agreed JSON shape for "succeeded or failed", and
+unlike `Option` both of its arms carry something the reader has to tell apart.
+The cost is that `Some(nil)` and `None` both become `null`, which is JSON's
+limit rather than a choice: there is no second null to map the other one to.
+
 ### `std/web`
 
 A handler is any function from a request to a response.
+
+`router` builds one from a list of `route`s, so a site does not need a chain of
+`if req.path == ...`:
+
+```lumen
+let app = router([
+  route("GET", "/", fn(req) { html("<h1>home</h1>") }),
+  route("GET", "/post/new", fn(req) { html(newPostForm()) }),
+  route("GET", "/post/:slug", fn(req) { postPage(req.params.slug) }),
+  route("GET POST", "/contact", fn(req) { contact(req) }),
+  route("GET", "/static/*path", fn(req) { file(req.params.path, root: "public") }),
+])
+serve(handler: app, port: 3000)
+```
+
+A pattern is literal segments plus two kinds of hole: `:name` matches one
+segment, and `*name` matches the rest of the path. What they capture arrives in
+`req.params`, so every handler takes one argument whether it has parameters or
+not, decoded — `/post/a%20b` gives `a b`. A method may name several verbs
+separated by spaces.
+
+Routes are tried in order, so the specific one goes first: `/post/new` above
+`/post/:slug`, or the second answers for both.
+
+Two things it gets right that a hand-written chain usually does not:
+
+- A request whose **path matches but whose method does not** gets **405** with an
+  `allow` header naming the methods that would have worked — not 404. A client
+  cannot otherwise tell a wrong URL from a wrong verb.
+- **A trailing slash is not a different route.** `/about` and `/about/` are one
+  path, because links and browsers add and remove that slash freely.
+
+`notFound:` replaces the 404, and takes the request so it can say what was
+missing.
 
 A **request** is a `Map` with `method`, `path`, `query`, `headers` and `body`.
 A **response** is a `Map` with `status`, `headers` and `body` — the helpers build
@@ -515,6 +558,8 @@ json(value, status = ...)
 notFound(body = ...)
 page(title, body, style = ...)
 redirect(location, status = ...)
+route(method, path, handler)
+router(routes, notFound = ...)
 serve(handler, port = ..., host = ...)
 text(body, status = ...)
 ```
