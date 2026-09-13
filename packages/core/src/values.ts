@@ -217,6 +217,14 @@ export function typeName(v: Value): string {
  * of equality on cyclic structures: two values are equal when nothing about them
  * distinguishes them, and a cycle that lines up distinguishes nothing. It also
  * terminates, which the alternative does not.
+ *
+ * The bookkeeping costs about 4% on a loop doing two hundred thousand
+ * comparisons of small lists, measured interleaved against the version without
+ * it. Deferring it until the recursion is deep enough for a cycle to be possible
+ * was tried, on the reasoning that ordinary data cannot cycle: measured the same
+ * way it saved nothing at all, so it was removed rather than kept for the story.
+ * Scalars already skip it — only containers can recur — and `a === b` short-
+ * circuits the identical case before anything else happens.
  */
 export function valuesEqual(a: Value, b: Value, pairs = new Set<string>()): boolean {
   if (a === b) return true;
