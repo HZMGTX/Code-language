@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+
+  // A second, independent compile of the SAME TypeScript sources to CommonJS.
+  //
+  // Why: `scripts/bundle.mjs` concatenates the result into one self-contained
+  // file (build/lumen.cjs). CommonJS `require()` is an ordinary function call
+  // rather than syntax, so the emitted modules can be wrapped in a factory and
+  // stitched together with a tiny registry — no rewriting of ESM syntax.
+  //
+  // This project is deliberately standalone: no `references`, its own `outDir`
+  // and its own `tsBuildInfoFile`, so it never touches the artefacts of the
+  // main `tsc --build`.
+  "extends": "./tsconfig.base.json",
+
+  "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+
+    // The main build owns the project graph; this one stands alone.
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+
+    // ESM import/export syntax must be downlevelled to require()/exports,
+    // which `verbatimModuleSyntax` forbids in a CommonJS module.
+    "verbatimModuleSyntax": false,
+
+    "incremental": true,
+    "tsBuildInfoFile": "build/cjs.tsbuildinfo",
+
+    "rootDir": ".",
+    "outDir": "build/cjs",
+
+    // `packages/cli/src/index.ts` ends in a top-level `await`, which CommonJS
+    // has no syntax for (TS1378). The emit is still exactly what we want —
+    // the bundler wraps that one module's factory in an async function, where
+    // `await` is legal. Keep emitting through the diagnostic.
+    "noEmitOnError": false,
+
+    // The cross-package imports are the bare specifiers `@lumen-lang/core` and
+    // `@lumen-lang/stdlib`. Point them at real sources so tsc reads the .ts
+    // files instead of the workspace links in node_modules. tsc does not
+    // rewrite the specifier on emit, so the bundler's require shim carries a
+    // matching alias table.
+    "baseUrl": ".",
+    "paths": {
+      "@lumen-lang/core": ["packages/core/src/index.ts"],
+      "@lumen-lang/stdlib": ["packages/stdlib/src/index.ts"]
+    },
+
+    "types": ["node"]
+  },
+
+  "include": ["packages/core/src/**/*.ts", "packages/stdlib/src/**/*.ts", "packages/cli/src/**/*.ts"]
+}
