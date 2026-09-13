@@ -52,6 +52,25 @@ import export from break continue true false nil and or not async await
 
 `async` and `await` are reserved for future explicit concurrency; see §7.4.
 
+A keyword is only a keyword where a statement or an expression could begin.
+Where nothing but a name can appear — after `.` or `?.`, as a map key, as a
+struct field in a declaration, a literal or a pattern, as an imported name or
+its alias, or before the `:` of a named argument — a keyword is that name:
+
+```lumen
+let m = { if: 1, for: 2, true: 3 }
+print(m.if)
+struct Config { for: Num, while: Bool }
+```
+
+This matters because data does not know Lumen's keywords: `parse("{\"if\": 1}")`
+produces a map with a key called `if`, and before this rule there was no way to
+write that key or to reach it with a dot.
+
+A **binding** name is the exception — `let`, `var`, `fn`, a parameter, a struct
+or enum name. Those have to be readable as a bare expression later, where a
+keyword really is ambiguous, so `fn f(in)` is still an error.
+
 ### 1.4 Literals
 
 | Form | Examples |

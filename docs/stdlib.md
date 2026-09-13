@@ -207,6 +207,37 @@ an apology, or JSON inside a code fence — so check the shape rather than
 trusting it, and have something to do when it is wrong.
 `examples/triage.lm` is that program written out, retries included.
 
+### `std/option` and `std/result`
+
+`match` is the honest way to handle absence or failure and will always be
+there. But a great many uses of an Option or a Result are one of three shapes —
+turn the value into another value, supply a default, ask which one you have —
+and writing each of those as a two-armed `match` buries the interesting line in
+ceremony:
+
+```lumen
+match find(notes, id) { Some(n) => n.title, None => "(none)" }
+find(notes, id).map(title).unwrapOr("(none)")
+```
+
+Both take their subject first, so every function is also a method.
+
+| Option | Result |
+|---|---|
+| `isSome` `isNone` | `isOk` `isErr` |
+| `unwrapOr(fallback)` | `unwrapOr(fallback)` |
+| `map(f)` `andThen(f)` | `map(f)` `andThen(f)` `mapErr(f)` |
+| `filter(p)` `or(other)` | `ok()` `err()` — as an Option |
+| `okOr(error)` `toList()` | |
+
+`andThen` is for a function that returns an Option or Result of its own, so
+nothing is wrapped twice; a function that returns something else is an error
+rather than a silent double wrap. `mapErr` is what adds context to a failure as
+it travels up: `read(path).mapErr(fn(e) { "loading config: ${e}" })`.
+
+`or` is a keyword, and callable here only because a keyword after a `.` can be
+nothing but a name (spec §1.3).
+
 ### `std/fs` and `std/http`
 
 Error text belongs to Lumen, not to the host. Node's own filesystem messages
@@ -358,6 +389,33 @@ sin(n)
 sqrt(n)
 tan(n)
 trunc(n)
+```
+
+### `std/option`
+
+```text
+andThen(option, f)
+filter(option, predicate)
+isNone(option)
+isSome(option)
+map(option, f)
+okOr(option, error)
+or(option, other)
+toList(option)
+unwrapOr(option, fallback)
+```
+
+### `std/result`
+
+```text
+andThen(result, f)
+err(result)
+isErr(result)
+isOk(result)
+map(result, f)
+mapErr(result, f)
+ok(result)
+unwrapOr(result, fallback)
 ```
 
 ### `std/str`

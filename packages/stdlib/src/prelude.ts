@@ -26,6 +26,8 @@ import {
 
 import { stdList } from './list.js';
 import { stdMath } from './math.js';
+import { stdOption } from './option.js';
+import { stdResult } from './result.js';
 import { stdStr } from './str.js';
 import { stdMap } from './map.js';
 import { None, Some, arg, expectInt, fn } from './support.js';
@@ -305,6 +307,10 @@ export function methodTables(): Record<string, Map<string, Value>> {
     List: listMethods,
     Map: stdMap(),
     Num: numMethods,
+    // `Option` and `Result` are the type names `type()` reports for the two
+    // prelude enums, which is what method lookup dispatches on.
+    Option: stdOption(),
+    Result: stdResult(),
   };
 }
 

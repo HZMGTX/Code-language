@@ -1,0 +1,45 @@
+// `match` is the honest way to handle an Option or a Result and will always be
+// there. But a great many uses are one of three shapes — turn the value into
+// another value, supply a default, ask which one you have — and writing each of
+// those as a two-armed `match` buries the interesting line in ceremony.
+
+import { map as omap, unwrapOr as ounwrap } from "std/option"
+
+// Every function takes its subject first, so each is also a method.
+print(Some(2).map(fn(n) { n * 10 }))
+print(None.map(fn(n) { n * 10 }))
+print(Some(2).unwrapOr(0))
+print(None.unwrapOr(0))
+print([Some(1).isSome(), None.isSome(), Some(1).isNone(), None.isNone()])
+print(Some(4).filter(fn(n) { n > 3 }))
+print(Some(2).filter(fn(n) { n > 3 }))
+print(Some(2).andThen(fn(n) { Some(n + 1) }))
+print(Some(2).andThen(fn(n) { None }))
+print(None.or(Some(9)))
+print(Some(1).or(Some(9)))
+print([Some(1).okOr("missing"), None.okOr("missing")])
+print([Some(1).toList(), None.toList()])
+
+// `or` is a keyword, and reachable here only because a keyword after a `.` can
+// be nothing but a name. That rule is what makes this method callable at all.
+
+// The module form works too, for a pipeline.
+print(Some(3) |> omap(fn(n) { n + 1 }) |> ounwrap(0))
+
+print("--- Result ---")
+print(Ok(2).map(fn(n) { n + 1 }))
+print(Err("bad").map(fn(n) { n + 1 }))
+print(Err("bad").mapErr(fn(e) { "while loading: ${e}" }))
+print(Ok(1).mapErr(fn(e) { "never" }))
+print([Ok(2).unwrapOr(0), Err("x").unwrapOr(0)])
+print([Ok(1).isOk(), Err("x").isOk(), Ok(1).isErr(), Err("x").isErr()])
+print(Ok(2).andThen(fn(n) { Ok(n * 2) }))
+print(Ok(2).andThen(fn(n) { Err("changed mind") }))
+print([Ok(1).ok(), Err("x").ok()])
+print([Ok(1).err(), Err("x").err()])
+
+// Chaining is the point: this is what the two-armed match was hiding.
+fn lookup(m, key) { m.get(key) }
+let prices = { apple: 120, pear: 95 }
+print(lookup(prices, "apple").map(fn(p) { "£${fixed(p / 100, 2)}" }).unwrapOr("not sold"))
+print(lookup(prices, "durian").map(fn(p) { "£${fixed(p / 100, 2)}" }).unwrapOr("not sold"))

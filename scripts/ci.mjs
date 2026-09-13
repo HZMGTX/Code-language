@@ -74,6 +74,8 @@ run('build', 'npm', ['run', 'build']);
 run('typecheck (clean rebuild)', 'npm', ['run', 'typecheck']);
 run('unit and conformance tests', node, [path.join(ROOT, 'scripts', 'run-tests.mjs')]);
 run('Lumen test suite', node, [CLI, 'test', path.join(ROOT, 'tests', 'lumen')]);
+// The multi-file example ships its own tests, which is half of why it is split.
+run('the notes example tests itself', node, [CLI, 'test', path.join(ROOT, 'examples', 'notes')]);
 // The static checks over every Lumen program in the repository. Conformance
 // fixtures are excluded on purpose: many of them are deliberately wrong, which
 // is what they are for, and a checker that passed on those would be checking

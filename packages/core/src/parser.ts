@@ -34,7 +34,7 @@ import {
   span,
 } from './diagnostics.js';
 import { lex } from './lexer.js';
-import { describe, describeToken, type Token, type TokenKind } from './token.js';
+import { KEYWORDS, describe, describeToken, type Token, type TokenKind } from './token.js';
 import type {
   Arg,
   Block,
@@ -103,6 +103,14 @@ function isAssignTarget(expr: Expr): boolean {
     default:
       return false;
   }
+}
+
+/**
+ * Whether a token could be a field or key name — which includes every keyword,
+ * since a keyword before a `:` inside braces cannot be anything else.
+ */
+function isNameLike(tok: Token): boolean {
+  return tok.kind === 'ident' || tok.kind === 'string' || KEYWORDS.has(tok.text);
 }
 
 /** The deepest the parser will recurse before reporting `PA016`. */
@@ -192,6 +200,25 @@ export class Parser {
       return;
     }
     this.diagnostics.push(d);
+  }
+
+  /**
+   * A name, in a position where only a name can appear.
+   *
+   * A keyword is only a keyword where a statement or an expression could
+   * start. After a `.`, before the `:` of a map entry, as a struct field or an
+   * import alias, there is nothing else it could be — so `{ if: 1 }` and
+   * `m.for` and a JSON object with a key called `match` all have to work.
+   * `parse('{"true": 1}')` produces exactly that, and before this there was no
+   * way to write it or to reach it with a dot.
+   */
+  private expectName(context: string): Token {
+    const tok = this.cur();
+    if (tok.kind === 'ident' || KEYWORDS.has(tok.text)) {
+      this.advance();
+      return tok;
+    }
+    return this.expect('ident', context);
   }
 
   private fail(code: string, message: string, label?: string, notes?: readonly Note[]): never {
@@ -489,7 +516,7 @@ export class Parser {
     this.inBrackets(() => {
       this.skipNewlines();
       while (!this.at('}') && !this.at('eof')) {
-        const fStart = this.expect('ident', 'as a field name');
+        const fStart = this.expectName('as a field name');
         let type: TypeExpr | undefined;
         if (this.eat(':')) type = this.parseTypeExpr();
         fields.push({ name: fStart.text, type, span: this.spanFrom(fStart) });
@@ -568,11 +595,11 @@ export class Parser {
     this.inBrackets(() => {
       this.skipNewlines();
       while (!this.at('}') && !this.at('eof')) {
-        const nameTok = this.expect('ident', 'as an imported name');
+        const nameTok = this.expectName('as an imported name');
         let alias: string | undefined;
         if (this.at('ident') && this.cur().text === 'as') {
           this.advance();
-          alias = this.expect('ident', 'after `as`').text;
+          alias = this.expectName('after `as`').text;
         }
         specifiers.push({ name: nameTok.text, alias, span: this.spanFrom(nameTok) });
         this.skipNewlines();
@@ -768,7 +795,7 @@ export class Parser {
         this.inBrackets(() => {
           this.skipNewlines();
           while (!this.at('}') && !this.at('eof')) {
-            const fName = this.expect('ident', 'as a field name in a struct pattern');
+            const fName = this.expectName('as a field name in a struct pattern');
             let pattern: Pattern;
             if (this.eat(':')) {
               pattern = this.parsePattern();
@@ -1024,7 +1051,7 @@ export class Parser {
       if (this.atAny('.', '?.')) {
         const opTok = this.advance();
         this.skipNewlines();
-        const name = this.expect('ident', 'after `' + opTok.kind + '`');
+        const name = this.expectName('after `' + opTok.kind + '`');
         expr = {
           kind: 'MemberExpr',
           target: expr,
@@ -1052,7 +1079,10 @@ export class Parser {
         let name: string | undefined;
         // A named argument is `ident :` — unambiguous, since Lumen has no
         // ternary operator competing for the colon.
-        if (this.at('ident') && this.tokens[this.i + 1]?.kind === ':') {
+        if (
+          (this.at('ident') || KEYWORDS.has(this.cur().text)) &&
+          this.tokens[this.i + 1]?.kind === ':'
+        ) {
           name = this.advance().text;
           this.advance(); // ':'
           this.skipNewlines();
@@ -1076,7 +1106,7 @@ export class Parser {
     const first = this.tokens[j];
     if (first === undefined) return false;
     if (first.kind === '}') return true; // `{}` is an empty map / empty struct
-    if (first.kind !== 'ident' && first.kind !== 'string') return false;
+    if (!isNameLike(first)) return false;
     return this.tokens[j + 1]?.kind === ':';
   }
 
@@ -1092,7 +1122,7 @@ export class Parser {
     while (this.tokens[j]?.kind === 'newline') j += 1;
     const first = this.tokens[j];
     if (first === undefined) return false;
-    if (first.kind !== 'ident' && first.kind !== 'string') return false;
+    if (!isNameLike(first)) return false;
     return this.tokens[j + 1]?.kind === ':';
   }
 
@@ -1224,7 +1254,7 @@ export class Parser {
           this.inBrackets(() => {
             this.skipNewlines();
             while (!this.at('}') && !this.at('eof')) {
-              const fName = this.expect('ident', 'as a field name');
+              const fName = this.expectName('as a field name');
               this.expect(':', 'after a field name');
               this.skipNewlines();
               const value = this.parseExpr();
@@ -1258,7 +1288,7 @@ export class Parser {
       while (!this.at('}') && !this.at('eof')) {
         const eStart = this.cur();
         let key: Expr;
-        if (this.at('ident')) {
+        if (this.at('ident') || KEYWORDS.has(this.cur().text)) {
           const k = this.advance();
           key = { kind: 'StringLit', value: k.text, span: k.span };
         } else if (this.at('string')) {

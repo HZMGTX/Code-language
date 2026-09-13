@@ -1,0 +1,54 @@
+// Tests for `store.lm`, run with:  lumen test examples/notes
+//
+// This file is the argument for the split. `store.lm` returns values and prints
+// nothing, so testing it needs no captured output and no state to reset —
+// every check below is an ordinary comparison.
+
+import { note, withDone, find, complete, open, closed, tags, withTag, tagCounts } from "./store.lm"
+
+fn check(name, actual, expected) {
+  assert(actual == expected, "${name}: expected ${expected}, got ${actual}")
+}
+
+let sample = [
+  note(1, "one", "a", "b"),
+  note(2, "two", "b"),
+  note(3, "three"),
+]
+
+// --------------------------------------------------------------- constructing
+check("id", sample[0].id, 1)
+check("variadic tags", sample[0].tags, ["a", "b"])
+check("no tags at all", sample[2].tags, [])
+check("starts open", sample[0].done, false)
+
+// -------------------------------------------------------------------- finding
+check("find a note", find(sample, 2).map(fn(n) { n.title }), Some("two"))
+check("find nothing", find(sample, 99), None)
+
+// ------------------------------------------------------------------ completing
+match complete(sample, 2) {
+  Ok(updated) => {
+    check("the one completes", find(updated, 2).map(fn(n) { n.done }), Some(true))
+    check("the others do not", find(updated, 1).map(fn(n) { n.done }), Some(false))
+    check("open shrinks", len(open(updated)), 2)
+    check("closed grows", len(closed(updated)), 1)
+    // The original list is untouched, which is what makes this safe to hold on to.
+    check("the input is unchanged", sample[1].done, false)
+  },
+  Err(why) => assert(false, "completing 2 should have worked: ${why}"),
+}
+
+match complete(sample, 99) {
+  Ok(_)    => assert(false, "completing a note that does not exist should fail"),
+  Err(why) => check("says which id", why, "no note with id 99"),
+}
+
+check("withDone does not mutate", withDone(sample[0], true).done && !sample[0].done, true)
+
+// ----------------------------------------------------------------------- tags
+check("every tag, once, sorted", tags(sample), ["a", "b"])
+check("by tag", withTag(sample, "b").map(fn(n) { n.id }), [1, 2])
+check("no such tag", withTag(sample, "zzz"), [])
+check("counts", tagCounts(sample), { a: 1, b: 2 })
+check("counts of nothing", tagCounts([]), {})

@@ -195,7 +195,7 @@ files or serves a port.
 
 ## Examples
 
-Seventeen runnable programs, each executed by CI on every change. `lumen run
+Eighteen runnable programs, each executed by CI on every change. `lumen run
 examples/<name>.lm` runs any of them.
 
 | File | What it shows |
@@ -217,6 +217,7 @@ examples/<name>.lm` runs any of them.
 | `guestbook.lm` | A form, escaping, and one file that is both site and script |
 | `ai_agent.lm` | An AI call that works with no key, via the mock provider |
 | `triage.lm` | Structured output from a model — parsing, fallback, retries |
+| `notes/` | A program in three files, with its own tests |
 
 ## Repository layout
 

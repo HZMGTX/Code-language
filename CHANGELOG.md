@@ -204,6 +204,29 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   is the honest thing for an example to show; the new variable scripts the
   mock's reply so the other paths are reachable with no key. Six tests drive
   all of them. The mock still never reads the prompt to decide what to say.
+- **`std/option` and `std/result`,** and their methods. `match` is the honest
+  way to handle absence or failure and will always be there, but a great many
+  uses are one of three shapes — turn the value into another value, supply a
+  default, ask which one you have — and writing each as a two-armed `match`
+  buries the interesting line in ceremony. `find(notes, id).map(title)
+  .unwrapOr("(none)")` is now available alongside it. Found by writing a test
+  that naturally wanted `.map` on an Option and discovering the type had no
+  methods at all, which for a language whose errors are values was a hole in
+  the middle of it.
+- **A keyword can be a name where nothing else could be.** `{ if: 1 }`, `m.for`,
+  `struct Config { while: Bool }` — a keyword is only a keyword where a
+  statement or an expression could begin, and after a `.`, before the `:` of a
+  map entry, or as a struct field there is nothing else it could be. This
+  matters because data does not know Lumen's keywords: `parse('{"if": 1}')`
+  produces a map with a key called `if`, and there was previously no way to
+  write that key or to reach it with a dot. Even `true` was affected. A binding
+  name stays the exception — it must be readable as a bare expression later, so
+  `fn f(in)` is still an error.
+- **`examples/notes/` — a program in three files,** which no single-file example
+  could show: a store that returns values and prints nothing, a renderer that
+  knows nothing about storage, and a main that decides the order. The split
+  earns itself in `store_test.lm`, which tests the whole data layer with
+  ordinary comparisons and no captured output. CI runs it.
 - **`lumen check [path]`.** Parse, resolve and type-check a whole tree without
   running any of it. It is what an editor, a pre-commit hook or a CI step wants:
   running a program to find out whether it has a typo is a poor trade when the

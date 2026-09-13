@@ -1,0 +1,57 @@
+// The data half of the notes program: what a note is, and what can be done to
+// a collection of them. Nothing here prints anything, which is the point — it
+// can be tested without capturing output, and reused by something that renders
+// differently.
+
+export struct Note {
+  id:    Num,
+  title: Str,
+  tags:  List,
+  done:  Bool,
+}
+
+// `..tags` so a caller can write `note(1, "Buy milk", "home", "errand")`
+// instead of assembling a list first.
+export fn note(id, title, ..tags) {
+  Note { id: id, title: title, tags: tags, done: false }
+}
+
+export fn withDone(n, done) {
+  Note { id: n.id, title: n.title, tags: n.tags, done: done }
+}
+
+// Finding a note is a question that can fail, so it answers with an Option
+// rather than with a note-shaped lie.
+export fn find(notes, id) {
+  notes.find(fn(n) { n.id == id })
+}
+
+// Completing one returns a new list. The caller decides whether to keep it,
+// which is what makes this testable without any state to reset.
+export fn complete(notes, id) {
+  match find(notes, id) {
+    None    => Err("no note with id ${id}"),
+    Some(_) => Ok(notes.map(fn(n) { if n.id == id { withDone(n, true) } else { n } })),
+  }
+}
+
+export fn open(notes) { notes.filter(fn(n) { !n.done }) }
+export fn closed(notes) { notes.filter(fn(n) { n.done }) }
+
+// Every tag used, once each, in alphabetical order.
+export fn tags(notes) {
+  notes.map(fn(n) { n.tags }).flatten().unique().sorted()
+}
+
+export fn withTag(notes, tag) {
+  notes.filter(fn(n) { n.tags.contains(tag) })
+}
+
+// How many notes carry each tag. `getOr` is what keeps this one line per note.
+export fn tagCounts(notes) {
+  var counts = {}
+  for n in notes {
+    for tag in n.tags { counts[tag] = counts.getOr(tag, 0) + 1 }
+  }
+  counts
+}

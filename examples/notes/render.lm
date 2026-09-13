@@ -1,0 +1,41 @@
+// The presentation half. It knows about notes but nothing about how they are
+// stored or changed, so a web version of this program would replace only this
+// file.
+
+import { open, closed, tagCounts } from "./store.lm"
+
+fn mark(n) { if n.done { "x" } else { " " } }
+
+export fn line(n) {
+  let tags = if n.tags.isEmpty() { "" } else { "  (${n.tags.sorted().join(", ")})" }
+  "  [${mark(n)}] ${str(n.id).padStart(2)}  ${n.title}${tags}"
+}
+
+export fn list(title, notes) {
+  var out = [title]
+  if notes.isEmpty() {
+    out.push("  (none)")
+  } else {
+    for n in notes { out.push(line(n)) }
+  }
+  out.join("\n")
+}
+
+// A percentage needs `fixed`, not `round`: "60.0%" and "60%" line up in a
+// column and "60.00000000000001%" does not.
+export fn summary(notes) {
+  let total = len(notes)
+  if total == 0 { return "Nothing to do." }
+  let done = len(closed(notes))
+  "${done} of ${total} done (${fixed(done / total * 100, 1)}%), ${len(open(notes))} still open"
+}
+
+export fn tagReport(notes) {
+  let counts = tagCounts(notes)
+  var out = ["By tag"]
+  // Most-used first, and alphabetically within a count so the order is stable.
+  for tag in counts.keys().sorted().sortBy(fn(t) { -counts[t] }) {
+    out.push("  ${tag.padEnd(10)}${counts[tag]}")
+  }
+  out.join("\n")
+}

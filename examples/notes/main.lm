@@ -1,0 +1,53 @@
+// A program in three files, which is the part no single-file example can show.
+//
+//   lumen run examples/notes/main.lm
+//   lumen test examples/notes
+//
+//   store.lm   what a note is and what can be done to one — no printing
+//   render.lm  how to show one — no knowledge of how they are stored
+//   main.lm    this file: the order things happen in
+//
+// The split is not ceremony. `store.lm` can be tested without capturing
+// output (see store_test.lm), and a web version of this program would replace
+// `render.lm` and nothing else.
+
+import { note, complete, open, withTag, tags } from "./store.lm"
+import { list, summary, tagReport } from "./render.lm"
+
+fn seed() {
+  [
+    note(1, "Buy milk", "home", "errand"),
+    note(2, "Write the parser", "work", "deep"),
+    note(3, "Book dentist", "health", "errand"),
+    note(4, "Read about bytecode VMs", "work", "deep", "reading"),
+    note(5, "Water the plants", "home"),
+  ]
+}
+
+fn main() {
+  var notes = seed()
+
+  print(list("Everything", notes))
+  print("")
+  print(summary(notes))
+  print("")
+
+  // Completing a note returns a new list or an Err — so the mistake below is
+  // reported rather than silently doing nothing.
+  for id in [2, 5, 99] {
+    match complete(notes, id) {
+      Ok(updated) => notes = updated,
+      Err(why)    => print("could not complete: ${why}"),
+    }
+  }
+
+  print("")
+  print(list("Still open", open(notes)))
+  print("")
+  print(summary(notes))
+  print("")
+  print(tagReport(notes))
+  print("")
+  print("Errands: ${withTag(notes, "errand").map(fn(n) { n.title }).join("; ")}")
+  print("All tags: ${tags(notes).join(", ")}")
+}

@@ -1,0 +1,27 @@
+Some(20)
+None
+2
+0
+[true, false, false, true]
+Some(4)
+None
+Some(3)
+None
+Some(9)
+Some(1)
+[Ok(1), Err("missing")]
+[[1], []]
+4
+--- Result ---
+Ok(3)
+Err("bad")
+Err("while loading: bad")
+Ok(1)
+[2, 0]
+[true, false, false, true]
+Ok(4)
+Err("changed mind")
+[Some(1), None]
+[None, Some("x")]
+£1.20
+not sold
