@@ -39,16 +39,27 @@ depth: knowing the types of things nobody annotated.
 
 Measured, not guessed. `npm run bench` is the baseline; profile before and after.
 
-- **Return `Value | Promise<Value>` rather than always a promise.** The
-  interpreter awaits I/O so user code needs no `async`, and that must not
-  change — but almost nothing it evaluates is actually asynchronous. Awaiting a
-  plain value still costs a microtask, and the profile above attributes ~37% of
-  the work to exactly that. A micro-benchmark of the same tree walk in both
-  shapes puts the ceiling at 6.5x for the walk machinery in isolation; the real
-  gain on whole programs will be nearer the 37%. Roughly 80 `await` sites in
-  `packages/core/src/interp.ts`, made safe by the conformance suite.
-- A bytecode compiler and VM to replace tree-walking. This is the change that
-  alters the category rather than the constant factor.
+- **A bytecode compiler and VM to replace tree-walking.** This is the change
+  that alters the category rather than the constant factor, and it should come
+  before the item below rather than after it.
+
+- **Returning `Value | Promise<Value>` rather than always a promise** — costed,
+  and deliberately not done yet. The interpreter awaits I/O so user code needs
+  no `async`, and that must not change; but almost nothing it evaluates is
+  actually asynchronous, and awaiting a plain value still costs a microtask.
+  The profile above attributes ~37% of the work to exactly that.
+
+  The scope is larger than the 80 `await` sites suggest. Without `async`, every
+  `for ... of` loop containing an await — in `ListLit`, `MapLit`, `evalArgs`,
+  `execBlock`, `matchPattern` — becomes a hand-written step function, and every
+  `try`/`catch` around the `return`/`break`/`continue`/`?` signals has to handle
+  both a synchronous throw and a rejection. That is a rewrite of the evaluator
+  in continuation-passing style, not a refactor of it.
+
+  Which is the argument for ordering: a bytecode VM has no tree-walking
+  evaluator, so this work would be thrown away by the item above it. Spending
+  that risk on code the roadmap already plans to replace is the wrong trade.
+  Worth doing only if the VM is not.
 - Constant folding and inline caches for member access
 
 Already done, and worth ~13-28%: scopes allocate their slot table on first
