@@ -367,11 +367,34 @@ fn add(a: Num, b: Num) -> Num { a + b }
 struct Task { title: Str, done: Bool }
 ```
 
-**In v0.1 annotations are parsed and retained but not enforced.** This is a
-deliberate scoping decision, not an oversight: fixing the *syntax* now means the
-v0.2 checker can start enforcing without changing a single line of existing
-Lumen source. Do not read an annotation as a guarantee yet. Arity, field names,
-and operand types *are* checked — at run time, with located diagnostics.
+Annotations are **checked where they are written**, before the program runs:
+
+| Code | Reported when |
+|---|---|
+| `TY001` | An argument does not match the parameter's declared type |
+| `TY002` | A returned value does not match the declared return type |
+| `TY003` | An initialiser does not match a binding's declared type |
+| `TY004` | A struct literal field does not match the field's declared type |
+
+The checking is **gradual**, and one rule makes it so: anything the checker
+cannot determine has type `Any`, and `Any` is compatible with everything in
+both directions. A program that writes no annotations therefore has every
+expression typed `Any` and cannot produce a single type diagnostic. The checker
+is invisible until you opt in.
+
+There is deliberately **no inference**, with one sound exception. Inferring
+`let n = 1` as `Num` in general would start rejecting `n = "text"` in code that
+never asked to be checked. The exception is an unannotated `let`: because `let`
+is immutable, the binding can never later hold a different type, so taking the
+type from its value cannot become wrong. A `var` stays `Any`.
+
+What is **not** checked in this pass: parameters and `var` bindings without
+annotations, the standard library's own signatures, method calls, function-type
+compatibility, and anything requiring flow analysis or generics. Those need the
+full checker; see [ROADMAP.md](../ROADMAP.md).
+
+Arity, field names and operand types are also checked at run time, so a host
+embedding the interpreter without running these passes is not left unguarded.
 
 ---
 
@@ -443,7 +466,8 @@ note suggesting the fix. Codes are grouped by phase:
 |---|---|
 | `LX` | Lexical |
 | `PA` | Parsing |
-| `RS` | Static checks, before execution |
+| `RS` | Static checks: names and scoping |
+| `TY` | Static checks: types |
 | `RT` | Run time |
 
 Codes are part of the language's contract: a code is never reused for a

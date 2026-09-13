@@ -32,6 +32,7 @@ import type {
   Stmt,
 } from './ast.js';
 import { type Diagnostic, type Note, type Span, LumenError } from './diagnostics.js';
+import { checkTypes } from './types.js';
 import { suggest } from './values.js';
 
 interface Binding {
@@ -513,10 +514,20 @@ export function resolve(module: Module, options: ResolveOptions): readonly Diagn
   return new Resolver(options).resolveModule(module);
 }
 
-/** Check a module and throw if anything was found. */
+/**
+ * Every static check, in one call: names and scoping first, then types.
+ *
+ * Scope errors come first deliberately. A program with an undefined name will
+ * also produce confusing type errors about it, and reporting the cause rather
+ * than its consequences is the more useful half.
+ */
 export function checkModule(module: Module, source: string, options: ResolveOptions): void {
-  const diagnostics = resolve(module, options);
-  if (diagnostics.length > 0) {
-    throw new LumenError(diagnostics, module.file, source);
+  const scopeProblems = resolve(module, options);
+  if (scopeProblems.length > 0) {
+    throw new LumenError(scopeProblems, module.file, source);
+  }
+  const typeProblems = checkTypes(module);
+  if (typeProblems.length > 0) {
+    throw new LumenError(typeProblems, module.file, source);
   }
 }

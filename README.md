@@ -27,7 +27,7 @@ no aspirational syntax in this README. What is *not* done yet is listed honestly
 in [ROADMAP.md](ROADMAP.md), and the most important item is that **type
 annotations are parsed but not yet enforced**.
 
-- 199 tests, 66 conformance fixtures, green on Node 20/22/24 across Linux, macOS and Windows
+- 207 tests, 74 conformance fixtures, green on Node 20/22/24 across Linux, macOS and Windows
 - **Zero runtime dependencies.** The only build-time dependencies are TypeScript
   and Node's type definitions.
 - **Ships as a standalone executable.** Running a Lumen program needs no Node,

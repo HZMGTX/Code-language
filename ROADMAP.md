@@ -11,7 +11,7 @@ decisions, not oversights.
 |---|---|
 | **Type annotations are not enforced** | `fn add(a: Num, b: Num) -> Num` parses and is retained, but nothing checks it. Arity, struct fields and operand types are checked at run time. |
 | **`match` exhaustiveness is checked, but only where it can be proved** | The resolver reports a missing variant (`RS002`) when every arm names variants of one enum it can see. A `match` over a value whose enum it cannot determine — a parameter with no annotation, say — still falls back to the run-time `RT020`. Closing that gap needs the type checker. |
-| **Type annotations are still not enforced** | Names, mutability, arm reachability and enum coverage are checked before a program runs (`RS001`-`RS005`); *types* are not. `fn add(a: Num, b: Num)` will happily be handed two strings. |
+| **Type checking is gradual and shallow** | Annotations are enforced where written (`TY001`-`TY004`), and an unannotated `let` takes its value's type. But there is no inference for parameters or `var`, the standard library carries no signatures, method calls are unchecked, and there is no flow analysis or generics. An unannotated program is never type-checked at all, by design. |
 | **Ranges are materialised** | `0..n` builds a list, capped at 10,000,000 elements. Large spans need a `while` loop. |
 | **No methods on built-in types** | `len(x)`, not `x.len()`. Pipelines cover most of the ergonomics. |
 | **Performance** | A tree-walking interpreter in which every evaluation is a promise. Correctness and capability were the v0.1 priorities; speed is v0.3's. |
@@ -22,11 +22,14 @@ decisions, not oversights.
 
 ## v0.2 — Types
 
-The theme is making annotations mean something, without invalidating code
-written against v0.1.
+Annotations now mean something where they are written. The rest of the theme is
+depth: knowing the types of things nobody annotated.
 
-- Type inference and checking for annotated code; gradual, so unannotated code
-  keeps working
+- Inference for parameters and `var` bindings, so a function's types can be
+  known without writing them
+- Signatures for the standard library, so `upper(1)` is caught
+- Type-checked method calls
+- Function-type compatibility, rather than treating every `fn` as interchangeable
 - Full `match` exhaustiveness, including values whose enum only the type checker
   can determine (the resolver already covers the cases it can prove)
 - Generics and traits, and with traits, method syntax (`x.len()`)

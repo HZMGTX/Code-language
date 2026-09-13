@@ -1,0 +1,3 @@
+struct Point { x: Num, y: Num }
+let p = Point { x: 1, y: "two" }
+print(p)

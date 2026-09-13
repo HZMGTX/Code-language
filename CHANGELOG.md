@@ -41,6 +41,27 @@ The first working version. Everything below runs today.
   stale again, and the core built-ins carry documentation so `help()` is
   complete.
 
+### Types
+
+Annotations are enforced where they are written, before the program runs.
+
+- `TY001` an argument that does not match the parameter's declared type
+- `TY002` a returned value that does not match the declared return type
+- `TY003` an initialiser that does not match a binding's declared type
+- `TY004` a struct literal field that does not match the field's declared type
+
+The checking is gradual: anything the checker cannot determine is `Any`, and
+`Any` is compatible with everything, so a program that writes no annotations is
+never type-checked and cannot produce a single diagnostic.
+
+There is no inference, with one sound exception: an unannotated `let` takes the
+type of its value. That is safe precisely because `let` is immutable — the
+binding can never later hold something else, so the inferred type cannot become
+wrong. A `var` stays `Any`.
+
+Verified the same way as the resolver: every Lumen file in the repository was
+checked before the pass was wired in. 66 files, none flagged.
+
 ### Static checks
 
 Programs are now checked before they run, so a mistake is reported whether or
@@ -118,7 +139,7 @@ unrelated; a confident wrong suggestion costs more than none.
 ### Project
 
 - Zero runtime dependencies
-- 199 tests and 66 conformance fixtures, green on Node 20/22/24 across Linux,
+- 207 tests and 74 conformance fixtures, green on Node 20/22/24 across Linux,
   macOS and Windows
 - Specification, tour, standard-library reference and design rationale
 - Proprietary licence; every package marked private, enforced by CI

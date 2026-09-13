@@ -24,7 +24,7 @@ be archaeology.
 ### 2. Behaviour is pinned by an executable conformance suite
 
 `tests/conformance/` holds one `.lm` file and one exact expected-output file per
-behaviour. 66 of them today. They are byte-compared, run on three Node
+behaviour. 74 of them today. They are byte-compared, run on three Node
 versions and three operating systems, and they are what makes the specification
 enforceable rather than aspirational.
 
@@ -145,11 +145,14 @@ can never change what an existing lookup returns, but it does mean
 > it was that a beginner wrote three import lines before their first useful
 > program.
 
-**Type annotations parsed but not enforced.** Stated plainly wherever it could
-mislead.
-*Cost:* an annotation currently documents intent rather than guaranteeing it.
-Shipping a full inference engine in a first pass is where language projects
-die; freezing the syntax first is what makes the checker additive later.
+**Gradual typing, with `Any` as the default rather than an escape hatch.**
+Annotations are enforced where written; everything else is `Any`, which is
+compatible with everything. An unannotated program is never type-checked.
+*Cost:* the checker is silent exactly where a program most needs help — code
+nobody annotated. It catches a wrong argument to an annotated function, not a
+wrong argument to an unannotated one. The alternative, inferring everywhere,
+would have changed what existing programs mean, which is a larger cost to pay
+without asking.
 
 ## What would make this claim false
 

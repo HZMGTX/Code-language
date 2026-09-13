@@ -1,0 +1,18 @@
+// `let` is immutable, so taking its type from its value can never become wrong
+// later — the binding cannot be reassigned. That makes this inference sound.
+struct Person { name: Str, age: Num }
+
+fn shout(text: Str) -> Str { text }
+fn double(n: Num) -> Num { n * 2 }
+
+let person = Person { name: "Ada", age: 36 }
+print(shout(person.name))
+print(double(person.age))
+
+// A `var` stays Any, because inferring there would start rejecting the
+// reassignments that `var` exists to allow.
+var anything = 1
+anything = "a string"
+print(shout(anything))
+
+print(double(person.name))

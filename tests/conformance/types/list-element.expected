@@ -1,0 +1,7 @@
+error[TY001]: `total` expects List<Num> for `xs` but was given List<Str>
+ --> list-element.lm:2:13
+  |
+2 | print(total(["a", "b"]))
+  |             ^^^^^^^^^^ expected List<Num>
+  |
+  = note: the parameter is declared as `xs: List<Num>`
