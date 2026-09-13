@@ -58,7 +58,7 @@ function render(node: unknown, indent: number, out: string[]): void {
   }
 
   const record = node as Record<string, unknown>;
-  const kind = typeof record['kind'] === 'string' ? record['kind'] : '(node)';
+  const kind = typeof record['kind'] === 'string' ? record['kind'] : undefined;
   const scalars: string[] = [];
   const nested: [string, unknown][] = [];
 
@@ -72,11 +72,44 @@ function render(node: unknown, indent: number, out: string[]): void {
     nested.push([key, value]);
   }
 
-  out.push(pad + kind + (scalars.length > 0 ? ' ' + scalars.join(' ') : ''));
+  if (kind !== undefined) {
+    out.push(pad + kind + (scalars.length > 0 ? ' ' + scalars.join(' ') : ''));
+    for (const [key, value] of nested) {
+      out.push(pad + '  ' + key + ':');
+      render(value, indent + 2, out);
+    }
+    return;
+  }
+
+  // A node with no `kind` of its own: an argument, a match arm, a parameter, a
+  // map entry. These are structure rather than syntax — there is no `Arg` in the
+  // grammar, only a call with things in it — and labelling them `(node)`, as this
+  // used to, spent a line saying nothing in the one command whose whole job is
+  // showing how Lumen read the file.
+  //
+  // Every one of these gets a `-`, whatever it holds. Without a marker a list of
+  // them runs together — two match arms print as `pattern: body: pattern: body:`,
+  // and the reader has no way to see where the first ends. Marking only the ones
+  // with several parts was tried and read worse: one argument list then had some
+  // elements bulleted and some not, which looks like a distinction and is not.
+  //
+  // Every type that reaches here — argument, parameter, match arm, map entry,
+  // struct field, enum variant — appears only inside a list, so the marker is
+  // always right.
+  const first = out.length;
+  const single = scalars.length === 0 && nested.length === 1;
+  if (scalars.length > 0) out.push(pad + '  ' + scalars.join(' '));
   for (const [key, value] of nested) {
+    if (single) {
+      // Nothing of its own to say, so the element *is* its child.
+      render(value, indent + 1, out);
+      continue;
+    }
     out.push(pad + '  ' + key + ':');
     render(value, indent + 2, out);
   }
+  const head = out[first];
+  if (head !== undefined) out[first] = pad + '- ' + head.slice(pad.length + 2);
 }
 
 export async function dumpAst(file: string): Promise<void> {

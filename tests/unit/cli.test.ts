@@ -90,6 +90,92 @@ describe('program arguments', () => {
   });
 });
 
+/**
+ * `lumen ast` and `lumen tokens`.
+ *
+ * Neither had a test, which is how `lumen ast` came to print `(node)` where an
+ * argument, a match arm or a parameter should be — in the one command whose whole
+ * job is showing how Lumen read the file. Nothing in the language breaks when a
+ * debugging tool's output goes vague, so nothing was going to catch it.
+ */
+describe('inspecting a file', () => {
+  const SOURCE = [
+    'fn greet(name, greeting = "hi") {',
+    '  match name {',
+    '    "ada" => "${greeting}, Ada",',
+    '    _ => greeting,',
+    '  }',
+    '}',
+    'print(greet("ada", greeting: "hello"))',
+    'let m = { a: 1 }',
+    '',
+  ].join('\n');
+
+  const inspect = async (command: string): Promise<string> => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'lumen-ast-'));
+    const file = path.join(dir, 'a.lm');
+    writeFileSync(file, SOURCE, 'utf8');
+    try {
+      const { code, out } = await run([command, file]);
+      assert.equal(code, 0, out);
+      return out;
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+
+  it('never prints a node it cannot name', async () => {
+    const out = await inspect('ast');
+    assert.doesNotMatch(out, /\(node\)/, 'an unnamed node in the tree:\n' + out);
+  });
+
+  it('marks each element of a list, so a list reads as one', async () => {
+    const out = await inspect('ast');
+    // Two parameters, two match arms, two arguments: each element carries a `-`,
+    // or `pattern: body: pattern: body:` gives no clue where the first arm ends.
+    const arms = out.slice(out.indexOf('arms:'));
+    assert.equal((arms.match(/^\s+- pattern:/gm) ?? []).length, 2, 'arms not marked:\n' + arms);
+    const params = out.slice(out.indexOf('params:'), out.indexOf('body:'));
+    assert.equal((params.match(/^\s+- name=/gm) ?? []).length, 2, 'params not marked:\n' + params);
+  });
+
+  it('keeps a named argument’s name', async () => {
+    const out = await inspect('ast');
+    assert.match(out, /name="greeting"/);
+  });
+
+  it('shows the nodes the source actually contains', async () => {
+    const out = await inspect('ast');
+    for (const expected of ['FnDecl name="greet"', 'MatchExpr', 'PWildcard', 'MapLit', 'TemplateLit']) {
+      assert.ok(out.includes(expected), 'missing ' + expected + ' from:\n' + out);
+    }
+  });
+
+  it('lists tokens with their positions', async () => {
+    const out = await inspect('tokens');
+    assert.match(out, /^1:1\s+fn\s*$/m);
+    assert.match(out, /ident\s+= greet/);
+    assert.match(out, /template/);
+    assert.match(out, /newline/);
+  });
+
+  it('reports a file it cannot read rather than crashing', async () => {
+    for (const command of ['ast', 'tokens']) {
+      const { code, out } = await run([command, 'no-such-file.lm']);
+      assert.notEqual(code, 0);
+      assert.match(out, /cannot read/);
+    }
+  });
+
+  it('needs a file', async () => {
+    for (const command of ['ast', 'tokens']) {
+      const { code, out } = await run([command]);
+      assert.equal(code, 2);
+      assert.match(out, /needs a file/);
+    }
+  });
+});
+
 describe('the lumen command', () => {
   it('prints a version', async () => {
     const { code, out } = await run(['--version']);

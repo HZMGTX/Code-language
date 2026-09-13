@@ -108,6 +108,23 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
 
 ### Fixed
 
+- **`lumen ast` printed `(node)` where an argument, a match arm or a parameter
+  should be.** Seven AST types are structure rather than syntax — there is no
+  `Arg` in the grammar, only a call with things in it — so they carry no `kind`,
+  and the dumper had nothing to label them with. In the one command whose whole
+  job is showing how Lumen read a file, that spent a line saying nothing.
+
+  A wrapper with a single child is now rendered straight through, so a positional
+  argument appears as its own expression, and every element of a list carries a
+  `-`. Without the marker two match arms printed as `pattern: body: pattern:
+  body:` and the reader had no way to see where the first ended. Marking only the
+  multi-part elements was tried and read worse — an argument list then had some
+  bulleted and some not, which looks like a distinction and is not.
+
+  Neither `ast` nor `tokens` had a single test, which is how this survived:
+  nothing in the language breaks when a debugging tool goes vague. Both have them
+  now, including one that simply asserts the output never says `(node)`.
+
 - **A value that contains itself no longer crashes four operations.** `print` has
   always shown `a.push(a)` as `[1, [...]]`, so the language had already decided
   such a value is real — but `==`, `clone`, `stringify` and set membership each
