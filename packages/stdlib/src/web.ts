@@ -12,7 +12,9 @@
  * build one for you, and returning a bare string is treated as HTML.
  */
 
+import { promises as fsp } from 'node:fs';
 import * as http from 'node:http';
+import * as path from 'node:path';
 
 import { NIL, bool, display, map, num, str, type Value } from '@lumen-lang/core';
 import { toJson } from './json.js';
@@ -31,6 +33,11 @@ let serveMode = false;
 /** Called by the CLI for `lumen serve`. */
 export function setServeMode(on: boolean): void {
   serveMode = on;
+}
+
+/** The one answer both "no such file" and "not yours to ask for" get. */
+function notFoundResponse(): Value {
+  return response(404, 'text/plain; charset=utf-8', 'Not Found');
 }
 
 function response(status: number, contentType: string, body: string): Value {
@@ -95,6 +102,39 @@ function requestToValue(
     ]),
   );
 }
+
+/**
+ * What to call a file, by its extension.
+ *
+ * A short list on purpose: guessing wrong about a type is worse than saying
+ * `application/octet-stream`, which every browser treats as "download this"
+ * rather than as something to execute.
+ */
+const CONTENT_TYPES: ReadonlyMap<string, string> = new Map([
+  ['.html', 'text/html; charset=utf-8'],
+  ['.htm', 'text/html; charset=utf-8'],
+  ['.css', 'text/css; charset=utf-8'],
+  ['.js', 'text/javascript; charset=utf-8'],
+  ['.mjs', 'text/javascript; charset=utf-8'],
+  ['.json', 'application/json; charset=utf-8'],
+  ['.txt', 'text/plain; charset=utf-8'],
+  ['.md', 'text/markdown; charset=utf-8'],
+  ['.csv', 'text/csv; charset=utf-8'],
+  ['.xml', 'application/xml; charset=utf-8'],
+  ['.svg', 'image/svg+xml'],
+  ['.png', 'image/png'],
+  ['.jpg', 'image/jpeg'],
+  ['.jpeg', 'image/jpeg'],
+  ['.gif', 'image/gif'],
+  ['.webp', 'image/webp'],
+  ['.avif', 'image/avif'],
+  ['.ico', 'image/x-icon'],
+  ['.woff', 'font/woff'],
+  ['.woff2', 'font/woff2'],
+  ['.ttf', 'font/ttf'],
+  ['.pdf', 'application/pdf'],
+  ['.wasm', 'application/wasm'],
+]);
 
 /** Escape text for safe interpolation into HTML. */
 function escapeHtml(input: string): string {
@@ -190,6 +230,88 @@ export function stdWeb(): Map<string, Value> {
       return map(fields);
     }),
 
+    /**
+     * Serve a file from a directory, or a 404 if it is not there.
+     *
+     * The `root` is a boundary, not a suggestion. `file(req.path, root: "public")`
+     * is the obvious thing to write and is also the classic way to hand out
+     * `/etc/passwd`, because `..%2f..%2fetc%2fpasswd` arrives already decoded
+     * and `public/../../etc/passwd` is a perfectly good path. So the resolved
+     * path is compared against the resolved root, and anything outside it is a
+     * 404 — the same answer a missing file gets, because telling an attacker
+     * which of the two happened is itself information.
+     *
+     * A directory resolves to `index.html` inside it, as a web server should.
+     */
+    fn(
+      'file',
+      ['path', { name: 'root', defaultValue: str('.') }, { name: 'type', defaultValue: str('') }],
+      async (a, c) => {
+        const requested = expectStr(arg(a, 0), c, 'file(path)');
+        const root = expectStr(arg(a, 1), c, 'file root');
+        const declaredType = expectStr(arg(a, 2), c, 'file type');
+
+        const rootDir = path.resolve(root);
+
+        // A URL path is percent-encoded, so `/my%20file.txt` names a file with
+        // a space in it. Decode before resolving — and therefore before the
+        // boundary check below, which is the order that matters: `%2e%2e%2f`
+        // has to become `../` while something is still looking at it.
+        let decoded;
+        try {
+          decoded = decodeURIComponent(requested);
+        } catch {
+          // Malformed encoding. Nothing can be named by it.
+          return notFoundResponse();
+        }
+        // A NUL byte truncates a path in some system calls, so a name
+        // containing one cannot be trusted to mean what it reads as.
+        if (decoded.includes('\0')) return notFoundResponse();
+
+        // A leading `/` in a URL path means the site root, not the filesystem
+        // root, so strip it before joining or `path.resolve` would ignore the
+        // root entirely.
+        const relative = decoded.replace(/^[/\\]+/, '');
+        let target = path.resolve(rootDir, relative);
+
+        const inside = target === rootDir || target.startsWith(rootDir + path.sep);
+        if (!inside) return notFoundResponse();
+
+        let stat;
+        try {
+          stat = await fsp.stat(target);
+        } catch {
+          return notFoundResponse();
+        }
+        if (stat.isDirectory()) {
+          target = path.join(target, 'index.html');
+          try {
+            if (!(await fsp.stat(target)).isFile()) return notFoundResponse();
+          } catch {
+            return notFoundResponse();
+          }
+        } else if (!stat.isFile()) {
+          return notFoundResponse();
+        }
+
+        const type =
+          declaredType !== ''
+            ? declaredType
+            : (CONTENT_TYPES.get(path.extname(target).toLowerCase()) ??
+              'application/octet-stream');
+
+        try {
+          // Text is served as text; anything else goes out base64-decoded from
+          // a latin1 read, which round-trips every byte unchanged.
+          const binary = !type.startsWith('text/') && !type.includes('charset=');
+          const body = await fsp.readFile(target, binary ? 'latin1' : 'utf8');
+          return response(200, type, body);
+        } catch {
+          return notFoundResponse();
+        }
+      },
+    ),
+
     /** Wrap body HTML in a complete, responsive document. */
     fn(
       'page',
@@ -238,7 +360,15 @@ export function stdWeb(): Map<string, Value> {
                 const result = await c.call(handler, [requestToValue(req, body)]);
                 const { status, headers, body: out } = normalize(result);
                 res.writeHead(status, headers);
-                res.end(out);
+                // A Lumen Str is a sequence of code points, so a PNG read byte
+                // for byte arrives here as one character per byte. Writing that
+                // as utf8 would re-encode every byte above 127 into two and
+                // corrupt the file; latin1 writes each character as the single
+                // byte it came from. Text keeps utf8, which is what its
+                // charset says.
+                const type = headers['content-type'] ?? '';
+                const isText = type.startsWith('text/') || type.includes('charset=');
+                res.end(Buffer.from(out, isText ? 'utf8' : 'latin1'));
               } catch (error) {
                 // A handler that throws becomes a 500 with the Lumen error text,
                 // so a broken page never silently hangs the connection.

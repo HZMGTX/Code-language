@@ -136,6 +136,20 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   of arguments; nothing anyone wrote could. At most one, always last, never
   with a default: `PA017` for either mistake. `help()` shows the `..`, and
   shows default values too, which it had been quietly omitting.
+- **`std/web.file(path, root)`.** A site could not serve a stylesheet, an image
+  or a font — which makes "you can build a website with this" a stretch. The
+  content type comes from the extension, a directory resolves to its
+  `index.html`, percent-encoding is decoded so `/my%20file.txt` finds the file
+  it names, and binary content comes back byte for byte (the server now writes
+  a non-text body as latin1, since a Lumen `Str` is code points and writing one
+  as utf8 doubles every byte above 127).
+
+  `root` is enforced as a boundary rather than documented as one. Writing this
+  by hand is where people put a path-traversal hole, so the path is decoded
+  first, resolved, and then compared against the resolved root — a 404 for
+  anything outside, the same answer a missing file gets, because saying which
+  of the two happened is itself information. Six spellings of the attack are in
+  the test suite, each asserted not to return the file they are reaching for.
 - **`LUMEN_AI_MOCK_REPLY`**, and `examples/triage.lm` to go with it. The AI
   slice could show a call being made but not a program surviving the answer,
   which is the part that is actually hard: a reply is text, so asking for JSON

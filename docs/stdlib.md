@@ -138,6 +138,25 @@ fn handle(req) {
 }
 ```
 
+`file(path, root)` serves a file from a directory, or a 404 if it is not there.
+The content type comes from the extension, a directory resolves to its
+`index.html`, and binary files come back byte for byte.
+
+```lumen
+fn handle(req) {
+  if req.path.startsWith("/static/") { file(req.path.slice(7), root: "public") }
+  else { page(title: "Home", body: "<h1>hello</h1>") }
+}
+```
+
+**`root` is a boundary, not a suggestion.** The obvious thing to write —
+`file(req.path, root: "public")` — is also the classic way to hand out
+`/etc/passwd`, because `public/../../etc/passwd` is a perfectly good path and
+`%2e%2e%2f` arrives looking innocent. `file` decodes the path first, resolves
+it, and then compares the result against the resolved root; anything outside is
+a 404. Not a 403: telling an attacker which of "no such file" and "not yours to
+ask for" happened is itself information.
+
 `isServer()` says whether the file was started with `lumen serve` or with
 `lumen run`. Branching on it lets one file be both a site and a script — serve
 the routes when asked to serve, and print what they return when asked to run —
@@ -369,6 +388,7 @@ upper(s)
 
 ```text
 escape(text)
+file(path, root = ..., type = ...)
 form(req)
 html(body, status = ...)
 isServer()

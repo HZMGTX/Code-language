@@ -30,8 +30,8 @@ async function freePort(): Promise<number> {
   });
 }
 
-const SERVER_SOURCE = (port: number): string => `
-import { serve, page, json, notFound, escape, form, isServer } from "std/web"
+const SERVER_SOURCE = (port: number, publicDir: string): string => `
+import { serve, page, json, notFound, escape, form, isServer, file } from "std/web"
 
 fn handle(req) {
   if req.path == "/" {
@@ -42,6 +42,8 @@ fn handle(req) {
     json({ body: req.body, name: req.query.name })
   } else if req.path == "/form" {
     json(form(req))
+  } else if req.path.startsWith("/static/") {
+    file(req.path.slice(7), root: "PUBLIC_DIR")
   } else if req.path == "/mode" {
     json({ serving: isServer() })
   } else if req.path == "/boom" {
@@ -58,13 +60,29 @@ describe('web server', () => {
   let child: ChildProcess | undefined;
   let base = '';
   let workdir = '';
+  let publicDir = '';
+  /** The bytes of the image served below, to compare against what comes back. */
+  let imageBytes = Buffer.alloc(0);
 
   before(async () => {
     const port = await freePort();
     base = 'http://127.0.0.1:' + String(port);
     workdir = await fsp.mkdtemp(path.join(os.tmpdir(), 'lumen-server-'));
+
+    // A small site to serve, plus a file next to it that must stay unreachable.
+    publicDir = path.join(workdir, 'public');
+    await fsp.mkdir(path.join(publicDir, 'deep'), { recursive: true });
+    await fsp.writeFile(path.join(publicDir, 'index.html'), '<h1>static index</h1>', 'utf8');
+    await fsp.writeFile(path.join(publicDir, 'style.css'), 'body { color: red }', 'utf8');
+    await fsp.writeFile(path.join(publicDir, 'deep', 'note.txt'), 'nested', 'utf8');
+    await fsp.writeFile(path.join(publicDir, 'a file.txt'), 'spaced', 'utf8');
+    // Every byte value, so any re-encoding on the way out shows up.
+    imageBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, ...Array.from({ length: 256 }, (_, i) => i)]);
+    await fsp.writeFile(path.join(publicDir, 'pixel.png'), imageBytes);
+    await fsp.writeFile(path.join(workdir, 'secret.txt'), 'TOP SECRET', 'utf8');
+
     const script = path.join(workdir, 'server.lm');
-    await fsp.writeFile(script, SERVER_SOURCE(port), 'utf8');
+    await fsp.writeFile(script, SERVER_SOURCE(port, publicDir).replace('PUBLIC_DIR', publicDir), 'utf8');
 
     child = spawn(process.execPath, [CLI, 'serve', script], {
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -142,6 +160,61 @@ describe('web server', () => {
   it('reports that it is serving, not running', async () => {
     const res = await fetch(base + '/mode');
     assert.deepEqual(await res.json(), { serving: true });
+  });
+
+  it('serves a file with a content type taken from its extension', async () => {
+    const res = await fetch(base + '/static/style.css');
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type') ?? '', /text\/css/);
+    assert.equal(await res.text(), 'body { color: red }');
+  });
+
+  it('serves a directory as its index.html', async () => {
+    const res = await fetch(base + '/static/');
+    assert.equal(res.status, 200);
+    assert.match(await res.text(), /static index/);
+  });
+
+  it('serves a nested file', async () => {
+    const res = await fetch(base + '/static/deep/note.txt');
+    assert.equal(await res.text(), 'nested');
+  });
+
+  it('decodes percent-encoding in the path', async () => {
+    const res = await fetch(base + '/static/a%20file.txt');
+    assert.equal(res.status, 200);
+    assert.equal(await res.text(), 'spaced');
+  });
+
+  it('returns binary bytes unchanged', async () => {
+    const res = await fetch(base + '/static/pixel.png');
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type') ?? '', /image\/png/);
+    const got = Buffer.from(await res.arrayBuffer());
+    // Every byte value round-tripped, or the response was re-encoded somewhere.
+    assert.deepEqual([...got], [...imageBytes]);
+  });
+
+  it('refuses to leave the root, however the path is spelled', async () => {
+    // Each of these resolves outside `public/` if the boundary is not enforced.
+    for (const attempt of [
+      '/static/../secret.txt',
+      '/static/%2e%2e%2fsecret.txt',
+      '/static/%2E%2E/secret.txt',
+      '/static/deep/../../secret.txt',
+      '/static//etc/passwd',
+      '/static/....//secret.txt',
+    ]) {
+      const res = await fetch(base + attempt, { redirect: 'manual' });
+      const body = await res.text();
+      assert.equal(res.status, 404, attempt + ' was not refused');
+      assert.doesNotMatch(body, /TOP SECRET/, attempt + ' leaked the file');
+    }
+  });
+
+  it('returns 404 for a file that is simply missing', async () => {
+    const res = await fetch(base + '/static/nope.txt');
+    assert.equal(res.status, 404);
   });
 
   it('returns 404 with the handler body', async () => {
