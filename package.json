@@ -24,6 +24,7 @@
     "bench": "npm run build && node scripts/bench.mjs",
     "lumen": "node packages/cli/dist/index.js",
     "examples": "npm run build && node scripts/run-examples.mjs",
+    "docs": "npm run build && node scripts/check-doc-output.mjs",
     "bundle": "npm run build && node scripts/bundle.mjs",
     "binary": "npm run build && node scripts/build-binary.mjs",
     "binary:all": "npm run build && node scripts/build-binary.mjs --all",

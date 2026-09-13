@@ -112,7 +112,7 @@ name = "Grace"
 ```
 
 ```
-error[RT029]: cannot assign to `name`
+error[RS005]: cannot assign to `name`
  --> hello.lm:2:1
   |
 2 | name = "Grace"
@@ -140,6 +140,52 @@ Str List Map
 ```
 
 `nil` means "nothing here". The rest of this guide meets the others in turn.
+
+### Naming several things at once
+
+When something hands you back more than one value, you can name them all in one
+line by writing the shape you expect:
+
+```lumen
+fn minMax(xs) { [min(xs), max(xs)] }
+
+let [lowest, highest] = minMax([3, 1, 4, 1, 5])
+print("${lowest} to ${highest}")
+```
+
+```
+1 to 5
+```
+
+`..` collects whatever is left over:
+
+```lumen
+let [winner, ..others] = ["Ada", "Grace", "Alan"]
+print(winner)
+print(others)
+```
+
+```
+Ada
+["Grace", "Alan"]
+```
+
+The same shape works on the left of a plain `=`, which is how you swap two
+things without a spare name to hold one of them:
+
+```lumen
+var a = 1
+var b = 2
+[a, b] = [b, a]
+print([a, b])
+```
+
+```
+[2, 1]
+```
+
+The right-hand side is worked out completely before anything is written, which
+is why the swap comes out right.
 
 ## 3. Text
 
@@ -240,6 +286,26 @@ hahaha
 ```
 
 You do not have to memorise the list. Section 12 shows how to ask.
+
+Numbers turn into text with `str`, and with `fixed` when the decimals matter:
+
+```lumen
+print(str(4.5))
+print(fixed(4.5, 2))
+print(fixed(2 / 3, 3))
+print("Total: " + fixed(19.5, 2).padStart(8))
+```
+
+```
+4.5
+4.50
+0.667
+Total:    19.50
+```
+
+`4.5` and `4.50` are the same *number* but not the same *figure*, and a column
+of prices needs the second. Rounding cannot get you there — `round(n * 100) /
+100` gives back a number, and a number has no trailing zero to show.
 
 ## 4. Lists
 
@@ -392,6 +458,24 @@ nil
 
 A key that is not there gives `nil`. Unlike a list index, this is not an error:
 a map is open-ended, so "not present" is an ordinary answer.
+
+When you want a different answer for "not present", say what it is with
+`getOr`. This is what makes counting things one line instead of three:
+
+```lumen
+var counts = {}
+for word in ["pear", "fig", "pear"] {
+  counts[word] = counts.getOr(word, 0) + 1
+}
+print(counts)
+```
+
+```
+{pear: 2, fig: 1}
+```
+
+Without it, every single increment would have to ask first whether the word had
+ever been seen.
 
 Maps do not change when you update them — you get a new map back:
 
@@ -656,6 +740,28 @@ Hi, Bob!
 
 Functions do not have to be defined before they are used — Lumen reads the whole
 file first — so you can put `main` at the top and the details underneath.
+
+If you do not know how many arguments there will be, put `..` on the last
+parameter and it collects them all into a list:
+
+```lumen
+fn shout(..parts) {
+  parts.join(" ").upper() + "!"
+}
+
+print(shout("hello", "there"))
+print(shout("hi"))
+print(shout())
+```
+
+```
+HELLO THERE!
+HI!
+!
+```
+
+There is always a list, even when it is empty — so there is no separate case to
+write for "nothing was passed".
 
 A function is also just a value. You can name one with `let`, pass it to
 another function, or return one:
@@ -980,7 +1086,7 @@ help("abc")
 Str: "abc"
 
 methods you can call on it:
-  chars, contains, endsWith, indexOf, isEmpty, lines, lower, padEnd, padStart, repeat, replace, reverse, slice, split, startsWith, toNum, trim, upper
+  chars, contains, endsWith, indexOf, isEmpty, len, lines, lower, padEnd, padStart, repeat, replace, reverse, slice, split, startsWith, toNum, trim, upper
 ```
 
 `help` on a function explains that function:
@@ -1091,6 +1197,7 @@ returns an `Option` because it honestly might not have an answer, and the
 If you want to take input from whoever is running the program, `input` gives you
 `Some(line)`, or `None` when there is nothing more to read:
 
+<!-- no-run: waits for a line to be typed, so `Ada` below is the reader's, not the program's -->
 ```lumen
 match input("What is your name? ") {
   Some(name) => print("Hello, ${name.trim()}!"),

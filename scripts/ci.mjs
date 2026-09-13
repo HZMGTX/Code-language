@@ -83,6 +83,8 @@ run('Lumen test files pass the static checks', node, [CLI, 'check', path.join(RO
 run('benchmarks pass the static checks', node, [CLI, 'check', path.join(ROOT, 'bench')]);
 run('examples', node, [path.join(ROOT, 'scripts', 'run-examples.mjs')]);
 run('generated stdlib docs are current', node, [path.join(ROOT, 'scripts', 'gen-stdlib-docs.mjs'), '--check']);
+// Not "do the documented examples parse" — "does what they say happens happen".
+run('documented examples produce what they claim', node, [path.join(ROOT, 'scripts', 'check-doc-output.mjs')]);
 run('every package stays private', node, [path.join(ROOT, 'scripts', 'check-private.mjs')]);
 
 // Tier 2 of the distribution: one file, no node_modules in sight.

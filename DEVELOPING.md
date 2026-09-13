@@ -25,6 +25,7 @@ npm run build
 | `npm run test:update` | Rewrite the conformance golden files |
 | `npm run typecheck` | Force a clean rebuild, so nothing hides in incremental output |
 | `npm run examples` | Run every example through the real CLI, server included |
+| `npm run docs` | Run every documented example and check it prints what the docs claim |
 | `npm run lumen -- <args>` | Run the CLI without installing it |
 | `npm run bundle` | Build `build/lumen.cjs`, the portable single-file bundle |
 | `npm run binary` | Build `build/lumen`, the native standalone executable (needs bun) |
@@ -40,6 +41,28 @@ To get a real `lumen` on your PATH:
 ```bash
 npm link --workspace @lumen-lang/cli
 ```
+
+
+### Documentation that is checked, not just written
+
+`docs/learn.md` states the output of each of its examples in a plain code block
+after the Lumen one. `npm run docs` runs all 65 of them and compares. It is not
+a style rule: on its first run it found a tutorial teaching `RT029` for a
+mistake the static checker had started catching as `RS005`, a list of string
+methods missing one added long afterwards, and a column of numbers padded by
+hand and padded wrong. None of those would have been caught by checking that
+the blocks parse, which is what was being checked before.
+
+Write a new example the same way — Lumen block, then a plain block holding
+exactly what it prints. If it genuinely cannot run on its own, say so where
+anyone editing it will see:
+
+```
+<!-- no-run: waits for a line to be typed -->
+```
+
+The reason is required. `docs/tour.md` and `docs/from-python.md` state their
+results in trailing comments instead, and those are still unverified.
 
 ## Layout
 

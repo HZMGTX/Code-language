@@ -136,6 +136,22 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   of arguments; nothing anyone wrote could. At most one, always last, never
   with a default: `PA017` for either mistake. `help()` shows the `..`, and
   shows default values too, which it had been quietly omitting.
+- **`npm run docs` runs every documented example and checks what it prints.**
+  `tests/unit/docs.test.ts` already checked that each ```lumen block parses,
+  which catches a block that is not Lumen and nothing else. What actually
+  happens is that the language moves underneath prose nobody re-runs. On its
+  first run this found three: the tutorial teaching `RT029` for a mistake the
+  static checker had started catching as `RS005`, a list of string methods
+  missing `len` added long afterwards, and a column of figures padded by hand
+  and padded wrong. All three are fixed. A block that cannot run on its own is
+  skipped with `<!-- no-run: reason -->`, and the reason is required, so
+  skipping is a decision somebody made rather than something that quietly
+  happened. `docs/tour.md` and `docs/from-python.md` state their results in
+  trailing comments instead and are still unverified — the script says so
+  rather than letting its count imply otherwise.
+- **`docs/learn.md` caught up with the language.** Destructuring, swapping,
+  `..` parameters, `getOr` and `fixed` are all things a beginner now reaches
+  for and none of them were in the guide that teaches beginners.
 - **`std/web.file(path, root)`.** A site could not serve a stylesheet, an image
   or a font — which makes "you can build a website with this" a stretch. The
   content type comes from the extension, a directory resolves to its
