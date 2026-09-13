@@ -16,3 +16,6 @@ dist/
 .vscode/
 *.swp
 
+
+# distribution output
+build/
