@@ -172,6 +172,7 @@ the swap works. Only plain `=` takes a list of places, and there is no
 
 ```lumen
 fn add(a: Num, b: Num = 2) -> Num { a + b }
+fn shout(..parts) { parts.join(" ").upper() }   // every argument, as a List
 let double = fn(n) { n * 2 }
 ```
 
@@ -181,6 +182,9 @@ let double = fn(n) { n * 2 }
   mutual recursion needs no forward declaration.
 - Arguments may be passed positionally or by name; all positional arguments must
   precede all named ones.
+- A final parameter written `..name` collects every remaining positional
+  argument into a `List`, empty if there are none. At most one, always last,
+  never with a default value — `PA017` for either mistake.
 
 If a module declares `fn main()`, it is called after the module's top-level
 statements have run.
@@ -565,6 +569,7 @@ different meaning. Selected codes:
 | `PA009` | Map literal in a control-flow header |
 | `PA015` | Struct literal in a control-flow header |
 | `PA016` | Source nested more than 250 levels deep |
+| `PA017` | A `..` parameter that is not last, or that has a default |
 | `PA014` | Unmatched `}` |
 | `RT005` | Name is not defined |
 | `RT010` | `?` applied to a non-Result/Option |

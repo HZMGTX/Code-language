@@ -129,6 +129,13 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
 
 ### Added
 
+- **Variadic functions.** `fn shout(..parts)` collects every remaining
+  positional argument into a `List`, empty if there are none — the same `..`
+  a list pattern already used, in the one place a function shape needed it.
+  Native functions could always do this, which is why `print` takes any number
+  of arguments; nothing anyone wrote could. At most one, always last, never
+  with a default: `PA017` for either mistake. `help()` shows the `..`, and
+  shows default values too, which it had been quietly omitting.
 - **`lumen check [path]`.** Parse, resolve and type-check a whole tree without
   running any of it. It is what an editor, a pre-commit hook or a CI step wants:
   running a program to find out whether it has a typo is a poor trade when the

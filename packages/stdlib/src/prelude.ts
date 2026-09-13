@@ -224,7 +224,9 @@ function makeHelp(methodsOf: (type: string) => string[], preludeNames: () => str
       }
 
       if (subject.k === 'fn') {
-        const params = subject.params.map((p) => p.name).join(', ');
+        const params = subject.params
+          .map((p) => (p.rest ? '..' : '') + p.name + (p.defaultValue === undefined ? '' : ' = ...'))
+          .join(', ');
         out.push(subject.name === '' ? 'fn(' + params + ')' : subject.name + '(' + params + ')');
         out.push('  defined in Lumen');
         c.host.writeOut(out.join('\n') + '\n');

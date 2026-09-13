@@ -468,7 +468,7 @@ places where you will miss Python, with no consolation offered:
 - **Format specifiers.** There is no `f"{x:>8.2f}"` in one piece. The parts are
   there — `fixed(x, 2)` for the decimals, `padStart(8)` for the width — but
   they have to be written separately: `fixed(x, 2).padStart(8)`.
-- **`*args` and `**kwargs`.** Not available.
+- **`**kwargs`.** Not available. (`*args` is `fn f(..args)`.)
 - **Slice syntax.** `xs[1:3]` and `xs[::-1]` are `xs.slice(1, 3)` and
   `xs.reversed()` — fine, but longer.
 - **Sets and tuples.** Neither type exists. `unique()` returns a list, and a pair

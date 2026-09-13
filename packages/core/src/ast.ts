@@ -167,6 +167,11 @@ export interface Param extends NodeBase {
   readonly name: string;
   readonly type: TypeExpr | undefined;
   readonly defaultValue: Expr | undefined;
+  /**
+   * `fn log(..parts)` — collects every remaining positional argument into a
+   * `List`. At most one, always last, never with a default.
+   */
+  readonly rest: boolean;
 }
 
 export interface LambdaExpr extends NodeBase {

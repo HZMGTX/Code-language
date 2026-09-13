@@ -1371,6 +1371,13 @@ export class Interpreter {
     let next = 0;
 
     for (const param of params) {
+      // `..parts` takes everything positional that is left, as a list. It is
+      // always last, so this is the end of the loop either way.
+      if (param.rest) {
+        out.set(param.name, list(positional.slice(next).map((a) => a.value)));
+        next = positional.length;
+        continue;
+      }
       const byName = named.get(param.name);
       if (byName !== undefined) {
         out.set(param.name, byName.value);
@@ -1393,7 +1400,7 @@ export class Interpreter {
         what + ' is missing a value for `' + param.name + '`',
         span,
         'required argument not supplied',
-        ['it takes: ' + params.map((p) => p.name).join(', ')],
+        ['it takes: ' + params.map((p) => (p.rest ? '..' : '') + p.name).join(', ')],
       );
     }
 

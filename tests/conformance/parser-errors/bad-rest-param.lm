@@ -1,0 +1,6 @@
+// A `..` parameter takes everything left over, so nothing can follow it and a
+// default could never be reached. Both are caught before the program runs.
+
+fn misplaced(..first, second) { first }
+
+fn defaulted(..parts = 1) { parts }

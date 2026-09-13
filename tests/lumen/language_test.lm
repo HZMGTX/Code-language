@@ -112,3 +112,11 @@ fn skipZeros(xs) {
   kept
 }
 check("continue in a match arm", skipZeros([1, 0, 2, 0, 3]), [1, 2, 3])
+
+// --------------------------------------------------------------- variadics
+fn joinAll(..parts) { parts.join("-") }
+check("variadic", joinAll("a", "b", "c"), "a-b-c")
+check("variadic with nothing", joinAll(), "")
+fn labelled(label, ..rest) { "${label}:${len(rest)}" }
+check("fixed then variadic", labelled("n", 1, 2, 3), "n:3")
+check("variadic takes nothing", labelled("n"), "n:0")

@@ -428,6 +428,8 @@ export class Parser {
     this.inBrackets(() => {
       this.skipNewlines();
       while (!this.at(')') && !this.at('eof')) {
+        const restStart = this.cur();
+        const rest = this.eat('..');
         const pStart = this.expect('ident', 'as a parameter name');
         let type: TypeExpr | undefined;
         if (this.eat(':')) type = this.parseTypeExpr();
@@ -436,11 +438,37 @@ export class Parser {
           this.skipNewlines();
           defaultValue = this.parseExpr();
         }
+
+        // A `..` parameter takes everything left over, so nothing can follow it
+        // and a default could never be reached.
+        if (rest && defaultValue !== undefined) {
+          this.report({
+            severity: 'error',
+            code: 'PA017',
+            message: '`..' + pStart.text + '` cannot have a default value',
+            span: this.spanFrom(restStart),
+            label: 'a `..` parameter is always given a list, possibly empty',
+            notes: [{ message: 'drop the `= ...`; it can never be reached' }],
+          });
+          defaultValue = undefined;
+        }
+        if (params.some((p) => p.rest)) {
+          this.report({
+            severity: 'error',
+            code: 'PA017',
+            message: 'a `..` parameter must be the last one',
+            span: this.spanFrom(restStart),
+            label: 'nothing can follow it',
+            notes: [{ message: 'it takes every remaining argument, so there are none left' }],
+          });
+        }
+
         params.push({
           name: pStart.text,
           type,
           defaultValue,
-          span: this.spanFrom(pStart),
+          rest,
+          span: this.spanFrom(restStart),
         });
         this.skipNewlines();
         if (!this.eat(',')) break;
