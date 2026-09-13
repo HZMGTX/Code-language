@@ -114,6 +114,13 @@ export interface NativeValue {
   readonly doc?: string;
   /** When true, surplus positional arguments are collected into a list. */
   readonly variadic?: boolean;
+  /**
+   * True when the parameters have no names a program could use — an enum
+   * variant's payload, which is positional. Diagnostics then say how many
+   * values are wanted rather than listing `field0, field1`, which is an
+   * implementation detail nobody wrote and cannot act on.
+   */
+  readonly positional?: boolean;
   call(args: readonly Value[], ctx: CallCtx): Value | Promise<Value>;
 }
 

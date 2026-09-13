@@ -1,0 +1,7 @@
+// A struct field or an enum variant written twice is never intentional, and
+// neither is a scope binding, so RS004 never saw them — both were accepted in
+// silence with the later one quietly winning.
+
+struct Book { title: Str, pages: Num, title: Num }
+
+enum Status { Todo, Done, Todo }

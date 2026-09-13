@@ -1,0 +1,8 @@
+// An enum variant's payload is positional. `Shape.Rect(3, 4)` has no `field0`
+// in it, so no diagnostic about it should mention one.
+
+enum Shape { Circle(Num), Rect(Num, Num) }
+
+print(Shape.Rect(3, 4))
+print(Shape.Circle(1))
+print(Shape.Rect(1))

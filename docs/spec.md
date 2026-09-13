@@ -516,6 +516,7 @@ program uses can be resolved without running it.
 | `RS004` | A name is declared twice in the same scope |
 | `RS005` | A binding introduced with `let` is assigned to |
 | `RS006` | `break` or `continue` appears outside a loop |
+| `RS007` | A struct field or enum variant is declared twice |
 
 The value is that a mistake is reported whether or not execution reaches it: a
 typo on a branch that never runs is still a typo.

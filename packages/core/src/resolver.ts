@@ -13,6 +13,7 @@
  *   RS004  a name declared twice in the same scope
  *   RS005  assignment to a binding introduced with `let`
  *   RS006  `break` or `continue` outside a loop
+ *   RS007  a struct field or enum variant declared twice
  *
  * The guiding rule is **no false positives**. A check that rejects a valid
  * program is worse than one that misses an invalid one, so anything the
@@ -291,8 +292,21 @@ class Resolver {
         return;
 
       case 'StructDecl':
+        // The name itself is hoisted; the shape is checked here.
+        this.noDuplicates(
+          'struct `' + stmt.name + '`',
+          'field',
+          stmt.fields.map((f) => ({ name: f.name, span: f.span })),
+        );
+        return;
+
       case 'EnumDecl':
-        return; // handled by hoisting
+        this.noDuplicates(
+          'enum `' + stmt.name + '`',
+          'variant',
+          stmt.variants.map((v) => ({ name: v.name, span: v.span })),
+        );
+        return;
 
       case 'ReturnStmt':
         if (stmt.value !== undefined) this.expr(stmt.value);
@@ -359,6 +373,36 @@ class Resolver {
     this.loops = enclosingLoops;
     this.deferred -= 1;
     this.popScope();
+  }
+
+  /**
+   * A struct field or an enum variant written twice.
+   *
+   * Neither is a scope binding, so `RS004` does not see them, and both were
+   * accepted in silence — the later one simply won. Declaring the same field
+   * twice is never intentional, and the second one silently deciding the
+   * type is the worst of the available outcomes.
+   */
+  private noDuplicates(
+    owner: string,
+    what: 'field' | 'variant',
+    entries: readonly { name: string; span: Span }[],
+  ): void {
+    const seen = new Map<string, Span>();
+    for (const entry of entries) {
+      const earlier = seen.get(entry.name);
+      if (earlier !== undefined) {
+        this.report(
+          'RS007',
+          owner + ' declares ' + what + ' `' + entry.name + '` twice',
+          entry.span,
+          'declared twice',
+          ['the earlier one is on line ' + String(earlier.start.line)],
+        );
+        continue;
+      }
+      seen.set(entry.name, entry.span);
+    }
   }
 
   /** `break` and `continue` only mean something inside a loop. */

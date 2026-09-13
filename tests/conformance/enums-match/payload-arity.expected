@@ -1,0 +1,9 @@
+Shape.Rect(3, 4)
+Shape.Circle(1)
+error[RT036]: `Shape.Rect` is missing a value: it takes 2
+ --> payload-arity.lm:8:7
+  |
+8 | print(Shape.Rect(1))
+  |       ^^^^^^^^^^^^^ required argument not supplied
+  |
+  = note: it takes 2 values, by position

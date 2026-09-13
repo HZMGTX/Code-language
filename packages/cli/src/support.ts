@@ -51,3 +51,15 @@ export function reportError(error: unknown): never {
   );
   process.exit(70);
 }
+
+/**
+ * How to name a file on screen.
+ *
+ * `path.relative` is right for a file under the working directory and wrong
+ * for one outside it: `../../../tmp/probe/a_test.lm` is longer than the
+ * absolute path and harder to read. So the shorter of the two wins.
+ */
+export function displayPath(file: string): string {
+  const relative = path.relative(process.cwd(), file);
+  return relative.startsWith('..') || relative === '' ? file : relative;
+}

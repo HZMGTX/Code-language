@@ -10,7 +10,7 @@ import { promises as fsp } from 'node:fs';
 import * as path from 'node:path';
 
 import { LumenError, checkModule, parse } from '@lumen-lang/core';
-import { newInterpreter, useColor } from '../support.js';
+import { displayPath, newInterpreter, useColor } from '../support.js';
 
 async function collect(target: string, found: string[]): Promise<void> {
   let stat;
@@ -46,7 +46,7 @@ export async function runTests(target: string): Promise<void> {
   const failures: { file: string; message: string }[] = [];
 
   for (const file of files) {
-    const relative = path.relative(process.cwd(), file);
+    const relative = displayPath(file);
     const source = await fsp.readFile(file, 'utf8');
     try {
       const module = parse(source, file);

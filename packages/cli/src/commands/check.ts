@@ -13,7 +13,7 @@ import * as path from 'node:path';
 
 import { LumenError, checkModule, parse } from '@lumen-lang/core';
 
-import { newInterpreter, useColor } from '../support.js';
+import { displayPath, newInterpreter, useColor } from '../support.js';
 
 /** Every `.lm` file under `target`, or `target` itself when it is a file. */
 async function collect(target: string, found: string[]): Promise<void> {
@@ -53,7 +53,7 @@ export async function checkFiles(target: string): Promise<void> {
   let clean = 0;
   let withProblems = 0;
   for (const file of files) {
-    const relative = path.relative(process.cwd(), file);
+    const relative = displayPath(file);
     const source = await fsp.readFile(file, 'utf8');
     try {
       checkModule(parse(source, file), source, { globals });

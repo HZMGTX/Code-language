@@ -41,6 +41,20 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
 
 ### Fixed
 
+- **A struct field or enum variant written twice was accepted in silence.**
+  `struct Book { title: Str, pages: Num, title: Num }` ran, with the second
+  `title` quietly deciding the type. Neither a field nor a variant is a scope
+  binding, so `RS004` never saw them. They are `RS007` now, pointing at the
+  second one and naming the line of the first.
+- **Enum diagnostics named parameters that do not exist.** `Shape.Rect(1)` said
+  "missing a value for `field1`" and "it takes: field0, field1" — implementation
+  detail, since a variant's payload is positional and `Shape.Rect(3, 4)` has no
+  `field0` in it. Those messages now count values instead, and passing one by
+  name says so directly rather than suggesting a name that was never real.
+  Ordinary functions are unchanged, suggestions included.
+- **`lumen test` and `lumen check` printed `../../../tmp/…`** for a target
+  outside the working directory, which is both longer than the absolute path and
+  harder to read. They now print whichever is shorter.
 - **A declared return type was unenforced on almost every function.** `TY002`
   only ever looked at `return` statements — but a Lumen function's value is the
   value of its last statement, and `return` is the exception rather than the

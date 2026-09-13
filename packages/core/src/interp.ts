@@ -68,6 +68,20 @@ class ReturnSignal {
  */
 const MAX_CALL_DEPTH = 10000;
 
+/**
+ * The "it takes: ..." note, which cannot list parameter names for a callee
+ * whose parameters have none — an enum variant's payload is positional, so
+ * `field0` is an implementation detail rather than something to suggest.
+ */
+function takesNote(paramNames: readonly string[], positional: boolean): string {
+  if (positional) {
+    return paramNames.length === 1
+      ? 'it takes 1 value, by position'
+      : 'it takes ' + paramNames.length + ' values, by position';
+  }
+  return 'it takes: ' + (paramNames.length === 0 ? '(nothing)' : paramNames.join(', '));
+}
+
 class BreakSignal {}
 class ContinueSignal {}
 /** Raised by postfix `?` to carry an `Err`/`None` out of the enclosing function. */
@@ -1058,6 +1072,9 @@ export class Interpreter {
           k: 'native',
           name: enumName + '.' + name,
           params,
+          // Its payload is positional: `Shape.Rect(3, 4)` has no `field0` in
+          // it, so no diagnostic about it should mention one.
+          positional: true,
           call: (args) => enumValue(enumName, name, [...args]),
         };
         return ctor;
@@ -1415,7 +1432,8 @@ export class Interpreter {
   ): Promise<Value[]> {
     const { positional, named } = this.splitArgs(args);
     const paramNames = callee.params.map((p) => p.name);
-    this.rejectUnknownNamed('`' + callee.name + '`', paramNames, named, span);
+    const byPositionOnly = callee.positional === true;
+    this.rejectUnknownNamed('`' + callee.name + '`', paramNames, named, span, byPositionOnly);
     const out: Value[] = [];
     const filledByName: string[] = [];
     let next = 0;
@@ -1440,10 +1458,12 @@ export class Interpreter {
       }
       this.fail(
         'RT036',
-        '`' + callee.name + '` is missing a value for `' + param.name + '`',
+        byPositionOnly
+          ? '`' + callee.name + '` is missing a value: it takes ' + String(paramNames.length)
+          : '`' + callee.name + '` is missing a value for `' + param.name + '`',
         span,
         'required argument not supplied',
-        ['it takes: ' + callee.params.map((p) => p.name).join(', ')],
+        [takesNote(paramNames, byPositionOnly)],
       );
     }
 
@@ -1454,6 +1474,7 @@ export class Interpreter {
       named,
       span,
       filledByName,
+      byPositionOnly,
     );
     return out;
   }
@@ -1468,18 +1489,19 @@ export class Interpreter {
     paramNames: readonly string[],
     named: ReadonlyMap<string, EvaluatedArg>,
     _span: Span,
+    positional = false,
   ): void {
     for (const [name, arg] of named) {
-      if (paramNames.includes(name)) continue;
-      const hint = suggest(name, paramNames);
+      if (!positional && paramNames.includes(name)) continue;
+      const hint = positional ? undefined : suggest(name, paramNames);
       this.fail(
         'RT039',
-        what + ' has no parameter named `' + name + '`',
+        positional
+          ? what + ' takes its values by position, not by name'
+          : what + ' has no parameter named `' + name + '`',
         arg.span,
         'unknown argument',
-        hint === undefined
-          ? ['it takes: ' + (paramNames.length === 0 ? '(nothing)' : paramNames.join(', '))]
-          : ['did you mean `' + hint + '`?'],
+        hint === undefined ? [takesNote(paramNames, positional)] : ['did you mean `' + hint + '`?'],
       );
     }
   }
@@ -1520,6 +1542,7 @@ export class Interpreter {
     leftoverNamed: ReadonlyMap<string, EvaluatedArg>,
     span: Span,
     filledByName: readonly string[] = [],
+    positional = false,
   ): void {
     const firstNamed = [...leftoverNamed.entries()][0];
     if (firstNamed !== undefined) {
@@ -1530,9 +1553,7 @@ export class Interpreter {
         what + ' has no parameter named `' + name + '`',
         arg.span,
         'unknown argument',
-        hint === undefined
-          ? ['it takes: ' + (paramNames.length === 0 ? '(nothing)' : paramNames.join(', '))]
-          : ['did you mean `' + hint + '`?'],
+        hint === undefined ? [takesNote(paramNames, positional)] : ['did you mean `' + hint + '`?'],
       );
     }
     const extra = extraPositional[0];
@@ -1553,10 +1574,11 @@ export class Interpreter {
 
     this.fail(
       'RT040',
-      what + ' takes ' + paramNames.length + ' argument' + (paramNames.length === 1 ? '' : 's'),
+      what + ' takes ' + paramNames.length +
+        (positional ? ' value' : ' argument') + (paramNames.length === 1 ? '' : 's'),
       extra.span,
       'too many arguments',
-      ['it takes: ' + (paramNames.length === 0 ? '(nothing)' : paramNames.join(', '))],
+      [takesNote(paramNames, positional)],
     );
   }
 
