@@ -171,6 +171,23 @@ match chat(prompt: "Explain recursion in one sentence.", maxTokens: 200) {
 `model` defaults to `claude-opus-5` for Anthropic and `gpt-4o-mini` for OpenAI,
 and `LUMEN_AI_MODEL` overrides both.
 
+`LUMEN_AI_MOCK_REPLY` makes the mock provider say exactly one thing, whatever
+it is asked. A program that asks the model for JSON and then parses it has two
+outcomes worth testing — the reply parsed, and the reply did not — and without
+this only the second is reachable with no key. It is a testing affordance, not
+a model: the mock never reads the prompt to decide what to say.
+
+```bash
+lumen run examples/triage.lm                                  # the reply is prose
+LUMEN_AI_MOCK_REPLY='{"category":"bug","urgency":5}' \
+  lumen run examples/triage.lm                                # the reply parses
+```
+
+A reply is text, always. Ask for JSON and you will still sometimes get prose,
+an apology, or JSON inside a code fence — so check the shape rather than
+trusting it, and have something to do when it is wrong.
+`examples/triage.lm` is that program written out, retries included.
+
 ### `std/fs` and `std/http`
 
 Error text belongs to Lumen, not to the host. Node's own filesystem messages

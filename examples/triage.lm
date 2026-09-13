@@ -1,0 +1,153 @@
+// Asking a model for structured data, and surviving the answer.
+//
+//   lumen run examples/triage.lm
+//   LUMEN_AI_MOCK_REPLY='{"category":"billing","urgency":3}' lumen run examples/triage.lm
+//   ANTHROPIC_API_KEY=... lumen run examples/triage.lm
+//
+// Two things separate a real model-backed program from a demonstration, and
+// neither is the prompt:
+//
+//   1. The reply is text. Ask for JSON and you will still sometimes get prose,
+//      an apology, or JSON wrapped in a code fence. A program that assumes
+//      otherwise breaks in production and not in testing.
+//   2. The call can fail. Rate limits, timeouts, a network blip.
+//
+// So the interesting code here is the parsing and the retrying, not the asking.
+// With no API key this runs on the built-in mock provider, which answers with a
+// canned sentence — and the fallback below is what you see working as a result,
+// which is the honest thing for an example to show. Set LUMEN_AI_MOCK_REPLY to
+// a JSON object to watch the other path.
+
+import { chat, provider } from "std/ai"
+import { parse } from "std/json"
+import { sleep } from "std/core"
+
+struct Ticket { id: Str, text: Str }
+struct Verdict { category: Str, urgency: Num, source: Str }
+
+let CATEGORIES = ["billing", "bug", "feature", "account", "other"]
+
+let tickets = [
+  Ticket { id: "T-1", text: "I was charged twice for the same invoice this month." },
+  Ticket { id: "T-2", text: "The export button does nothing and the console shows a 500." },
+  Ticket { id: "T-3", text: "Would love an API for bulk uploads, if that is ever on the table." },
+  Ticket { id: "T-4", text: "Cannot log in since yesterday. Password reset email never arrives." },
+  Ticket { id: "T-5", text: "Just wanted to say the new dashboard is lovely. No action needed." },
+]
+
+// ------------------------------------------------------------------ the ask
+
+fn classify(ticket) {
+  chat(
+    system: "Classify the support ticket. Reply with JSON only, no prose and no
+             code fence, shaped {\"category\": one of
+             billing|bug|feature|account|other, \"urgency\": 1 to 5}.",
+    prompt: ticket.text,
+    maxTokens: 100,
+  )
+}
+
+// A rate limit is not a bug in your program, so it should not read like one.
+// Three attempts, waiting twice as long each time.
+fn classifyWithRetry(ticket, attempts = 3) {
+  var wait = 200
+  var tried = 0
+  while tried < attempts {
+    tried += 1
+    match classify(ticket) {
+      Ok(reply) => return Ok(reply),
+      Err(why) => {
+        // The last attempt hands the failure back rather than sleeping again.
+        if tried == attempts { return Err("${why} (after ${attempts} attempts)") }
+        print("  ${ticket.id}: ${why} — retrying in ${wait}ms")
+        sleep(wait)
+        wait = wait * 2
+      },
+    }
+  }
+  Err("unreachable: the loop always returns")
+}
+
+// --------------------------------------------------------------- the parsing
+
+// Models wrap JSON in ```json fences more often than they are asked to. Strip
+// one if it is there rather than failing on it.
+fn unfence(text) {
+  let trimmed = text.trim()
+  if !trimmed.startsWith("```") { return trimmed }
+  trimmed.lines()
+    .filter(fn(line) { !line.trim().startsWith("```") })
+    .join("\n")
+    .trim()
+}
+
+// What the model said, if it can be believed. Every field is checked: a reply
+// that parses as JSON but says `{"category": "urgent"}` is not a verdict.
+fn readVerdict(text) {
+  match parse(unfence(text)) {
+    Err(_)   => None,
+    Ok(data) => {
+      let category = data["category"]
+      let urgency = data["urgency"]
+      if type(category) != "Str" || !CATEGORIES.contains(category) { return None }
+      if type(urgency) != "Num" || urgency < 1 || urgency > 5 { return None }
+      Some(Verdict { category: category, urgency: round(urgency), source: "model" })
+    },
+  }
+}
+
+// The fallback, for when the reply is prose. Crude on purpose: its job is to
+// keep the program working, not to be clever.
+let CLUES = {
+  billing: ["charge", "charged", "invoice", "refund", "billing", "payment"],
+  bug:     ["error", "500", "crash", "broken", "does nothing", "fails"],
+  feature: ["would love", "feature", "could you add", "api for", "wish"],
+  account: ["log in", "login", "password", "reset", "account", "locked out"],
+}
+
+fn guess(ticket) {
+  let lower = ticket.text.lower()
+  for name in CLUES.keys() {
+    if CLUES[name].any(fn(clue) { lower.contains(clue) }) {
+      return Verdict { category: name, urgency: 3, source: "keyword" }
+    }
+  }
+  Verdict { category: "other", urgency: 1, source: "keyword" }
+}
+
+fn verdictFor(ticket) {
+  match classifyWithRetry(ticket) {
+    Err(why)  => { print("  ${ticket.id}: giving up — ${why}"); guess(ticket) },
+    Ok(reply) => match readVerdict(reply) {
+      Some(v) => v,
+      // Not an error: the model answered, just not in the shape asked for.
+      None    => guess(ticket),
+    },
+  }
+}
+
+// ----------------------------------------------------------------- the report
+
+fn main() {
+  print("Triage — provider: ${provider()}\n")
+
+  var verdicts = []
+  for ticket in tickets { verdicts.push([ticket, verdictFor(ticket)]) }
+
+  print("  ${"id".padEnd(5)}${"category".padEnd(10)}${"urg".padEnd(5)}${"from".padEnd(9)}text")
+  print("  ${"-".repeat(74)}")
+  for [ticket, v] in verdicts {
+    print("  ${ticket.id.padEnd(5)}${v.category.padEnd(10)}${str(v.urgency).padEnd(5)}${v.source.padEnd(9)}${ticket.text.slice(0, 40)}")
+  }
+
+  // How much of the work the model actually did is worth printing, because on
+  // the mock provider the answer is none of it — and that is the point.
+  let fromModel = verdicts.count(fn(pair) { pair[1].source == "model" })
+  print("")
+  print("${fromModel} of ${len(verdicts)} classified by the model; the rest fell back to keywords.")
+
+  for name in CATEGORIES {
+    let n = verdicts.count(fn(pair) { pair[1].category == name })
+    if n > 0 { print("  ${name.padEnd(10)}${n}") }
+  }
+}

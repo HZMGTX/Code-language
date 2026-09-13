@@ -136,6 +136,17 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   of arguments; nothing anyone wrote could. At most one, always last, never
   with a default: `PA017` for either mistake. `help()` shows the `..`, and
   shows default values too, which it had been quietly omitting.
+- **`LUMEN_AI_MOCK_REPLY`**, and `examples/triage.lm` to go with it. The AI
+  slice could show a call being made but not a program surviving the answer,
+  which is the part that is actually hard: a reply is text, so asking for JSON
+  still gets you prose, an apology, or JSON in a code fence, and the call can
+  fail outright. The example classifies support tickets — asking for JSON,
+  unwrapping a fence, checking every field, falling back to its own keyword
+  rule when the reply is not usable, and retrying with backoff when the call
+  fails. Under the mock provider the fallback is what you watch working, which
+  is the honest thing for an example to show; the new variable scripts the
+  mock's reply so the other paths are reachable with no key. Six tests drive
+  all of them. The mock still never reads the prompt to decide what to say.
 - **`lumen check [path]`.** Parse, resolve and type-check a whole tree without
   running any of it. It is what an editor, a pre-commit hook or a CI step wants:
   running a program to find out whether it has a typo is a poor trade when the

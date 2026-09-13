@@ -49,7 +49,14 @@ function resolveProvider(explicit: Value, ctx: CallCtx): Provider {
   return 'mock';
 }
 
-function mockReply(messages: readonly Message[]): string {
+function mockReply(messages: readonly Message[], scripted: string | undefined): string {
+  // `LUMEN_AI_MOCK_REPLY` makes the mock say exactly one thing. A program that
+  // asks the model for JSON and then parses it has two paths worth testing —
+  // the reply parsed, and the reply did not — and without this only the second
+  // is reachable without a key. It is a testing affordance, not a model: the
+  // mock never looks at the prompt to decide what to say.
+  if (scripted !== undefined && scripted !== '') return scripted;
+
   const lastUser = [...messages].reverse().find((m) => m.role === 'user');
   const prompt = lastUser?.content ?? '';
   return (
@@ -147,7 +154,7 @@ async function dispatch(
     case 'openai':
       return await callOpenai(ctx, model, system, maxTokens, messages);
     default:
-      return Ok(str(mockReply(messages)));
+      return Ok(str(mockReply(messages, ctx.host.getEnv('LUMEN_AI_MOCK_REPLY'))));
   }
 }
 
