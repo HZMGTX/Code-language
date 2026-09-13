@@ -110,8 +110,11 @@ returns a `Result` or `Option`.
 
 **No async colouring.** The interpreter awaits I/O, so `chat(...)` composes like
 a pure function and no `async` marker propagates up your call stack.
-*Cost:* every expression evaluation is a promise, which is slow. A bytecode VM
-is the planned answer. This is the trade I would most want to revisit.
+*Cost:* almost every expression evaluation is a promise, which is slow. Leaf
+expressions — literals and plain names — are evaluated synchronously now, since
+none of them can suspend, and that alone was worth about a fifth of the
+benchmark suite. Everything else still allocates. A bytecode VM is the planned
+answer; this is the trade I would most want to revisit.
 
 **Immutable by default.** `let` is final; `var` announces mutability.
 *Cost:* nothing significant, beyond having to mean it.

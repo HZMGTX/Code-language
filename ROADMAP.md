@@ -44,7 +44,19 @@ Measured, not guessed. `npm run bench` is the baseline; profile before and after
   before the item below rather than after it.
 
 - **Returning `Value | Promise<Value>` rather than always a promise** — costed,
-  and deliberately not done yet. The interpreter awaits I/O so user code needs
+  and deliberately not done in full.
+
+  A narrow piece of it *has* landed: leaf expressions — number, string and
+  boolean literals, `nil`, and plain names — are evaluated synchronously by
+  `evalLeaf`, with every caller falling back to the async path for anything
+  else. None of those can suspend, so there is no correctness question, and
+  they are the bulk of what a tight loop evaluates: `while i < 300000 { total
+  += i * 2 - 1 }` has six of them per iteration, each previously allocating a
+  promise that resolved immediately. Best-of-three on the suite went from
+  2.86s to 2.39s, about 16%; comparing medians rather than bests puts it
+  nearer 25%.
+
+  The rest is still deliberately not done. The interpreter awaits I/O so user code needs
   no `async`, and that must not change; but almost nothing it evaluates is
   actually asynchronous, and awaiting a plain value still costs a microtask.
   The profile above attributes ~37% of the work to exactly that.

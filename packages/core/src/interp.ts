@@ -283,7 +283,7 @@ export class Interpreter {
   private async execStmt(stmt: Stmt, env: Env, unit: SourceUnit): Promise<Value> {
     switch (stmt.kind) {
       case 'LetDecl': {
-        const value = await this.evaluate(stmt.value, env);
+        const value = this.evalLeaf(stmt.value, env) ?? (await this.evaluate(stmt.value, env));
         env.declare(stmt.name, value, stmt.mutable);
         return NIL;
       }
@@ -353,7 +353,8 @@ export class Interpreter {
 
   private async execWhile(condition: Expr, body: Block, env: Env, unit: SourceUnit): Promise<void> {
     for (;;) {
-      if (!truthy(await this.evaluate(condition, env))) return;
+      const test = this.evalLeaf(condition, env) ?? (await this.evaluate(condition, env));
+      if (!truthy(test)) return;
       try {
         await this.execBlock(body, new Env(env), unit);
       } catch (error) {
@@ -425,6 +426,54 @@ export class Interpreter {
 
   // --------------------------------------------------------------- expressions
 
+  /**
+   * Evaluate an expression that cannot possibly do I/O, without a promise.
+   *
+   * Returns `undefined` for anything else, so callers fall back to the async
+   * path. It handles only leaves — literals and names — which is exactly where
+   * the cost was: `while i < 300000 { total += i * 2 - 1 }` evaluates six
+   * leaves per iteration, and each one was allocating a promise that resolved
+   * immediately. There is no correctness question, because none of these can
+   * suspend; the two paths return the same value for the same node.
+   *
+   * This is a narrow version of the hybrid sync/async evaluator the roadmap
+   * describes. The full one means rewriting every `for…of` with an await into
+   * a step function and every `try` to handle a throw and a rejection — a CPS
+   * rewrite that a bytecode VM would then discard. This part is none of that.
+   */
+  private evalLeaf(expr: Expr, env: Env): Value | undefined {
+    switch (expr.kind) {
+      case 'NumberLit':
+        return num(expr.value);
+      case 'StringLit':
+        return str(expr.value);
+      case 'BoolLit':
+        return bool(expr.value);
+      case 'NilLit':
+        return NIL;
+      case 'Ident':
+        return this.lookupName(expr, env);
+      default:
+        return undefined;
+    }
+  }
+
+  /** The `Ident` case, shared by both paths so they cannot drift apart. */
+  private lookupName(expr: Extract<Expr, { kind: 'Ident' }>, env: Env): Value {
+    const slot = env.lookup(expr.name);
+    if (slot === undefined) {
+      const hint = suggest(expr.name, env.visibleNames());
+      this.fail(
+        'RT005',
+        '`' + expr.name + '` is not defined',
+        expr.span,
+        'not found in this scope',
+        hint === undefined ? undefined : ['did you mean `' + hint + '`?'],
+      );
+    }
+    return slot.value;
+  }
+
   async evaluate(expr: Expr, env: Env): Promise<Value> {
     switch (expr.kind) {
       case 'NumberLit':
@@ -439,28 +488,19 @@ export class Interpreter {
       case 'TemplateLit': {
         let out = '';
         for (const part of expr.parts) {
-          out += part.kind === 'text' ? part.value : display(await this.evaluate(part.expr, env));
+          out +=
+            part.kind === 'text'
+              ? part.value
+              : display(this.evalLeaf(part.expr, env) ?? (await this.evaluate(part.expr, env)));
         }
         return str(out);
       }
 
-      case 'Ident': {
-        const slot = env.lookup(expr.name);
-        if (slot === undefined) {
-          const hint = suggest(expr.name, env.visibleNames());
-          this.fail(
-            'RT005',
-            '`' + expr.name + '` is not defined',
-            expr.span,
-            'not found in this scope',
-            hint === undefined ? undefined : ['did you mean `' + hint + '`?'],
-          );
-        }
-        return slot.value;
-      }
+      case 'Ident':
+        return this.lookupName(expr, env);
 
       case 'Unary': {
-        const operand = await this.evaluate(expr.operand, env);
+        const operand = this.evalLeaf(expr.operand, env) ?? (await this.evaluate(expr.operand, env));
         if (expr.op === '-') {
           if (operand.k !== 'num') {
             this.fail('RT006', 'cannot negate ' + typeName(operand), expr.span, 'expected a Num');
@@ -474,9 +514,10 @@ export class Interpreter {
         return await this.evalBinary(expr.op, expr.left, expr.right, env, expr.span);
 
       case 'Logical': {
-        const left = await this.evaluate(expr.left, env);
-        if (expr.op === '&&') return truthy(left) ? await this.evaluate(expr.right, env) : left;
-        return truthy(left) ? left : await this.evaluate(expr.right, env);
+        const left = this.evalLeaf(expr.left, env) ?? (await this.evaluate(expr.left, env));
+        const takeRight = expr.op === '&&' ? truthy(left) : !truthy(left);
+        if (!takeRight) return left;
+        return this.evalLeaf(expr.right, env) ?? (await this.evaluate(expr.right, env));
       }
 
       case 'RangeExpr': {
@@ -510,7 +551,9 @@ export class Interpreter {
 
       case 'ListLit': {
         const items: Value[] = [];
-        for (const item of expr.items) items.push(await this.evaluate(item, env));
+        for (const item of expr.items) {
+          items.push(this.evalLeaf(item, env) ?? (await this.evaluate(item, env)));
+        }
         return list(items);
       }
 
@@ -548,7 +591,8 @@ export class Interpreter {
         return await this.execBlock(expr.block, new Env(env), this.unit());
 
       case 'IfExpr': {
-        if (truthy(await this.evaluate(expr.condition, env))) {
+        const cond = this.evalLeaf(expr.condition, env) ?? (await this.evaluate(expr.condition, env));
+        if (truthy(cond)) {
           return await this.execBlock(expr.then, new Env(env), this.unit());
         }
         if (expr.otherwise === undefined) return NIL;
@@ -562,7 +606,7 @@ export class Interpreter {
         return await this.evalMatch(expr.subject, expr.arms, env, expr.span);
 
       case 'CallExpr': {
-        const callee = await this.evaluate(expr.callee, env);
+        const callee = this.evalLeaf(expr.callee, env) ?? (await this.evaluate(expr.callee, env));
         const args = await this.evalArgs(expr.args, env);
         return await this.callValue(callee, args, expr.span);
       }
@@ -587,13 +631,13 @@ export class Interpreter {
       }
 
       case 'IndexExpr': {
-        const target = await this.evaluate(expr.target, env);
-        const index = await this.evaluate(expr.index, env);
+        const target = this.evalLeaf(expr.target, env) ?? (await this.evaluate(expr.target, env));
+        const index = this.evalLeaf(expr.index, env) ?? (await this.evaluate(expr.index, env));
         return this.readIndex(target, index, expr.span);
       }
 
       case 'MemberExpr': {
-        const target = await this.evaluate(expr.target, env);
+        const target = this.evalLeaf(expr.target, env) ?? (await this.evaluate(expr.target, env));
         if (expr.optional && target.k === 'nil') return NIL;
         return this.readMember(target, expr.name, expr.span);
       }
@@ -640,7 +684,8 @@ export class Interpreter {
   private async evalArgs(args: readonly Arg[], env: Env): Promise<EvaluatedArg[]> {
     const out: EvaluatedArg[] = [];
     for (const arg of args) {
-      out.push({ name: arg.name, value: await this.evaluate(arg.value, env), span: arg.span });
+      const value = this.evalLeaf(arg.value, env) ?? (await this.evaluate(arg.value, env));
+      out.push({ name: arg.name, value, span: arg.span });
     }
     return out;
   }
@@ -688,7 +733,10 @@ export class Interpreter {
       if (values.has(field.name)) {
         this.fail('RT014', 'field `' + field.name + '` is set twice', field.span, 'duplicate field');
       }
-      values.set(field.name, await this.evaluate(field.value, env));
+      values.set(
+        field.name,
+        this.evalLeaf(field.value, env) ?? (await this.evaluate(field.value, env)),
+      );
     }
     const missing = type.fieldNames.filter((f) => !values.has(f));
     if (missing.length > 0) {
@@ -710,8 +758,8 @@ export class Interpreter {
     env: Env,
     span: Span,
   ): Promise<Value> {
-    const left = await this.evaluate(leftExpr, env);
-    const right = await this.evaluate(rightExpr, env);
+    const left = this.evalLeaf(leftExpr, env) ?? (await this.evaluate(leftExpr, env));
+    const right = this.evalLeaf(rightExpr, env) ?? (await this.evaluate(rightExpr, env));
 
     if (op === '==') return bool(valuesEqual(left, right));
     if (op === '!=') return bool(!valuesEqual(left, right));
@@ -809,7 +857,7 @@ export class Interpreter {
     env: Env,
     span: Span,
   ): Promise<Value> {
-    const subject = await this.evaluate(subjectExpr, env);
+    const subject = this.evalLeaf(subjectExpr, env) ?? (await this.evaluate(subjectExpr, env));
     for (const arm of arms) {
       const armEnv = new Env(env);
       if (!(await this.matchPattern(arm.pattern, subject, armEnv))) continue;
@@ -1042,7 +1090,8 @@ export class Interpreter {
     env: Env,
     span: Span,
   ): Promise<Value> {
-    return await this.storeInto(op, target, await this.evaluate(valueExpr, env), env, span);
+    const incoming = this.evalLeaf(valueExpr, env) ?? (await this.evaluate(valueExpr, env));
+    return await this.storeInto(op, target, incoming, env, span);
   }
 
   /**

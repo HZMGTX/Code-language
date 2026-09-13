@@ -25,6 +25,20 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   that was a hole in the middle of it. The statement forms are unchanged and
   mean exactly the same thing.
 
+### Performance
+
+- **Leaf expressions no longer allocate a promise.** Number, string and boolean
+  literals, `nil`, and plain names cannot suspend, so they are evaluated
+  synchronously and every caller falls back to the async path for anything
+  else. They are most of what a tight loop evaluates — `while i < 300000 {
+  total += i * 2 - 1 }` has six per iteration, each previously allocating a
+  promise that resolved immediately. Best-of-three on `npm run bench` went from
+  2.86s to 2.39s (about 16%; nearer 25% comparing medians), with the profile's
+  garbage-collection share falling accordingly. This is a narrow, contained
+  piece of the `Value | Promise<Value>` change the roadmap costs out — the rest
+  of which remains deliberately undone, because it is a continuation-passing
+  rewrite that a bytecode VM would discard.
+
 ### Fixed
 
 - **A function body may name declarations that come later.** `fn greet() {
