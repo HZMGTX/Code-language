@@ -50,7 +50,16 @@ async function send(
       ),
     );
   } catch (error) {
-    return Err(str(error instanceof Error ? error.message : String(error)));
+    // `fetch` rejects with "fetch failed" and hides the reason in `cause`,
+    // whose text is Node's, not ours. Name the request instead, and keep the
+    // underlying sentence after it — it is the only place the real reason is.
+    const cause =
+      error !== null && typeof error === 'object' && 'cause' in error
+        ? (error as { cause: unknown }).cause
+        : undefined;
+    const detail =
+      cause instanceof Error ? cause.message : error instanceof Error ? error.message : String(error);
+    return Err(str(method + ' ' + url + ' failed: ' + detail));
   }
 }
 

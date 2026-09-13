@@ -1,0 +1,7 @@
+error[PA015]: a struct literal cannot appear here
+ --> struct-literal-in-header.lm:6:19
+  |
+6 | print(match Point { x: 1, y: 2 } { _ => "never" })
+  |                   ^ unexpected `{`
+  |
+  = note: inside an `if`, `while`, `for` or `match` header a `{` starts the body; wrap the struct in parentheses if you meant a value: `(Point { ... })`

@@ -1,0 +1,3 @@
+Err("cannot read `no-such-file-here.txt`: no such file or directory")
+Err("cannot list `no-such-directory-here`: no such file or directory")
+Ok(nil)

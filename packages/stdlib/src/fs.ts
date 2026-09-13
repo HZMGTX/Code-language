@@ -11,8 +11,49 @@ import * as path from 'node:path';
 import { NIL, bool, list, str, type Value } from '@lumen-lang/core';
 import { Err, Ok, arg, expectStr, fn, moduleOf } from './support.js';
 
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+/**
+ * Turn a Node filesystem error into a message Lumen owns.
+ *
+ * Node's own text — `ENOENT: no such file or directory, open '/x'` — names an
+ * errno, a syscall and a quoting style that differ between platforms and
+ * versions. Letting that through would make the same Lumen program produce
+ * different output on Windows, and would pin this library's error strings to
+ * whatever Node prints next year. The `code` is stable; the sentence is ours.
+ */
+function messageOf(error: unknown, action: string, target: string): string {
+  const code =
+    error !== null && typeof error === 'object' && 'code' in error
+      ? String((error as { code: unknown }).code)
+      : '';
+  const subject = action + ' `' + target + '`';
+  switch (code) {
+    case 'ENOENT':
+      return 'cannot ' + subject + ': no such file or directory';
+    case 'EACCES':
+    case 'EPERM':
+      return 'cannot ' + subject + ': permission denied';
+    case 'EISDIR':
+      return 'cannot ' + subject + ': it is a directory';
+    case 'ENOTDIR':
+      return 'cannot ' + subject + ': a path segment is not a directory';
+    case 'ENOTEMPTY':
+      return 'cannot ' + subject + ': the directory is not empty';
+    case 'EMFILE':
+    case 'ENFILE':
+      return 'cannot ' + subject + ': too many open files';
+    case 'ENOSPC':
+      return 'cannot ' + subject + ': no space left on the device';
+    case 'EROFS':
+      return 'cannot ' + subject + ': the filesystem is read-only';
+    case 'ELOOP':
+      return 'cannot ' + subject + ': too many symbolic links';
+    case 'ENAMETOOLONG':
+      return 'cannot ' + subject + ': the path is too long';
+    default:
+      // Something we have no sentence for. Keep the code, which is stable and
+      // searchable, rather than inventing a vague message that hides it.
+      return 'cannot ' + subject + (code === '' ? '' : ': ' + code);
+  }
 }
 
 export function stdFs(): Map<string, Value> {
@@ -22,7 +63,7 @@ export function stdFs(): Map<string, Value> {
       try {
         return Ok(str(await fsp.readFile(target, 'utf8')));
       } catch (error) {
-        return Err(str(messageOf(error)));
+        return Err(str(messageOf(error, 'read', target)));
       }
     }),
 
@@ -34,7 +75,7 @@ export function stdFs(): Map<string, Value> {
         await fsp.writeFile(target, contents, 'utf8');
         return Ok(NIL);
       } catch (error) {
-        return Err(str(messageOf(error)));
+        return Err(str(messageOf(error, 'write to', target)));
       }
     }),
 
@@ -45,7 +86,7 @@ export function stdFs(): Map<string, Value> {
         await fsp.appendFile(target, contents, 'utf8');
         return Ok(NIL);
       } catch (error) {
-        return Err(str(messageOf(error)));
+        return Err(str(messageOf(error, 'append to', target)));
       }
     }),
 
@@ -65,7 +106,7 @@ export function stdFs(): Map<string, Value> {
         const names = await fsp.readdir(target);
         return Ok(list(names.sort().map((name) => str(name))));
       } catch (error) {
-        return Err(str(messageOf(error)));
+        return Err(str(messageOf(error, 'list', target)));
       }
     }),
 
@@ -75,7 +116,7 @@ export function stdFs(): Map<string, Value> {
         await fsp.rm(target, { recursive: true, force: true });
         return Ok(NIL);
       } catch (error) {
-        return Err(str(messageOf(error)));
+        return Err(str(messageOf(error, 'remove', target)));
       }
     }),
   );

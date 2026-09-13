@@ -51,6 +51,24 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   says which one you are in — so one file can serve its routes and also print
   them for inspection.
 
+- **Runaway recursion hung instead of failing.** Every call is a promise rather
+  than a stack frame, so `fn f() { f() }` allocated quietly until the process
+  died — no stack to overflow, no diagnostic, no end. Calls are limited to
+  10,000 deep and report `RT045`, which takes about a quarter of a second.
+  Legal deep recursion is unaffected; nothing reasonable comes close.
+- **A struct literal in a control-flow header produced nine errors.** `match
+  Point { x: 1, y: 2 } { ... }` is ambiguous — in a header a `{` starts the
+  body — and the parser used to silently take the identifier alone and then
+  report on the wreckage. It now says so once, as `PA015`, with the fix
+  (parentheses), and parses the struct literal anyway so nothing after it
+  cascades. `if ready {}` is untouched: an empty brace pair in a header is far
+  more likely a body than a struct.
+- **`std/fs` leaked Node's error text.** `ENOENT: no such file or directory,
+  open '/x'` names an errno, a syscall and a quoting style that vary by
+  platform and version — so the same Lumen program said different things on
+  Windows. The messages are Lumen's now, mapped from the stable error code.
+  `std/http` names the failing request instead of only "fetch failed".
+
 ### Added
 
 - **`std/web.form(req)`** reads the fields a form submitted, whichever way the

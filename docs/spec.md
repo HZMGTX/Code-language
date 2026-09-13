@@ -516,6 +516,7 @@ different meaning. Selected codes:
 | `PA003` | Two statements run together on one line |
 | `PA008` | Invalid assignment target |
 | `PA009` | Map literal in a control-flow header |
+| `PA015` | Struct literal in a control-flow header |
 | `PA014` | Unmatched `}` |
 | `RT005` | Name is not defined |
 | `RT010` | `?` applied to a non-Result/Option |
@@ -529,9 +530,16 @@ different meaning. Selected codes:
 | `RT040` | Too many arguments |
 | `RT044` | One parameter supplied both positionally and by name |
 | `RT027` | No such method on this type |
+| `RT045` | Call depth exceeded — recursion with no reachable base case |
 
 The parser reports multiple errors per run, suppressing duplicates and bounding
 cascades at 25.
+
+Calls are limited to 10,000 deep (`RT045`). The interpreter evaluates through
+promises rather than the host stack, so runaway recursion would otherwise
+allocate silently instead of failing; the limit turns it back into a
+diagnostic. Nothing reasonable reaches it — a balanced tree of ten thousand
+nodes is fourteen levels deep.
 
 ---
 

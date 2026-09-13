@@ -59,6 +59,15 @@ import {
 class ReturnSignal {
   constructor(readonly value: Value) {}
 }
+/**
+ * The deepest chain of Lumen calls allowed before `RT045`.
+ *
+ * High enough that no reasonable recursion reaches it — a balanced tree of ten
+ * thousand nodes is fourteen deep, and a list walked recursively would have to
+ * hold ten thousand items — and low enough to fail in well under a second.
+ */
+const MAX_CALL_DEPTH = 10000;
+
 class BreakSignal {}
 class ContinueSignal {}
 /** Raised by postfix `?` to carry an `Err`/`None` out of the enclosing function. */
@@ -97,6 +106,8 @@ export class Interpreter {
   readonly host: Host;
   private readonly resolver: ModuleResolver | undefined;
   private readonly units: SourceUnit[] = [];
+  /** How many Lumen calls are currently on the way in. See `MAX_CALL_DEPTH`. */
+  private depth = 0;
   private readonly moduleCache = new Map<string, ModuleValue>();
   private readonly loading = new Set<string>();
   /**
@@ -1124,11 +1135,30 @@ export class Interpreter {
     }
 
     const label = callee.name === '' ? 'this anonymous function' : '`' + callee.name + '`';
+
+    // Every call is a promise rather than a stack frame, so runaway recursion
+    // would not overflow anything — it would allocate quietly until the
+    // process died or the user gave up. A depth limit turns the commonest
+    // beginner mistake back into a diagnostic that says what happened.
+    if (this.depth >= MAX_CALL_DEPTH) {
+      return this.fail(
+        'RT045',
+        'too many nested calls: ' + label + ' is ' + String(MAX_CALL_DEPTH) + ' deep',
+        span,
+        'call depth exceeded',
+        [
+          'this is usually recursion with no base case, or one that never reaches it',
+          'a loop uses no call depth at all, if the work can be written as one',
+        ],
+      );
+    }
+
     const bound = await this.bindParams(label, callee.params, args, span, callee.closure);
     const callEnv = new Env(callee.closure);
     for (const [name, value] of bound) callEnv.declare(name, value, false);
 
     this.units.push(callee.unit);
+    this.depth += 1;
     try {
       return await this.execBlock(callee.body, callEnv, callee.unit);
     } catch (error) {
@@ -1137,6 +1167,7 @@ export class Interpreter {
       if (error instanceof TryPropagate) return error.value;
       throw error;
     } finally {
+      this.depth -= 1;
       this.units.pop();
     }
   }

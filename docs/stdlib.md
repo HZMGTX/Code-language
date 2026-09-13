@@ -163,6 +163,18 @@ and `LUMEN_AI_MODEL` overrides both.
 
 ### `std/fs` and `std/http`
 
+Error text belongs to Lumen, not to the host. Node's own filesystem messages
+name an errno, a syscall and a quoting style that differ between platforms and
+versions, so `std/fs` maps the stable part — the error code — to a sentence of
+its own: `cannot read \`config.json\`: no such file or directory`. A code with
+no sentence yet keeps the code rather than hiding it behind something vague.
+`std/http` names the request that failed, since "fetch failed" on its own says
+nothing when several are in flight.
+
+This is the same reason `std/json` reports `invalid JSON` rather than passing
+through V8's parser message: a Lumen program should print the same thing
+wherever it runs.
+
 Both are `Result`-returning throughout. An HTTP response with a non-2xx status
 is still `Ok` — the *request* succeeded; check `status` to decide what it means.
 

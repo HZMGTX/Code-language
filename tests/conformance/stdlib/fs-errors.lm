@@ -1,0 +1,11 @@
+// A filesystem failure is a value, and its text belongs to Lumen rather than
+// to Node — so the same program says the same thing on every platform, which
+// a fixture compared byte for byte on three of them has to be able to rely on.
+
+import { read, list, remove } from "std/fs"
+
+print(read("no-such-file-here.txt"))
+print(list("no-such-directory-here"))
+
+// Removing something that was never there is not a failure.
+print(remove("no-such-file-here.txt"))

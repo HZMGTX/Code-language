@@ -1,0 +1,10 @@
+// Recursion with no reachable base case. Every call is a promise rather than a
+// stack frame, so nothing would overflow — it would allocate until the process
+// died. The depth limit turns that back into something a person can read.
+
+fn countdown(n) {
+  // The base case is there, but n never reaches it going upwards.
+  if n == 0 { 0 } else { countdown(n + 1) }
+}
+
+print(countdown(1))

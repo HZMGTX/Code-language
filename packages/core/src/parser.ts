@@ -956,6 +956,22 @@ export class Parser {
     return this.tokens[j + 1]?.kind === ':';
   }
 
+  /**
+   * As above, but for deciding whether to *complain* rather than to parse.
+   *
+   * `{}` is excluded: in a header it is far more likely an empty body — `if
+   * ready {}` — than an empty struct, and a false accusation is worse than the
+   * cascade it would have prevented.
+   */
+  private looksLikeStructLitInHeader(): boolean {
+    let j = this.i + 1; // past '{'
+    while (this.tokens[j]?.kind === 'newline') j += 1;
+    const first = this.tokens[j];
+    if (first === undefined) return false;
+    if (first.kind !== 'ident' && first.kind !== 'string') return false;
+    return this.tokens[j + 1]?.kind === ':';
+  }
+
   private parsePrimary(): Expr {
     const tok = this.cur();
 
@@ -1049,8 +1065,36 @@ export class Parser {
 
       case 'ident': {
         this.advance();
+        // In a header the `{` belongs to the body, so a struct literal there is
+        // ambiguous. Say so once, rather than letting the body be parsed as
+        // field syntax and reporting nine errors about the wreckage.
+        const ambiguousHeaderStruct =
+          this.noBraceLit > 0 && this.at('{') && this.looksLikeStructLitInHeader();
+        if (ambiguousHeaderStruct) {
+          this.report({
+            severity: 'error',
+            code: 'PA015',
+            message: 'a struct literal cannot appear here',
+            span: this.cur().span,
+            label: 'unexpected `{`',
+            notes: [
+              {
+                message:
+                  'inside an `if`, `while`, `for` or `match` header a `{` starts the body; ' +
+                  'wrap the struct in parentheses if you meant a value: `(' +
+                  tok.text +
+                  ' { ... })`',
+              },
+            ],
+          });
+          // Then parse it as the struct literal it plainly is, so the rest of
+          // the line still makes sense and this is the only error reported.
+        }
         // `Name { field: value }` — a struct literal, unless we are in a header.
-        if (this.at('{') && this.noBraceLit === 0 && this.looksLikeBraceLiteral()) {
+        if (
+          this.at('{') &&
+          (ambiguousHeaderStruct || (this.noBraceLit === 0 && this.looksLikeBraceLiteral()))
+        ) {
           this.advance();
           const fields: FieldInit[] = [];
           this.inBrackets(() => {
