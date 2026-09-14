@@ -495,6 +495,47 @@ footnote. There is no `__name__` and no import-versus-run distinction: a module
 you import runs its own top-level statements once, and only the file you named
 on the command line has its `main` called.
 
+## The standard library, by the Python module you would reach for
+
+Lumen's modules take their subject first, so every function in them is also a
+method. `import` is by name, always — there is no `import module` form and no
+`module.function` access.
+
+| Python | Lumen |
+|---|---|
+| `re` | `std/regex` — `test`, `find`, `findAll`, `replace`, `split`, `escape` |
+| `csv` | `std/csv` — `rows`, `records`, `write`, `writeRecords` |
+| `pathlib` / `os.path` | `std/path` — `join`, `dir`, `base`, `stem`, `ext`, `relative`, `isInside` |
+| `subprocess` | `std/process` — `run`, `which`. No shell, ever |
+| `json` | `std/json` — `parse` and `stringify`, both returning a `Result` |
+| `datetime` | `std/time` — UTC only, instants as milliseconds |
+| `random` | `std/math` — `random`, `randomInt`, `shuffle`, `choice`, `seed` |
+| `math` | `std/math` |
+| `pathlib.Path.read_text` | `std/fs` — `read`, `write`, `walk`, `stat`, `copy` |
+| `urllib` / `requests` | `std/http` — `get`, `post`, `request` |
+| `http.server` / Flask | `std/web` — a router, HTML, JSON, static files |
+| `sys.stdin.read()` | `inputAll()` — in the prelude, no import |
+| `input()` | `input()` — returns `Some(line)` or `None` |
+| `sys.exit(n)` | `exit(n)` from `std/core` |
+| `collections.Counter` | `xs.groupBy(f)` and `mapValues(len)` |
+| `set` | `std/set` — sets are lists with no repeats; there is no set type |
+| `itertools` | `std/list` — `windows`, `chunk`, `zip`, `scan`, `flatMap` |
+
+Four differences worth knowing before you hit them:
+
+- **`re` patterns are strings, and the flags are named.** `re.M` is
+  `multiline: true`, `re.I` is `ignoreCase: true`, `re.S` is `dotAll: true`.
+  There is no `(?m)` — JavaScript has no inline modifier group, so a pattern
+  written that way does not compile. The dialect is otherwise the one you know.
+- **`subprocess` has no `shell=True` equivalent.** `run("ls", ["-l"])` and
+  nothing else: no `*`, no `|`, no `>`, no `&&`. Each of those is a line of
+  Lumen instead, and in exchange there is never a quoting question.
+- **`csv` refuses ragged rows.** A row with more or fewer fields than the
+  header is an `Err` naming the row, rather than a guess that silently shifts
+  every later column.
+- **`random.seed` exists and does what you expect.** The generator is written in
+  the library, so a seeded sequence is the same on every machine.
+
 ## Where Python is simply more convenient
 
 A comparison that only flatters its own side is not worth reading. These are
@@ -511,9 +552,10 @@ places where you will miss Python, with no consolation offered:
 - **Comprehensions.** For nested or dict comprehensions especially,
   `.filter().map()` plus `fromEntries` is more machinery than Python needs.
 - **Arbitrary-precision integers.** See above.
-- **The ecosystem.** PyPI holds hundreds of thousands of packages. Lumen has ten
-  standard modules and no package manager at all. For anything outside what ships
-  in the box, Python is not in competition with Lumen; it has already won.
+- **The ecosystem.** PyPI holds hundreds of thousands of packages. Lumen has
+  eighteen standard modules and no package manager at all. For anything outside
+  what ships in the box, Python is not in competition with Lumen; it has already
+  won.
 
 ## Translate this Python
 

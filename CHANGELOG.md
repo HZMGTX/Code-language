@@ -53,6 +53,15 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   the name — and that span is what made rename possible, since replacing the
   declaration's span would have replaced the declaration.
 
+- **The guides know what the language can do now.** `docs/tour.md` said
+  "Twelve standard modules" and listed twelve, six modules after that stopped
+  being true — a count in prose goes stale exactly as fast as one in digits and
+  is harder to notice, so the same check that pins the README's numbers now
+  pins the tour's module list. `docs/from-python.md` gained a table of the
+  standard library by the Python module a reader would reach for: `re`, `csv`,
+  `pathlib`, `subprocess`, `random.seed`, `sys.stdin.read()`, and the four
+  differences worth knowing before hitting them.
+
 - **Every standard module is checked for being exercised by something that
   runs.** `std/http` shipped with no fixture, no unit test and no example — the
   only one — so the client half of "you can build a website with this" had

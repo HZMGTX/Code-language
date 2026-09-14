@@ -302,9 +302,18 @@ import { helper } from "./helper.lm"
 export fn publicThing() { 1 }
 ```
 
-Twelve standard modules ship with the language: `core`, `str`, `list`, `map`,
-`math`, `json`, `option`, `result`, `fs`, `http`, `web`, `ai`. See
-[stdlib.md](stdlib.md).
+Eighteen standard modules ship with the language:
+
+| | |
+|---|---|
+| Text and data | `std/str`, `std/regex`, `std/json`, `std/csv` |
+| Collections | `std/list`, `std/map`, `std/set` |
+| Numbers and time | `std/math`, `std/time` |
+| Values | `std/option`, `std/result`, `std/core` |
+| The machine | `std/fs`, `std/path`, `std/process` |
+| The network | `std/http`, `std/web`, `std/ai` |
+
+See [stdlib.md](stdlib.md) for every function in them.
 
 `examples/notes/` is a program in three files — a store that prints nothing, a
 renderer that knows nothing about storage, and a main that decides the order —
@@ -349,6 +358,20 @@ Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` for a real answer.
 
 Notice there is no `await` anywhere above. Lumen awaits I/O for you, so a
 function that calls the network composes exactly like one that does not.
+
+## In an editor
+
+```bash
+lumen lsp
+```
+
+A language server: diagnostics as you type, hover with types and
+documentation, completion, signature help, go to definition, find references,
+rename, and formatting. `editors/vscode` is a client for it.
+
+Everything it knows, `lumen check` knows — same parser, same resolver, same
+type checker — so the editor can never tell you something the command line
+disagrees with.
 
 ## Where next
 

@@ -296,10 +296,15 @@ for (const name of STD_MODULES.keys()) {
 
 // ------------------------------------------------ every module is documented
 
-const stdlib = readFileSync(path.join(ROOT, 'docs', 'stdlib.md'), 'utf8');
-for (const name of STD_MODULES.keys()) {
-  if (!stdlib.includes('`' + name + '`')) {
-    problems.push(name + ' is not mentioned in docs/stdlib.md');
+// The tour lists them too, and said "twelve" for six modules longer than that
+// was true. A count written in prose goes stale exactly as fast as one written
+// in digits, and is harder to notice.
+for (const document of ['stdlib.md', 'tour.md']) {
+  const text = readFileSync(path.join(ROOT, 'docs', document), 'utf8');
+  for (const name of STD_MODULES.keys()) {
+    if (!text.includes('`' + name + '`')) {
+      problems.push(name + ' is not mentioned in docs/' + document);
+    }
   }
 }
 
