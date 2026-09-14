@@ -149,13 +149,21 @@ export function analyseForCompletion(
   const whole = analyse(uri, 0, text, globals);
   if (whole.module !== undefined) return whole;
 
+  // The placeholder has to be a name the resolver knows, or it reports it as
+  // undefined and `checkModule` stops before the type checker runs — leaving
+  // the repaired document parsed and completely untyped, which is the one
+  // thing this function exists to avoid. In `print(s.x)` it is a member name
+  // and nothing notices; in `padStart(x` it is an expression and everything
+  // does.
+  const known = [...globals, PLACEHOLDER];
+
   const inserted = text.slice(0, offset) + PLACEHOLDER + text.slice(offset);
-  const withName = analyse(uri, 0, inserted, globals);
+  const withName = analyse(uri, 0, inserted, known);
   if (withName.module !== undefined) return withName;
 
   const prefix = text.slice(0, offset);
   const closed = prefix + PLACEHOLDER + closersFor(prefix);
-  const truncated = analyse(uri, 0, closed, globals);
+  const truncated = analyse(uri, 0, closed, known);
   return truncated.module === undefined ? whole : truncated;
 }
 

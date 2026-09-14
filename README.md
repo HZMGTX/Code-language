@@ -28,7 +28,7 @@ in [ROADMAP.md](ROADMAP.md); the largest item is that type checking is **gradual
 and shallow**: annotations are enforced where you write them, and a program that
 writes none is never type-checked at all.
 
-- **948 tests**, 135 conformance fixtures, 21 example programs, 17 standard
+- **959 tests**, 135 conformance fixtures, 21 example programs, 17 standard
   modules. `npm run ci` runs all fifteen checks locally, which is how they are
   verified today — GitHub Actions is configured for Node 20/22/24 on Linux, macOS
   and Windows but has never been able to start a run on this repository, so no
@@ -225,8 +225,8 @@ wants.
 ## In an editor
 
 `lumen lsp` is a language server: diagnostics as you type, hover, completion,
-go to definition, and formatting. `editors/vscode` is a client for it, and
-installing it is a symlink:
+signature help, go to definition, find references, rename, and formatting.
+`editors/vscode` is a client for it, and installing it is a symlink:
 
 ```bash
 ln -s "$(pwd)/editors/vscode" ~/.vscode/extensions/lumen   # macOS, Linux
@@ -238,9 +238,14 @@ the setting that points it at a particular build.
 Everything it knows, `lumen check` knows — they run the same parser, the same
 resolver and the same type checker, so the editor can never tell you something
 the command line disagrees with. Completion after a `.` offers the methods that
-exist on the receiver's type, which is worth having only because the standard
-library declares its types; before that, the honest answer was every method of
-every type at once.
+exist on the receiver's type, and signature help says what the call you are
+typing takes; both are worth having only because the standard library declares
+its types. Before that, the honest answers were "every method of every type at
+once" and "no idea".
+
+References and rename work by **identity**, not by name: two different `x` in
+two different scopes are two different bindings, so renaming one leaves the
+other alone.
 
 The server has no dependencies, and neither does the VS Code client: LSP is
 JSON-RPC over stdio, and the framing is a few dozen lines.

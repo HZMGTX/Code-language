@@ -165,6 +165,8 @@ export interface AssignExpr extends NodeBase {
 
 export interface Param extends NodeBase {
   readonly name: string;
+  /** Where the name itself is; see `LetDecl.nameSpan`. */
+  readonly nameSpan: Span;
   readonly type: TypeExpr | undefined;
   readonly defaultValue: Expr | undefined;
   /**
@@ -359,6 +361,15 @@ export interface Block extends NodeBase {
 export interface LetDecl extends NodeBase {
   readonly kind: 'LetDecl';
   readonly name: string;
+  /**
+   * Where the name itself is, as opposed to the whole declaration.
+   *
+   * A diagnostic about a name should underline the name: `RS004` used to draw
+   * a caret under the whole of `let total = 2` to say that `total` was
+   * declared twice. It is also what a rename needs — replacing `span` would
+   * replace the declaration.
+   */
+  readonly nameSpan: Span;
   readonly mutable: boolean;
   readonly type: TypeExpr | undefined;
   readonly value: Expr;
@@ -382,6 +393,8 @@ export interface DestructureDecl extends NodeBase {
 export interface FnDecl extends NodeBase {
   readonly kind: 'FnDecl';
   readonly name: string;
+  /** Where the name itself is; see `LetDecl.nameSpan`. */
+  readonly nameSpan: Span;
   readonly params: readonly Param[];
   readonly ret: TypeExpr | undefined;
   readonly body: Block;
@@ -395,6 +408,8 @@ export interface StructField extends NodeBase {
 export interface StructDecl extends NodeBase {
   readonly kind: 'StructDecl';
   readonly name: string;
+  /** Where the name itself is; see `LetDecl.nameSpan`. */
+  readonly nameSpan: Span;
   readonly fields: readonly StructField[];
 }
 
@@ -406,6 +421,8 @@ export interface EnumVariant extends NodeBase {
 export interface EnumDecl extends NodeBase {
   readonly kind: 'EnumDecl';
   readonly name: string;
+  /** Where the name itself is; see `LetDecl.nameSpan`. */
+  readonly nameSpan: Span;
   readonly variants: readonly EnumVariant[];
 }
 

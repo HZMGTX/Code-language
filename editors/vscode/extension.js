@@ -202,6 +202,15 @@ function activate(context) {
     position: { line: position.line, character: position.character },
   });
 
+  /** A protocol range as a VS Code one. Both are zero-based; nothing shifts. */
+  const toRange = (range) =>
+    new vscode.Range(
+      range.start.line,
+      range.start.character,
+      range.end.line,
+      range.end.character,
+    );
+
   context.subscriptions.push(
     vscode.languages.registerHoverProvider('lumen', {
       async provideHover(document, position) {
@@ -236,17 +245,79 @@ function activate(context) {
       async provideDefinition(document, position) {
         const answer = await client.request('textDocument/definition', at(document, position));
         if (answer === undefined || answer === null) return undefined;
-        return new vscode.Location(
-          vscode.Uri.parse(answer.uri),
-          new vscode.Range(
-            answer.range.start.line,
-            answer.range.start.character,
-            answer.range.end.line,
-            answer.range.end.character,
-          ),
-        );
+        return new vscode.Location(vscode.Uri.parse(answer.uri), toRange(answer.range));
       },
     }),
+
+    vscode.languages.registerReferenceProvider('lumen', {
+      async provideReferences(document, position, context) {
+        const answer = await client.request('textDocument/references', {
+          ...at(document, position),
+          context: { includeDeclaration: context.includeDeclaration },
+        });
+        if (!Array.isArray(answer)) return undefined;
+        return answer.map((location) => new vscode.Location(vscode.Uri.parse(location.uri), toRange(location.range)));
+      },
+    }),
+
+    vscode.languages.registerDocumentHighlightProvider('lumen', {
+      async provideDocumentHighlights(document, position) {
+        const answer = await client.request('textDocument/documentHighlight', at(document, position));
+        if (!Array.isArray(answer)) return undefined;
+        // The protocol's DocumentHighlightKind is one-based and VS Code's is
+        // zero-based, over the same three values in the same order.
+        return answer.map((h) => new vscode.DocumentHighlight(toRange(h.range), (h.kind ?? 1) - 1));
+      },
+    }),
+
+    vscode.languages.registerRenameProvider('lumen', {
+      async prepareRename(document, position) {
+        const answer = await client.request('textDocument/prepareRename', at(document, position));
+        if (answer === undefined || answer === null) {
+          // Throwing is how a provider says "not here"; returning undefined
+          // makes VS Code open its box and then quietly do nothing.
+          throw new Error('there is nothing here to rename');
+        }
+        return { range: toRange(answer.range), placeholder: answer.placeholder };
+      },
+      async provideRenameEdits(document, position, newName) {
+        const answer = await client.request('textDocument/rename', {
+          ...at(document, position),
+          newName,
+        });
+        if (answer === undefined || answer === null) return undefined;
+        const edit = new vscode.WorkspaceEdit();
+        for (const [uri, edits] of Object.entries(answer.changes ?? {})) {
+          for (const one of edits) {
+            edit.replace(vscode.Uri.parse(uri), toRange(one.range), one.newText);
+          }
+        }
+        return edit;
+      },
+    }),
+
+    vscode.languages.registerSignatureHelpProvider(
+      'lumen',
+      {
+        async provideSignatureHelp(document, position) {
+          const answer = await client.request('textDocument/signatureHelp', at(document, position));
+          if (answer === undefined || answer === null) return undefined;
+          const help = new vscode.SignatureHelp();
+          help.signatures = (answer.signatures ?? []).map((signature) => {
+            const made = new vscode.SignatureInformation(signature.label, signature.documentation);
+            made.parameters = (signature.parameters ?? []).map(
+              (parameter) => new vscode.ParameterInformation(parameter.label),
+            );
+            return made;
+          });
+          help.activeSignature = answer.activeSignature ?? 0;
+          help.activeParameter = answer.activeParameter ?? 0;
+          return help;
+        },
+      },
+      '(',
+      ',',
+    ),
 
     vscode.languages.registerDocumentFormattingEditProvider('lumen', {
       async provideDocumentFormattingEdits(document) {
@@ -255,18 +326,7 @@ function activate(context) {
           options: { tabSize: 2, insertSpaces: true },
         });
         if (!Array.isArray(answer)) return undefined;
-        return answer.map(
-          (edit) =>
-            new vscode.TextEdit(
-              new vscode.Range(
-                edit.range.start.line,
-                edit.range.start.character,
-                edit.range.end.line,
-                edit.range.end.character,
-              ),
-              edit.newText,
-            ),
-        );
+        return answer.map((edit) => new vscode.TextEdit(toRange(edit.range), edit.newText));
       },
     }),
   );

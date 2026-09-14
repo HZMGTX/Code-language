@@ -243,6 +243,16 @@ class Resolver {
     this.scope = this.scope.parent ?? this.scope;
   }
 
+  /**
+   * Record a binding.
+   *
+   * `span` is the **name's** span, not the whole declaration's. A diagnostic
+   * about a name should underline the name: `RS004` used to draw a caret under
+   * the whole of `let total = 2` to say that `total` was declared twice, which
+   * points at everything except the part that is wrong. It is also what a
+   * rename needs, since replacing the declaration's span would replace the
+   * declaration.
+   */
   private declare(name: string, span: Span, mutable: boolean, kind: string): void {
     // `_` is the conventional throwaway and may be repeated freely.
     if (name !== '_') {
@@ -398,13 +408,13 @@ class Resolver {
       const decl = stmt.kind === 'ExportDecl' ? stmt.declaration : stmt;
       switch (decl.kind) {
         case 'FnDecl':
-          this.declare(decl.name, decl.span, false, 'function');
+          this.declare(decl.name, decl.nameSpan, false, 'function');
           break;
         case 'StructDecl':
-          this.declare(decl.name, decl.span, false, 'struct');
+          this.declare(decl.name, decl.nameSpan, false, 'struct');
           break;
         case 'EnumDecl':
-          this.declare(decl.name, decl.span, false, 'enum');
+          this.declare(decl.name, decl.nameSpan, false, 'enum');
           this.enums.set(decl.name, (decl as EnumDecl).variants.map((v) => v.name));
           break;
         default:
@@ -425,7 +435,7 @@ class Resolver {
     switch (stmt.kind) {
       case 'LetDecl':
         this.expr(stmt.value);
-        this.declare(stmt.name, stmt.span, stmt.mutable, stmt.mutable ? 'var' : 'let');
+        this.declare(stmt.name, stmt.nameSpan, stmt.mutable, stmt.mutable ? 'var' : 'let');
         return;
 
       case 'DestructureDecl':
@@ -509,7 +519,7 @@ class Resolver {
         this.expr(param.defaultValue);
         this.deferred -= 1;
       }
-      this.declare(param.name, param.span, false, 'parameter');
+      this.declare(param.name, param.nameSpan, false, 'parameter');
     }
     // The body gets its own scope so a local may shadow a parameter, and runs
     // when called rather than where it is written.

@@ -121,8 +121,10 @@ created two throwaway Maps per iteration.
 - ~~A language server: completion, go-to-definition, inline diagnostics.~~
   Done, and earlier than planned, because the typed standard library made the
   interesting half of it possible: `lumen lsp`, with a VS Code client in
-  `editors/vscode`. Zero dependencies on both sides. Still ahead for it: rename,
-  find-references, and signature help while typing a call.
+  `editors/vscode`. Zero dependencies on both sides. Rename, find-references,
+  document highlight and signature help followed, so what is still ahead is
+  cross-file work: references that reach into another module, and a workspace
+  index to make it possible.
 
 ## The standard library
 

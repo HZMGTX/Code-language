@@ -23,7 +23,7 @@
  * millisecond. Complexity that buys nothing is complexity that can be wrong.
  */
 
-import { format, type Diagnostic, type Expr, type Ty } from '@lumen-lang/core';
+import { format, type Diagnostic, type Expr, type Span, type Ty } from '@lumen-lang/core';
 import {
   createInterpreter,
   stdMethodSignatures,
@@ -187,6 +187,21 @@ export class Server {
         case 'textDocument/formatting':
           this.reply(id, this.formatting(params));
           return;
+        case 'textDocument/references':
+          this.reply(id, this.references(params));
+          return;
+        case 'textDocument/documentHighlight':
+          this.reply(id, this.highlights(params));
+          return;
+        case 'textDocument/prepareRename':
+          this.reply(id, this.prepareRename(params));
+          return;
+        case 'textDocument/rename':
+          this.reply(id, this.rename(params));
+          return;
+        case 'textDocument/signatureHelp':
+          this.reply(id, this.signatureHelp(params));
+          return;
 
         default:
           // A notification this server does not implement is not an error — the
@@ -212,6 +227,10 @@ export class Server {
         definitionProvider: true,
         documentFormattingProvider: true,
         completionProvider: { triggerCharacters: ['.'] },
+        referencesProvider: true,
+        renameProvider: { prepareProvider: true },
+        documentHighlightProvider: true,
+        signatureHelpProvider: { triggerCharacters: ['(', ','] },
       },
       serverInfo: { name: 'lumen-lsp' },
     };
@@ -384,6 +403,180 @@ export class Server {
     return { uri: analysis.uri, range: rangeOf(reference.declaration) };
   }
 
+  // ------------------------------------------- references and renaming
+
+  /**
+   * Every place one binding is used, found by *identity* rather than by name.
+   *
+   * Two different `x` in two different scopes are two different bindings, and a
+   * rename that changed both would be a rename that broke the program. The
+   * resolver hands over where each use was declared, so the set is exactly the
+   * uses that resolve to the same declaration — which is the correct answer and
+   * happens also to be the easy one.
+   */
+  private bindingAt(analysis: Analysis, offset: number): { declaration: Span; uses: Span[] } | undefined {
+    // The cursor may be on a use, or on the declaration itself.
+    const use = referenceAt(analysis, offset);
+    const declaration =
+      use?.declaration ?? analysis.references.find((r) => within(r.declaration, offset))?.declaration;
+    if (declaration === undefined) return undefined;
+    // A zero-width declaration is a built-in: there is nothing in this file to
+    // rename, and every use of `print` in every file is not what was asked for.
+    if (declaration.end.offset === declaration.start.offset) return undefined;
+
+    const uses = analysis.references
+      .filter((r) => r.declaration.start.offset === declaration.start.offset)
+      .map((r) => r.use);
+    return { declaration, uses };
+  }
+
+  private references(params: Record<string, unknown>): unknown {
+    const found = this.at(params);
+    if (found === undefined) return [];
+    const binding = this.bindingAt(found.analysis, found.offset);
+    if (binding === undefined) return [];
+    const context = params['context'] as { includeDeclaration?: boolean } | undefined;
+    const spans =
+      context?.includeDeclaration === false ? binding.uses : [binding.declaration, ...binding.uses];
+    return spans.map((span) => ({ uri: found.analysis.uri, range: rangeOf(span) }));
+  }
+
+  /** The same set, for the editor to shade while the cursor rests on one. */
+  private highlights(params: Record<string, unknown>): unknown {
+    const found = this.at(params);
+    if (found === undefined) return [];
+    const binding = this.bindingAt(found.analysis, found.offset);
+    if (binding === undefined) return [];
+    return [
+      { range: rangeOf(binding.declaration), kind: 3 }, // Write
+      ...binding.uses.map((span) => ({ range: rangeOf(span), kind: 2 })), // Read
+    ];
+  }
+
+  /**
+   * Whether a rename is possible here, and what text it would replace.
+   *
+   * Answering `null` makes the editor say so before opening its input box,
+   * rather than accepting a new name and then quietly doing nothing — which is
+   * what a client does when `rename` returns no edits.
+   */
+  private prepareRename(params: Record<string, unknown>): unknown {
+    const found = this.at(params);
+    if (found === undefined) return null;
+    const binding = this.bindingAt(found.analysis, found.offset);
+    if (binding === undefined) return null;
+    const here = [binding.declaration, ...binding.uses].find((span) => within(span, found.offset));
+    if (here === undefined) return null;
+    return {
+      range: rangeOf(here),
+      placeholder: found.analysis.text.slice(here.start.offset, here.end.offset),
+    };
+  }
+
+  private rename(params: Record<string, unknown>): unknown {
+    const found = this.at(params);
+    if (found === undefined) return null;
+    const newName = params['newName'];
+    if (typeof newName !== 'string' || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(newName)) {
+      // An editor will happily send anything the person typed. A name that is
+      // not a name would produce a file that does not parse, and silently
+      // breaking somebody's code is worse than declining.
+      return null;
+    }
+    const binding = this.bindingAt(found.analysis, found.offset);
+    if (binding === undefined) return null;
+    return {
+      changes: {
+        [found.analysis.uri]: [binding.declaration, ...binding.uses].map((span) => ({
+          range: rangeOf(span),
+          newText: newName,
+        })),
+      },
+    };
+  }
+
+  // -------------------------------------------------------- signature help
+
+  /**
+   * What the call being typed takes, and which argument the cursor is on.
+   *
+   * The feature the typed standard library most obviously buys: `padStart(` is
+   * a question the editor could not answer at all before, and can now answer
+   * with `padStart(width: Num, fill: Str = ...)` and the current parameter in
+   * bold.
+   *
+   * The open call is found by scanning backwards over balanced brackets rather
+   * than from the syntax tree, because the document does not parse while it is
+   * being typed — the call has no closing bracket yet, which is exactly why the
+   * question is being asked.
+   */
+  private signatureHelp(params: Record<string, unknown>): unknown {
+    const found = this.at(params);
+    if (found === undefined) return null;
+    const { offset } = found;
+    // Repaired, like completion, and for the same reason: a call is asked about
+    // while it is being typed, so it has no closing bracket yet and the
+    // document does not parse. Without this there is no type for the receiver
+    // at exactly the moment the question is asked. The repair never touches
+    // anything before the cursor, so the scan below is unaffected.
+    const analysis = analyseForCompletion(
+      found.analysis.uri,
+      found.analysis.text,
+      offset,
+      this.globalNames,
+    );
+    const open = openCallBefore(analysis.text, offset);
+    if (open === undefined) return null;
+
+    const name = nameBefore(analysis.text, open.at);
+    if (name === undefined) return null;
+
+    const ty = this.calleeTy(analysis, name, open.at);
+    if (ty === undefined || ty.k !== 'fn') return null;
+
+    const described = this.globals.get(name);
+    return {
+      signatures: [
+        {
+          label: name + showSignatureish(ty),
+          ...(described?.doc === undefined ? {} : { documentation: described.doc }),
+          parameters: ty.params.map((p) => ({
+            label: (p.name ?? '_') + (p.ty.k === 'any' ? '' : ': ' + describeTy(p.ty)),
+          })),
+        },
+      ],
+      activeSignature: 0,
+      // Past the last parameter there is nothing to highlight, and pointing at
+      // one that does not exist makes a client draw nothing at all.
+      activeParameter: Math.min(open.argument, Math.max(0, ty.params.length - 1)),
+    };
+  }
+
+  /** The type of whatever `name` refers to at this point: a method, or a global. */
+  private calleeTy(analysis: Analysis, name: string, at: number): Ty | undefined {
+    // `x.f(` — the method on whatever is to the left of the dot.
+    const beforeName = at - name.length - 1;
+    if (beforeName >= 0 && analysis.text[beforeName] === '.') {
+      const receiver = typeAt(analysis, beforeName - 1);
+      const typeName = receiver === undefined ? undefined : nameOfTy(receiver.ty);
+      const methods = stdMethodSignatures();
+      if (typeName !== undefined) {
+        const own = methods.get(typeName + '.' + name);
+        if (own !== undefined) return own;
+      }
+      return methods.get('*.' + name);
+    }
+    return stdSignatures().get(name) ?? this.declaredTy(analysis, name);
+  }
+
+  /** The type of a function the document itself declares, from its annotation. */
+  private declaredTy(analysis: Analysis, name: string): Ty | undefined {
+    for (const { expr, ty } of analysis.types) {
+      if (expr.kind === 'Ident' && expr.name === name && ty.k === 'fn') return ty;
+    }
+    return undefined;
+  }
+
   // ---------------------------------------------------------- formatting
 
   private formatting(params: Record<string, unknown>): unknown {
@@ -411,6 +604,51 @@ export class Server {
 }
 
 // ------------------------------------------------------------- helpers
+
+/**
+ * The innermost `(` still open before `offset`, and which argument follows it.
+ *
+ * Scanned backwards over the raw text, skipping balanced brackets and the
+ * insides of strings, because the document does not parse while a call is
+ * being typed. Counting commas at depth zero gives the argument the cursor is
+ * on — which is the whole question signature help answers.
+ */
+function openCallBefore(text: string, offset: number): { at: number; argument: number } | undefined {
+  let depth = 0;
+  let argument = 0;
+  for (let i = Math.min(offset, text.length) - 1; i >= 0; i -= 1) {
+    const c = text[i];
+    if (c === '"') {
+      // Walk back out of the string. An unescaped quote ends it; `\"` does not.
+      i -= 1;
+      while (i >= 0 && !(text[i] === '"' && text[i - 1] !== '\\')) i -= 1;
+      continue;
+    }
+    if (c === ')' || c === ']' || c === '}') depth += 1;
+    else if (c === '[' || c === '{') {
+      if (depth === 0) return undefined; // a list or map, not a call
+      depth -= 1;
+    } else if (c === '(') {
+      if (depth === 0) return { at: i, argument };
+      depth -= 1;
+    } else if (c === ',' && depth === 0) argument += 1;
+    else if (c === '\n' && depth === 0) {
+      // A newline at depth zero ends a statement in Lumen, so there is no call
+      // open across it and scanning further back would find somebody else's.
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+/** The identifier immediately before `at`, if there is one. */
+function nameBefore(text: string, at: number): string | undefined {
+  let end = at;
+  while (end > 0 && /\s/.test(text[end - 1] ?? '')) end -= 1;
+  let start = end;
+  while (start > 0 && /[A-Za-z0-9_]/.test(text[start - 1] ?? '')) start -= 1;
+  return start === end ? undefined : text.slice(start, end);
+}
 
 /** Where the `.` is when the cursor is just after one, ignoring a part-typed name. */
 function dotBefore(text: string, offset: number): number | undefined {

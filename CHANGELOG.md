@@ -28,6 +28,31 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
 
 ### Added
 
+- **The language server gained find-references, rename, document highlight and
+  signature help.** All four work by **identity** rather than by name: the
+  resolver says where each use was declared, so the set is exactly the uses
+  that resolve to the same binding. Two different `x` in two different scopes
+  are two different bindings, and a rename that changed both would be a rename
+  that broke the program — which is precisely what a name-matching
+  implementation does, silently.
+
+  Signature help is the feature the typed standard library most obviously
+  buys: `"7".padStart(` is a question that had no answer at all before, and now
+  gets `padStart(width: Num, fill: Str = ...) -> Str` with the current
+  parameter marked. It repairs the document first, like completion, because a
+  call is asked about while it is being typed and therefore has no closing
+  bracket yet.
+
+  A rename to something that is not a name is declined rather than performed:
+  an editor sends whatever the person typed, and silently producing a file that
+  does not parse is worse than saying no.
+
+- **A declaration's name has a span of its own.** `RS004` used to draw a caret
+  under the whole of `let total = 2` to say that `total` was declared twice,
+  which points at everything except the part that is wrong. It now underlines
+  the name — and that span is what made rename possible, since replacing the
+  declaration's span would have replaced the declaration.
+
 - **`std/path`** — paths as text, with **one separator** everywhere. A path is
   written with `/` and read with either, so a Windows path pasted into a
   program works and a path this module produces looks the same on every

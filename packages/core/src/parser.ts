@@ -476,6 +476,7 @@ export class Parser {
     return {
       kind: 'LetDecl',
       name: name.text,
+      nameSpan: name.span,
       mutable,
       type,
       value,
@@ -494,7 +495,15 @@ export class Parser {
     }
     this.skipNewlines();
     const body = this.parseBlock();
-    return { kind: 'FnDecl', name: name.text, params, ret, body, span: this.spanFrom(start) };
+    return {
+      kind: 'FnDecl',
+      name: name.text,
+      nameSpan: name.span,
+      params,
+      ret,
+      body,
+      span: this.spanFrom(start),
+    };
   }
 
   private parseParamList(): Param[] {
@@ -540,6 +549,7 @@ export class Parser {
 
         params.push({
           name: pStart.text,
+          nameSpan: pStart.span,
           type,
           defaultValue,
           rest,
@@ -575,7 +585,13 @@ export class Parser {
       this.skipNewlines();
     });
     this.expect('}', 'to close the struct body');
-    return { kind: 'StructDecl', name: name.text, fields, span: this.spanFrom(start) };
+    return {
+      kind: 'StructDecl',
+      name: name.text,
+      nameSpan: name.span,
+      fields,
+      span: this.spanFrom(start),
+    };
   }
 
   private parseEnum(): Stmt {
@@ -607,7 +623,13 @@ export class Parser {
       this.skipNewlines();
     });
     this.expect('}', 'to close the enum body');
-    return { kind: 'EnumDecl', name: name.text, variants, span: this.spanFrom(start) };
+    return {
+      kind: 'EnumDecl',
+      name: name.text,
+      nameSpan: name.span,
+      variants,
+      span: this.spanFrom(start),
+    };
   }
 
   private parseReturn(): Stmt {

@@ -1,7 +1,7 @@
 error[RS004]: `total` is already declared in this scope
- --> duplicate-declaration.lm:2:1
+ --> duplicate-declaration.lm:2:5
   |
 2 | let total = 2
-  | ^^^^^^^^^^^^^ declared twice
+  |     ^^^^^ declared twice
   |
   = note: the earlier one is on line 1

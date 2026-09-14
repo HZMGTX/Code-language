@@ -1,7 +1,7 @@
 # Lumen for Visual Studio Code
 
-Diagnostics, hover, completion, go to definition, and formatting — everything
-`lumen lsp` provides.
+Diagnostics, hover, completion, signature help, go to definition, find
+references, rename, and formatting — everything `lumen lsp` provides.
 
 ## Installing it
 
