@@ -124,6 +124,11 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   which one is not something a reader could predict. `rows` gives the raw grid
   for a caller who knows better.
 
+  A **blank line** is the exception and is skipped: it is no data rather than
+  misaligned data, and rejecting it was a rule that was right on paper and
+  wrong on every file anybody actually has. Found by writing
+  `examples/report.lm` against it.
+
   CSV has one type and it is text, so a `Num` written and read back is a `Str`.
   That is the format being honest rather than this module guessing which
   columns were numbers.
@@ -205,6 +210,18 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   at all. `timedOut` is its own field rather than a status to interpret.
   `which` looks along `PATH` itself, since shelling out to `which` would need
   the shell this module does not have.
+
+- **`examples/report.lm`** — a messy CSV in, a CSV and an HTML page out, which
+  is the shape of most real work. Every awkward part is there on purpose: a
+  comma inside a quoted field, a doubled quote, a field with a newline, `\r\n`
+  endings, a blank line, two rows whose numbers do not parse, and a product
+  called `Tom & Jerry's <Ever>` that has to reach the HTML as a name rather
+  than as markup. Money stays whole pence throughout, because a report that is
+  a penny out is a report nobody trusts.
+
+  It also teaches the lesson its own data forced: the multi-line field is
+  correct and destroys a terminal table, so display collapses it to one line
+  while the CSV written back out keeps the newline.
 
 - **`examples/rename.lm`** — renaming a folder full of files, safely. It plans
   every move before making any, refuses to overwrite, refuses to leave the
