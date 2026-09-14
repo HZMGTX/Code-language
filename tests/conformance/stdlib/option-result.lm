@@ -4,6 +4,7 @@
 // those as a two-armed `match` buries the interesting line in ceremony.
 
 import { map as omap, unwrapOr as ounwrap } from "std/option"
+import { map as rmap, mapErr, unwrapOr as runwrap } from "std/result"
 
 // Every function takes its subject first, so each is also a method.
 print(Some(2).map(fn(n) { n * 10 }))
@@ -37,6 +38,13 @@ print(Ok(2).andThen(fn(n) { Ok(n * 2) }))
 print(Ok(2).andThen(fn(n) { Err("changed mind") }))
 print([Ok(1).ok(), Err("x").ok()])
 print([Ok(1).err(), Err("x").err()])
+
+// And the same three spellings for a Result, through the imported functions
+// rather than the methods — which is how a pipeline reads, and until now was
+// the one import path in the library that nothing exercised at all.
+print(Ok(2) |> rmap(fn(n) { n * 5 }) |> runwrap(0))
+print(Err("gone") |> mapErr(fn(e) { e.upper() }) |> runwrap(0))
+print(rmap(Ok(1), fn(n) { n + 1 }))
 
 // Chaining is the point: this is what the two-armed match was hiding.
 fn lookup(m, key) { m.get(key) }

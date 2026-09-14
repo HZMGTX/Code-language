@@ -14,7 +14,8 @@
  *
  *   - every `examples/*.lm` appears in the README's table, and the table names
  *     nothing that does not exist
- *   - every `std/*` module has a row in the generated stdlib reference
+ *   - every `std/*` module has a row in the generated stdlib reference, and is
+ *     imported by something that runs
  *   - most of the standard library declares a type
  *   - every file that names a version names the same one
  *   - every `RS` and `TY` diagnostic the implementation can emit is named in the
@@ -257,6 +258,40 @@ if (typed / natives < MINIMUM_TYPED) {
     'only ' + typed + ' of ' + natives + ' standard-library functions declare a type (want ' +
       Math.round(MINIMUM_TYPED * 100) + '%)',
   );
+}
+
+// -------------------------------------------- every module is actually run
+
+/**
+ * Every standard module is exercised by something that runs.
+ *
+ * `std/http` shipped with no fixture, no unit test and no example — the only
+ * one — so the client half of "you can build a website with this" had never
+ * once executed. That was found by reading, which is not a method. This is the
+ * check that would have found it.
+ *
+ * A module counts as covered when some `.lm` file or unit test imports it by
+ * name. That is a proxy rather than a proof — importing is not exercising —
+ * but it catches the failure that actually happened, which is a module nobody
+ * ever reached for at all.
+ */
+const exercised = new Set();
+for (const file of [
+  ...collect(path.join(ROOT, 'tests'), '.lm'),
+  ...collect(path.join(ROOT, 'examples'), '.lm'),
+  ...collect(path.join(ROOT, 'bench'), '.lm'),
+  ...collect(path.join(ROOT, 'tests', 'unit'), '.ts'),
+  ...collect(path.join(ROOT, 'docs'), '.md'),
+]) {
+  const text = readFileSync(file, 'utf8');
+  for (const name of STD_MODULES.keys()) {
+    if (text.includes('"' + name + '"')) exercised.add(name);
+  }
+}
+for (const name of STD_MODULES.keys()) {
+  if (!exercised.has(name)) {
+    problems.push(name + ' is never imported by a test, an example or a benchmark');
+  }
 }
 
 // ------------------------------------------------ every module is documented

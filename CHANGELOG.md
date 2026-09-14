@@ -53,6 +53,13 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   the name — and that span is what made rename possible, since replacing the
   declaration's span would have replaced the declaration.
 
+- **Every standard module is checked for being exercised by something that
+  runs.** `std/http` shipped with no fixture, no unit test and no example — the
+  only one — so the client half of "you can build a website with this" had
+  never once executed. That was found by reading, which is not a method. The
+  check found `std/result` on its first run: its functions were well covered as
+  methods, and the import path had never been run at all.
+
 - **`std/csv`** — comma-separated values, as they actually arrive. Quoted
   fields containing the delimiter, a newline or a doubled quote; `\r\n` and
   `\n` mixed in one file; a delimiter that is not a comma. Reading and writing
