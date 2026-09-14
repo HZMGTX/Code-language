@@ -1,0 +1,23 @@
+error[TY001]: `log` expects Str for `parts` but was given Num
+ --> variadic-types.lm:8:12
+  |
+8 | log("bad", 1, 2, 3)
+  |            ^ expected Str
+  |
+  = note: the parameter is declared as `parts: Str`
+
+error[TY001]: `log` expects Str for `parts` but was given Num
+ --> variadic-types.lm:8:15
+  |
+8 | log("bad", 1, 2, 3)
+  |               ^ expected Str
+  |
+  = note: the parameter is declared as `parts: Str`
+
+error[TY001]: `log` expects Str for `parts` but was given Num
+ --> variadic-types.lm:8:18
+  |
+8 | log("bad", 1, 2, 3)
+  |                  ^ expected Str
+  |
+  = note: the parameter is declared as `parts: Str`

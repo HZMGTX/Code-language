@@ -33,6 +33,45 @@ async function run(args: readonly string[]): Promise<{ code: number; out: string
 }
 
 /**
+ * `exit(n)` really stops the process, with `n` as its status.
+ *
+ * It now goes through `Host.exit` rather than calling `process.exit()` from
+ * inside the standard library, which is the change this pins: the CLI's host
+ * supplies one, so the observable behaviour must be exactly what it was. Only
+ * the real binary can show an exit status, so this is where it is checked.
+ */
+describe('exit', () => {
+  const script = (body: string): { dir: string; file: string } => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'lumen-exit-'));
+    const file = path.join(dir, 'a.lm');
+    writeFileSync(file, body, 'utf8');
+    return { dir, file };
+  };
+
+  it('stops with the status it was given, without running what follows', async () => {
+    const { dir, file } = script(
+      'import { exit } from "std/core"\nprint("before")\nexit(3)\nprint("after")\n',
+    );
+    try {
+      const { code, out } = await run([file]);
+      assert.equal(code, 3);
+      assert.equal(out, 'before\n');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('defaults to a status of zero', async () => {
+    const { dir, file } = script('import { exit } from "std/core"\nexit()\n');
+    try {
+      assert.equal((await run([file])).code, 0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+/**
  * `args()` has to mean the same thing whichever way the program was started.
  *
  * It did not: it was `process.argv.slice(3)`, which is one word further along

@@ -14,7 +14,6 @@ export {
   LumenError,
   formatDiagnostic,
   joinSpans,
-  pointSpan,
   pos,
   span,
   type Diagnostic,

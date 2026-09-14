@@ -92,8 +92,25 @@ export function stdCore(): Map<string, Value> {
      */
     fn('args', [], (_a, c) => list((c.host.args?.() ?? []).map((value) => str(value)))),
 
+    /**
+     * Stop the program.
+     *
+     * Through the host, like everything else here. This was the one function in
+     * the standard library that reached for a Node API directly — a bare
+     * `process.exit()` — which made it the one thing that could not work in a
+     * browser or a worker, and the one way an embedding could have the program
+     * it was running take the whole process down with it.
+     */
     fn('exit', [{ name: 'code', defaultValue: num(0) }], (a, c) => {
-      process.exit(expectNum(arg(a, 0), c, 'exit code'));
+      const code = expectNum(arg(a, 0), c, 'exit code');
+      if (c.host.exit === undefined) {
+        return c.panic('exit() is not available here', [
+          'this host cannot stop the program; return from `main` instead',
+        ]);
+      }
+      c.host.exit(code);
+      // Only reached by a host that chose to keep going.
+      return NIL;
     }),
 
     fn('sleep', ['milliseconds'], async (a, c) => {

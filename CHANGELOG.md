@@ -9,6 +9,25 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
 
 ### Language
 
+- **`x |> f(a)` is type-checked.** §4.7 says `x.f(a)`, `f(x, a)` and `x |> f(a)`
+  are one expression; the checker used to agree about two of them. The pipeline
+  arm typed both halves, discarded the result and answered `Any`, so the one
+  spelling the language calls interchangeable with the others was the one
+  nothing checked. Both spellings go through the same code now, which is the
+  only way they can be guaranteed to stay in step, and a pipeline's value has
+  the function's return type rather than `Any`.
+
+- **A rest parameter's declared type applies to every argument it collects.**
+  `fn log(..parts: Str)` called as `log(1, 2, 3)` reported the `1` and said
+  nothing about the rest: the parameter walk stepped past the rest parameter
+  after one match and paired everything after it with nothing. A rest parameter
+  is also correctly optional now — `log()` is a legal call of it.
+
+- **A `fn(...)` annotation's parameters have no names**, rather than the
+  invented `p0`, `p1` they used to carry. A call writing `f(p0: 1)` could match
+  one by accident, and a diagnostic about one named a parameter nobody had
+  written. They pair positionally, and a diagnostic says "argument 1".
+
 - **`**` raises to a power.** `2 ** 10` is `1024`. It binds tighter than `*` and
   is the only right-associative binary operator, so `2 ** 3 ** 2` is
   `2 ** (3 ** 2)` — 512, which is what the notation means in mathematics and in
@@ -60,6 +79,21 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
 
 ### Static checks
 
+- **`RS009` and `RS010`: an import that names something that is not there.**
+  `import { nope } from "std/list"` and `import { map } from "std/lst"` used to
+  pass every static check and fail at run time, which made a mistyped import the
+  one typo `lumen check` could not see.
+
+  The checker still cannot *read* a module — `packages/core` depends on nothing,
+  which is the rule the whole project rests on — so it is told instead, through
+  `ResolveOptions.moduleExports`. That option had been declared and documented
+  since the resolver was written, and read nowhere.
+
+  A caller also names the namespaces it knows the whole of, so `std/lst` is a
+  typo while `./helper` is a file nobody has read and stays trusted. That is the
+  same no-false-positives rule as every other check here, and `RT002` and
+  `RT042` still answer for a local module at run time.
+
 - **`TY005`: an operator whose operands cannot be what they are.** `fn f(a: Num)
   { a + "x" }` passed every check and failed when it ran. The checker had both
   types in hand and threw them away, because the `Binary` case only asked whether
@@ -107,6 +141,28 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   `examples/schedule.lm` and wondering why its output was duplicated.
 
 ### Fixed
+
+- **`parseExpression` threw an internal exception.** It was the one entry point
+  that did not catch the parser's own unwinding signal, so a bad expression
+  escaped as a `ParseAbort` instead of the `LumenError` its signature promises,
+  and a caller had no way to render it. It also had no test and a docstring
+  claiming the REPL used it, which is how that went unnoticed for so long.
+
+- **`exit()` went around the host.** It called `process.exit()` from inside the
+  standard library — the one place a Node API was reached for directly rather
+  than through `Host`, and so the one thing that could not work in a browser or
+  a worker, or in an embedding that would rather not have the program it runs
+  take the whole process down. It is `Host.exit` now, optional like `readLine`:
+  a host without one gets a plain "not available here" rather than a surprise.
+
+- **A conformance fixture could not import a file beside it.** Fixtures are
+  parsed under their bare name so goldens read `thing.lm:3:1` on every machine,
+  which also meant a relative import resolved against the working directory.
+  `createNodeResolver` now takes the directory to resolve from and reports
+  imported files relative to it, so a diagnostic raised *inside* an imported
+  module is both correctly located and machine-independent.
+
+- **`pointSpan` is gone**, exported and unused since the day it was written.
 
 - **`:ast` in the REPL printed raw JSON where `lumen ast` printed a tree.** Two
   renderings of one structure, and the worse one in the place you reach for it
@@ -356,6 +412,18 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   `std/http` names the failing request instead of only "fetch failed".
 
 ### Added
+
+- **`std/http` has executable coverage**, for the first time: it was the only
+  standard module with no fixture, no unit test and no example, so the client
+  half of "you can build a website with this" had never once run. A Lumen server
+  using `std/web` and a Lumen client using `std/http`, over a real socket, with
+  nothing stubbed.
+
+- **A pass's header comment is checked against what it emits.** Both had
+  drifted — `resolver.ts` listed RS001–RS007 while emitting RS008, `types.ts`
+  listed TY001–TY004 while emitting TY005 and TY006 — and the check added for
+  exactly this could not see it, because a code can be in the specification and
+  still missing from the file that raises it.
 
 - **Five methods on every value: `str`, `inspect`, `type`, `clone`, `isNil`.**
   Their subject is genuinely any value, so there was no type to attach them to

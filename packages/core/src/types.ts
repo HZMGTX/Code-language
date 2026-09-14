@@ -22,9 +22,12 @@
  *   TY002  returned value does not match the declared return type
  *   TY003  initialiser does not match the declared type of a binding
  *   TY004  struct literal field does not match the field's declared type
+ *   TY005  an operator's operands cannot be the types they are
+ *   TY006  a value assigned to an annotated binding does not match it
  */
 
 import type {
+  Arg,
   BinaryOp,
   Block,
   Expr,
@@ -50,11 +53,27 @@ export type Ty =
   | { readonly k: 'enum'; readonly name: string }
   | { readonly k: 'fn'; readonly params: readonly ParamTy[]; readonly ret: Ty };
 
-interface ParamTy {
-  readonly name: string;
+export interface ParamTy {
+  /**
+   * Undefined when the parameter has no name to speak of.
+   *
+   * A `fn(Num) -> Num` annotation says nothing about what its parameter is
+   * called, and inventing one — they used to be `p0`, `p1` — meant a call
+   * writing `f(p0: 1)` matched it by accident, and a diagnostic about it named
+   * a parameter nobody had written. Unnamed parameters pair positionally only.
+   */
+  readonly name: string | undefined;
   readonly ty: Ty;
   /** A parameter with a default may be omitted. */
   readonly optional: boolean;
+  /**
+   * `..parts` — collects every remaining positional argument.
+   *
+   * It keeps collecting, which is the point: `fn log(..parts: Str)` called as
+   * `log(1, 2)` used to report only the `1`, because the walk moved past the
+   * parameter after one argument and then paired `2` with nothing.
+   */
+  readonly rest: boolean;
 }
 
 const ANY: Ty = { k: 'any' };
@@ -287,7 +306,12 @@ class Checker {
     if (annotation.kind === 'TypeFn') {
       return {
         k: 'fn',
-        params: annotation.params.map((p, i) => ({ name: 'p' + i, ty: this.toTy(p), optional: false })),
+        params: annotation.params.map((p) => ({
+          name: undefined,
+          ty: this.toTy(p),
+          optional: false,
+          rest: false,
+        })),
         ret: this.toTy(annotation.ret),
       };
     }
@@ -319,7 +343,10 @@ class Checker {
       params: params.map((p) => ({
         name: p.name,
         ty: this.toTy(p.type),
-        optional: p.defaultValue !== undefined,
+        // A rest parameter can always be left out entirely: `log()` is a legal
+        // call of `fn log(..parts)`.
+        optional: p.defaultValue !== undefined || p.rest,
+        rest: p.rest,
       })),
       ret: this.toTy(ret),
     };
@@ -596,9 +623,7 @@ class Checker {
         return this.call(expr);
 
       case 'PipelineExpr':
-        this.typeOf(expr.left);
-        this.typeOf(expr.right);
-        return ANY;
+        return this.pipeline(expr);
 
       case 'IndexExpr': {
         const target = this.typeOf(expr.target);
@@ -717,35 +742,97 @@ class Checker {
   }
 
   private call(expr: Extract<Expr, { kind: 'CallExpr' }>): Ty {
-    const callee = this.typeOf(expr.callee);
-    for (const arg of expr.args) this.typeOf(arg.value);
+    return this.checkCall(this.typeOf(expr.callee), calleeName(expr.callee), this.argTys(expr.args));
+  }
+
+  /**
+   * `x |> f(a)`, which §4.7 says is the same expression as `f(x, a)`.
+   *
+   * It used to type both halves and answer `Any`, so the one spelling of a call
+   * the language calls interchangeable with the other two was the one nothing
+   * checked. Everything below is shared with `call`, which is the only way the
+   * three spellings can be guaranteed to agree.
+   */
+  private pipeline(expr: Extract<Expr, { kind: 'PipelineExpr' }>): Ty {
+    const piped: ArgTy = {
+      name: undefined,
+      ty: this.typeOf(expr.left),
+      span: expr.left.span,
+    };
+    if (expr.right.kind === 'CallExpr') {
+      const callee = this.typeOf(expr.right.callee);
+      return this.checkCall(callee, calleeName(expr.right.callee), [
+        piped,
+        ...this.argTys(expr.right.args),
+      ]);
+    }
+    return this.checkCall(this.typeOf(expr.right), calleeName(expr.right), [piped]);
+  }
+
+  /** Every argument typed once, in source order, whatever the call's spelling. */
+  private argTys(args: readonly Arg[]): readonly ArgTy[] {
+    return args.map((arg) => ({
+      name: arg.name,
+      ty: this.typeOf(arg.value),
+      span: arg.value.span,
+    }));
+  }
+
+  /**
+   * Arguments against parameters, for every spelling of a call.
+   *
+   * Positional arguments fill parameters in order; named ones by name. The
+   * resolver and interpreter already report arity and naming problems, so this
+   * pass only compares the types of arguments it can pair up.
+   */
+  private checkCall(callee: Ty, fnName: string, args: readonly ArgTy[]): Ty {
     if (callee.k !== 'fn') return ANY;
 
-    // Positional arguments fill parameters in order; named ones by name. The
-    // resolver and interpreter already report arity and naming problems, so
-    // this pass only compares the types of arguments it can pair up.
     let next = 0;
-    const fnName = expr.callee.kind === 'Ident' ? expr.callee.name : 'this function';
-    for (const arg of expr.args) {
-      const param =
-        arg.name === undefined
-          ? callee.params[next++]
-          : callee.params.find((p) => p.name === arg.name);
-      if (param === undefined) continue;
-      const actual = this.typeOf(arg.value);
-      if (!accepts(param.ty, actual)) {
-        this.report(
-          'TY001',
-          '`' + fnName + '` expects ' + showTy(param.ty) + ' for `' + param.name +
-            '` but was given ' + showTy(actual),
-          arg.value.span,
-          'expected ' + showTy(param.ty),
-          ['the parameter is declared as `' + param.name + ': ' + showTy(param.ty) + '`'],
-        );
+    for (const arg of args) {
+      let param: ParamTy | undefined;
+      if (arg.name === undefined) {
+        param = callee.params[next];
+        // A rest parameter collects everything after it, so the walk stays on
+        // it rather than stepping past and leaving the remainder unpaired.
+        if (param?.rest !== true) next += 1;
+      } else {
+        param = callee.params.find((p) => p.name !== undefined && p.name === arg.name);
       }
+      if (param === undefined) continue;
+      if (accepts(param.ty, arg.ty)) continue;
+
+      const described =
+        param.name === undefined
+          ? 'argument ' + String(args.indexOf(arg) + 1)
+          : '`' + param.name + '`';
+      this.report(
+        'TY001',
+        '`' + fnName + '` expects ' + showTy(param.ty) + ' for ' + described +
+          ' but was given ' + showTy(arg.ty),
+        arg.span,
+        'expected ' + showTy(param.ty),
+        param.name === undefined
+          ? ['the parameter is declared as `' + showTy(param.ty) + '`']
+          : ['the parameter is declared as `' + param.name + ': ' + showTy(param.ty) + '`'],
+      );
     }
     return callee.ret;
   }
+}
+
+/** One argument as `checkCall` sees it: what it is called, what it is, where it is. */
+interface ArgTy {
+  readonly name: string | undefined;
+  readonly ty: Ty;
+  readonly span: Span;
+}
+
+/** What to call the thing being called, in a diagnostic. */
+function calleeName(callee: Expr): string {
+  if (callee.kind === 'Ident') return callee.name;
+  if (callee.kind === 'MemberExpr') return callee.name;
+  return 'this function';
 }
 
 /** Type-check a module. An empty result means nothing conflicted. */

@@ -10,7 +10,7 @@ import { promises as fsp } from 'node:fs';
 import * as path from 'node:path';
 
 import { LumenError, checkModule, parse, type Host } from '@lumen-lang/core';
-import { createInterpreter } from '@lumen-lang/stdlib';
+import { createInterpreter, createNodeResolver, stdModuleExports } from '@lumen-lang/stdlib';
 
 /** The environment every fixture sees. `mock` keeps `std/ai` offline. */
 const FIXED_ENV: Readonly<Record<string, string>> = {
@@ -49,8 +49,9 @@ export async function runSource(
   source: string,
   fileName = 'fixture.lm',
   stdin: readonly string[] = [],
+  baseDir?: string,
 ): Promise<RunResult> {
-  return await execute(source, fileName, stdin, true);
+  return await execute(source, fileName, stdin, true, baseDir);
 }
 
 /**
@@ -76,16 +77,26 @@ async function execute(
   fileName: string,
   stdin: readonly string[],
   check: boolean,
+  baseDir?: string,
 ): Promise<RunResult> {
   let output = '';
   const host = makeHost((text) => {
     output += text;
   }, stdin);
-  const interpreter = createInterpreter({ host });
+  const interpreter = createInterpreter({
+    host,
+    ...(baseDir === undefined ? {} : { resolver: createNodeResolver({ base: baseDir }) }),
+  });
 
   try {
     const module = parse(source, fileName);
-    if (check) checkModule(module, source, { globals: interpreter.globals.ownNames() });
+    if (check) {
+      checkModule(module, source, {
+        globals: interpreter.globals.ownNames(),
+        moduleExports: stdModuleExports(),
+        closedPrefixes: ['std/'],
+      });
+    }
     await interpreter.runModule(module, source);
     return { output, failed: false };
   } catch (error) {
@@ -97,10 +108,16 @@ async function execute(
   }
 }
 
-/** Run a `.lm` fixture from disk. */
+/**
+ * Run a `.lm` fixture from disk.
+ *
+ * Parsed under its bare name so a golden file reads `thing.lm:3:1` and is the
+ * same on every machine, but resolved from its real directory, so a fixture may
+ * import a helper beside it.
+ */
 export async function runFixture(file: string): Promise<RunResult> {
   const source = await fsp.readFile(file, 'utf8');
-  return await runSource(source, path.basename(file));
+  return await runSource(source, path.basename(file), [], path.dirname(file));
 }
 
 /** Every `.lm` file under `root`, depth-first and sorted, for stable ordering. */

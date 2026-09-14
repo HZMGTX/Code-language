@@ -3,8 +3,8 @@
 import { promises as fsp } from 'node:fs';
 import * as path from 'node:path';
 
-import { Interpreter, LumenError } from '@lumen-lang/core';
-import { createInterpreter } from '@lumen-lang/stdlib';
+import { Interpreter, LumenError, type ResolveOptions } from '@lumen-lang/core';
+import { createInterpreter, stdModuleExports } from '@lumen-lang/stdlib';
 
 export const VERSION = '0.1.0';
 
@@ -33,6 +33,27 @@ export function newInterpreter(): Interpreter {
   // The factory installs the prelude and the method tables, so the CLI, the
   // REPL and the tests all agree on what is in scope.
   return createInterpreter({ args: programArgs });
+}
+
+/**
+ * Everything `checkModule` needs to know about the world outside the file.
+ *
+ * In one place because four commands call it — `run`, `check`, `test` and the
+ * REPL — and a check one of them performs and another skips is a program that
+ * passes `lumen check` and fails `lumen run`, which is the worst kind of
+ * disagreement to ship.
+ *
+ * `globals` differs between them (the REPL's scope grows as you type), so it is
+ * the parameter; what modules exist never does.
+ */
+export function checkOptions(globals: readonly string[]): ResolveOptions {
+  return {
+    globals,
+    moduleExports: stdModuleExports(),
+    // Everything under `std/` is accounted for, so a path there that is not in
+    // the map is a typo. A local `./helper.lm` is not, and stays trusted.
+    closedPrefixes: ['std/'],
+  };
 }
 
 /**

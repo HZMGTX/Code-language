@@ -1,0 +1,31 @@
+error[TY001]: `double` expects Num for `n` but was given Str
+  --> pipeline-types.lm:10:7
+   |
+10 | print("text" |> double())
+   |       ^^^^^^ expected Num
+   |
+   = note: the parameter is declared as `n: Num`
+
+error[TY001]: `add` expects Num for `b` but was given Str
+  --> pipeline-types.lm:13:16
+   |
+13 | print(3 |> add("text"))
+   |                ^^^^^^ expected Num
+   |
+   = note: the parameter is declared as `b: Num`
+
+error[TY001]: `double` expects Num for `n` but was given Str
+  --> pipeline-types.lm:16:7
+   |
+16 | print("text" |> double)
+   |       ^^^^^^ expected Num
+   |
+   = note: the parameter is declared as `n: Num`
+
+error[TY001]: `wants` expects Str for `s` but was given Num
+  --> pipeline-types.lm:20:13
+   |
+20 | print(wants(3 |> double()))
+   |             ^^^^^^^^^^^^^ expected Str
+   |
+   = note: the parameter is declared as `s: Str`

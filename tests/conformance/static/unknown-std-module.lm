@@ -1,0 +1,7 @@
+// `std/` is a namespace the checker is told the whole of, so a path into it
+// that does not exist is a typo rather than a file it has not read yet.
+//
+// Compare `errors/unknown-module.lm`, where the path is not under `std/` and so
+// could be a local file: there the checker stays quiet and the interpreter
+// answers.
+import { map } from "std/lst"

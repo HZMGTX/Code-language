@@ -1,0 +1,7 @@
+5
+error[RT018]: division by zero
+ --> helpers/greet.lm:8:25
+  |
+8 | export fn half(n, by) { n / by }
+  |                         ^^^^^^ the right operand is 0
+  |

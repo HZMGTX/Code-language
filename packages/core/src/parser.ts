@@ -323,19 +323,55 @@ export class Parser {
     return { kind: 'Module', file: this.file, stmts, span: this.spanFrom(first) };
   }
 
-  /** Parse exactly one expression — used for the REPL and for interpolations. */
+  /**
+   * Parse exactly one expression, and nothing after it.
+   *
+   * Used for the text inside an interpolation, and by `parseExpression` for a
+   * host that wants a single expression.
+   *
+   * `fail` unwinds with a `ParseAbort`, which every other entry point catches —
+   * `parseModule` catches it to recover onto the next statement. This one did
+   * not, so a bad expression escaped as an internal exception instead of the
+   * `LumenError` the signature promises, and a caller had no way to render it.
+   * There is nothing to recover *onto* here, so the catch is bare: collect the
+   * diagnostic and let `finish` raise it properly.
+   */
   parseExpressionEntry(): Expr {
-    this.skipNewlines();
-    const expr = this.parseExpr();
-    this.skipNewlines();
-    if (!this.at('eof')) {
-      this.fail(
-        'PA002',
-        'unexpected ' + describeToken(this.cur()) + ' after expression',
-        'not part of the expression',
-      );
+    let expr: Expr | undefined;
+    try {
+      this.skipNewlines();
+      expr = this.parseExpr();
+      this.skipNewlines();
+      if (!this.at('eof')) {
+        this.fail(
+          'PA002',
+          'unexpected ' + describeToken(this.cur()) + ' after expression',
+          'not part of the expression',
+        );
+      }
+    } catch (err) {
+      if (!(err instanceof ParseAbort)) throw err;
     }
     this.finish();
+    if (expr === undefined) {
+      // `finish` raises whenever a diagnostic was recorded, and `fail` always
+      // records one before aborting, so this is unreachable — but an entry
+      // point that can return `undefined` typed as `Expr` is worse than a
+      // check that never fires.
+      throw new LumenError(
+        [
+          {
+            severity: 'error',
+            code: 'PA002',
+            message: 'expected an expression',
+            span: this.cur().span,
+            label: 'nothing to parse',
+          },
+        ],
+        this.file,
+        this.source,
+      );
+    }
     return expr;
   }
 
@@ -1477,7 +1513,15 @@ export function parse(source: string, file = '<input>'): Module {
   return new Parser(tokens, file, source).parseModule();
 }
 
-/** Parse a single expression — used by the REPL. */
+/**
+ * Parse exactly one expression, rejecting anything after it.
+ *
+ * Part of the embedding surface rather than of the pipeline: the REPL parses
+ * whole statements, like everything else that runs a program. This is for a
+ * host that wants one expression and no more — a watch window, a `--eval` flag,
+ * a language server asked about a selection. Its docstring used to claim the
+ * REPL used it, which was how it went unnoticed that nothing did.
+ */
 export function parseExpression(source: string, file = '<input>'): Expr {
   const tokens = lex(source, file);
   return new Parser(tokens, file, source).parseExpressionEntry();

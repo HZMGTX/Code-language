@@ -670,6 +670,8 @@ program uses can be resolved without running it.
 | `RS006` | `break` or `continue` appears outside a loop |
 | `RS007` | A struct field or enum variant is declared twice |
 | `RS008` | `main()` called at the top level of a module that defines `main` |
+| `RS009` | An `import` names something a known module does not export |
+| `RS010` | An `import` names a module that does not exist |
 
 The value is that a mistake is reported whether or not execution reaches it: a
 typo on a branch that never runs is still a typo.
@@ -699,6 +701,14 @@ valid program:
   well runs the whole program twice. Nothing raises — the output simply appears
   twice — and putting the call at the bottom is exactly how it is done in
   Python, so this is a mistake worth catching rather than leaving to be noticed.
+
+- **An import is checked only against a module whose exports are known.** The
+  resolver is *told* what a module exports; it cannot read one. A standard
+  module is always known, so `import { nope } from "std/list"` is `RS009` and
+  `import { map } from "std/lst"` is `RS010`. A local file is not — reporting
+  `./helper` unread would be a guess — so an import from one is trusted, and
+  `RT002` and `RT042` answer at run time instead. An implementation decides
+  which namespaces it knows the whole of; `std/` is always one of them.
 
 `_` may be re-declared freely; it is the conventional throwaway name. Shadowing
 an outer binding in an inner scope is not an error, and never will be.

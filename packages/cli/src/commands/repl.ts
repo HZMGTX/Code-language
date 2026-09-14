@@ -22,7 +22,7 @@ import {
 } from '@lumen-lang/core';
 import { STD_MODULE_NAMES } from '@lumen-lang/stdlib';
 import { renderNode } from './inspect.js';
-import { VERSION, newInterpreter, useColor } from '../support.js';
+import { VERSION, checkOptions, newInterpreter, useColor } from '../support.js';
 
 /** Operators that cannot legally end an input. */
 const DANGLING: readonly string[] = [
@@ -99,7 +99,7 @@ export async function startRepl(): Promise<void> {
     try {
       const module = parse(source, '<repl>');
       // Everything bound in the session so far counts as already in scope.
-      checkModule(module, source, { globals: scope.visibleNames() });
+      checkModule(module, source, checkOptions(scope.visibleNames()));
       const value = await interpreter.runStatements(module.stmts, scope, currentUnit);
       if (value.k !== 'nil') process.stdout.write(inspect(value) + '\n');
     } catch (error) {

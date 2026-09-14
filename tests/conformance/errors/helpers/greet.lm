@@ -1,0 +1,8 @@
+// Imported by `../local-missing-export.lm`. Deliberately does not export `nope`.
+//
+// A module that only exports produces no output when run on its own, which is
+// what its golden file says.
+export fn greet(name) { "Hello, ${name}" }
+
+// Used by `../error-in-import.lm` to raise a fault inside an imported module.
+export fn half(n, by) { n / by }

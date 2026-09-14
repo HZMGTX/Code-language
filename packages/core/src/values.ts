@@ -484,6 +484,19 @@ export interface Host {
    * simply omits it, and `input()` reports that rather than hanging.
    */
   readLine?(prompt: string): Promise<string | undefined>;
+  /**
+   * Stop the program with an exit status.
+   *
+   * `exit()` used to call `process.exit()` from inside the standard library,
+   * which was the one place a Node API was reached for directly rather than
+   * through the host — and so the one thing that would not work in a browser,
+   * a worker or an embedding that wants to survive the program it is running.
+   *
+   * Optional, because not every host can stop. One that omits it makes `exit()`
+   * fail the way `input()` does without a console — saying so plainly beats
+   * pretending. A host that implements it is not expected to return.
+   */
+  exit?(code: number): never | void;
 }
 
 // ------------------------------------------------------------------ helpers

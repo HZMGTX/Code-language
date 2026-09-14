@@ -19,6 +19,17 @@ export interface Span {
   readonly end: Pos;
 }
 
+/**
+ * How loud a diagnostic is.
+ *
+ * Only `'error'` is ever produced today: every static check in this language
+ * either rejects a program or says nothing, because a check that is merely
+ * advisory trains people to ignore the output. `'warning'` exists for the
+ * unused-binding check the roadmap wants, which is the first thing that should
+ * be reported without failing the build, and the renderer already knows to draw
+ * it yellow — see the `renders a warning` test, which is what keeps that branch
+ * honest until something emits one.
+ */
 export type Severity = 'error' | 'warning';
 
 /** An extra line of explanation attached to a diagnostic, optionally located. */
@@ -44,11 +55,6 @@ export function pos(offset: number, line: number, col: number): Pos {
 
 export function span(start: Pos, end: Pos): Span {
   return { start, end };
-}
-
-/** A zero-width span at `p` — used when the interesting thing is missing. */
-export function pointSpan(p: Pos): Span {
-  return { start: p, end: p };
 }
 
 /** Smallest span covering both inputs. */

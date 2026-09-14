@@ -10,7 +10,7 @@ import { promises as fsp } from 'node:fs';
 import * as path from 'node:path';
 
 import { LumenError, checkModule, parse } from '@lumen-lang/core';
-import { collectFiles, displayPath, newInterpreter, useColor } from '../support.js';
+import { checkOptions, collectFiles, displayPath, newInterpreter, useColor } from '../support.js';
 
 export async function runTests(target: string): Promise<void> {
   const root = path.resolve(target);
@@ -31,7 +31,7 @@ export async function runTests(target: string): Promise<void> {
     try {
       const module = parse(source, file);
       const interpreter = newInterpreter();
-      checkModule(module, source, { globals: interpreter.globals.ownNames() });
+      checkModule(module, source, checkOptions(interpreter.globals.ownNames()));
       await interpreter.runModule(module, source);
       passed += 1;
       process.stdout.write('ok   ' + relative + '\n');

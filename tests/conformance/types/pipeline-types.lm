@@ -1,0 +1,20 @@
+// `x |> f(a)` is the same expression as `f(x, a)` and `x.f(a)` (§4.7), so it has
+// to be checked the same. For a while it was not: the pipeline arm typed both
+// halves and answered `Any`, which made the one spelling the language calls
+// interchangeable with the other two the one nothing checked.
+fn double(n: Num) -> Num { n * 2 }
+fn add(a: Num, b: Num) -> Num { a + b }
+fn wants(s: Str) -> Str { s }
+
+// The piped value is the first argument, so a wrong one is reported at the left.
+print("text" |> double())
+
+// A later argument is reported where it is written.
+print(3 |> add("text"))
+
+// Piping to a bare name is a call with one argument, and checked as one.
+print("text" |> double)
+
+// The result of a pipeline has the function's return type, so it can be wrong
+// in turn.
+print(wants(3 |> double()))

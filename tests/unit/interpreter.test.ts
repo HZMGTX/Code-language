@@ -195,13 +195,32 @@ describe('arithmetic guards', () => {
 });
 
 describe('modules', () => {
+  // Both layers, for the same two mistakes. The checker now catches them before
+  // the program runs, which is the better place — but the specification
+  // promises a host that embeds the interpreter without the static passes is
+  // not left unguarded, and only `runUnchecked` still exercises that.
   it('reports an unknown module', async () => {
-    assert.equal(await code('import { x } from "std/nope"'), 'RT042');
+    assert.equal(await code('import { x } from "std/nope"'), 'RS010');
+    assert.equal(codeOf(await runUnchecked('import { x } from "std/nope"')), 'RT042');
   });
 
   it('reports a missing export with a suggestion', async () => {
     const result = await runSource('import { fliter } from "std/list"');
+    assert.equal(codeOf(result), 'RS009');
     assert.match(result.output, /did you mean `filter`/);
+
+    const running = await runUnchecked('import { fliter } from "std/list"');
+    assert.equal(codeOf(running), 'RT002');
+    assert.match(running.output, /did you mean `filter`/);
+  });
+
+  // The other half of the rule, and the more important one: a module the
+  // checker was not told about is trusted rather than guessed at. `./helper`
+  // could be anything; reporting it would be a false positive, which this file
+  // treats as worse than a missed error.
+  it('says nothing about a local module it has not read', async () => {
+    const result = await runSource('import { anything } from "./nowhere"');
+    assert.equal(codeOf(result), 'RT042');
   });
 });
 
@@ -247,5 +266,24 @@ describe('suggest', () => {
     assert.equal(suggest('symetricDiference', ['symmetricDifference']), 'symmetricDifference');
     // Nine characters different is not a typo however long the name is.
     assert.equal(suggest('completelyunrelated', ['symmetricDifference']), undefined);
+  });
+});
+
+/**
+ * A host that cannot do something says so.
+ *
+ * Everything in `Host` past writing and the clock is optional, because a
+ * browser, a worker or a build step genuinely has no console and no way to stop
+ * the process. The test harness's host is exactly such a host — it deliberately
+ * supplies neither `readLine` nor `exit` — so these run the path an embedding
+ * takes, which nothing else does.
+ */
+describe('an incomplete host', () => {
+  it('reports that it cannot stop the program rather than killing the runner', async () => {
+    const result = await runSource('import { exit } from "std/core"\nprint("first")\nexit(1)');
+    assert.equal(result.failed, true);
+    assert.match(result.output, /^first\n/);
+    assert.match(result.output, /exit\(\) is not available here/);
+    assert.match(result.output, /return from `main` instead/);
   });
 });

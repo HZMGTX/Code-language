@@ -16,7 +16,7 @@
  *     nothing that does not exist
  *   - every `std/*` module has a row in the generated stdlib reference
  *   - every `RS` and `TY` diagnostic the implementation can emit is named in the
- *     specification
+ *     specification, **and** in the header comment of the file that emits it
  *
  * Run it with `--fix` to rewrite the counts rather than only reporting them.
  */
@@ -156,6 +156,31 @@ for (const file of collect(path.join(ROOT, 'packages'), '.ts')) {
 for (const code of [...emitted].sort()) {
   if (!spec.includes('`' + code + '`')) {
     problems.push(code + ' can be emitted but is not named in docs/spec.md');
+  }
+}
+
+// ------------------------------- every static check is in its file's own header
+
+/**
+ * The lists at the top of `resolver.ts` and `types.ts`, against what they emit.
+ *
+ * Those headers are what somebody reads to learn what a pass does, and both had
+ * gone stale: `resolver.ts` listed RS001–RS007 while emitting RS008, and
+ * `types.ts` listed TY001–TY004 while emitting TY005 and TY006. The spec check
+ * above would not have caught either — a code can be in the specification and
+ * missing from the file that raises it.
+ */
+const HEADERED = [
+  ['packages/core/src/resolver.ts', /^RS/],
+  ['packages/core/src/types.ts', /^TY/],
+];
+for (const [relative, family] of HEADERED) {
+  const text = readFileSync(path.join(ROOT, relative), 'utf8');
+  const header = text.slice(0, text.indexOf('*/'));
+  for (const code of [...emitted].filter((c) => family.test(c)).sort()) {
+    if (!header.includes(code)) {
+      problems.push(code + ' is emitted but not listed in the header of ' + relative);
+    }
   }
 }
 

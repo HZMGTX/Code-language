@@ -28,7 +28,7 @@ in [ROADMAP.md](ROADMAP.md); the largest item is that type checking is **gradual
 and shallow**: annotations are enforced where you write them, and a program that
 writes none is never type-checked at all.
 
-- **817 tests**, 118 conformance fixtures, 20 example programs, 14 standard
+- **874 tests**, 128 conformance fixtures, 20 example programs, 14 standard
   modules. `npm run ci` runs all fifteen checks locally, which is how they are
   verified today — GitHub Actions is configured for Node 20/22/24 on Linux, macOS
   and Windows but has never been able to start a run on this repository, so no

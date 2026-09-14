@@ -25,7 +25,7 @@ export { setServeMode } from './web.js';
 // observed from Lumen — a set that got it wrong would just hold two of
 // something without complaining.
 export { setKeyForTesting } from './set.js';
-export { STD_MODULES, STD_MODULE_NAMES } from './modules.js';
+export { STD_MODULES, STD_MODULE_NAMES, stdModuleExports } from './modules.js';
 
 /**
  * A `Host` backed by the Node process: stdout, stderr, env, the clock, and the
@@ -84,6 +84,9 @@ export function createNodeHost(options: { args?: readonly string[] } = {}): Host
     getEnv: (name: string): string | undefined => process.env[name],
     now: (): number => Date.now(),
     args: (): readonly string[] => options.args ?? [],
+    exit: (code: number): never => {
+      process.exit(code);
+    },
     readLine: async (prompt: string): Promise<string | undefined> => {
       const iface = openConsole();
       // At a terminal readline owns the line it is editing, so it has to be
@@ -109,8 +112,14 @@ export function createNodeHost(options: { args?: readonly string[] } = {}): Host
  * Resolve `std/*` to a native module and anything else to a `.lm` file on disk,
  * relative to the importing file. Native modules are instantiated once, so two
  * files importing `std/list` share one instance.
+ *
+ * `base` is where a relative import resolves from when the importing file's own
+ * name is not a path — which is how the test harness runs a fixture, parsing it
+ * under its bare name so diagnostics read `thing.lm:3:1` rather than a machine
+ * path that differs on every checkout. Without it, conformance could not cover
+ * a local import at all.
  */
-export function createNodeResolver(): ModuleResolver {
+export function createNodeResolver(options: { base?: string } = {}): ModuleResolver {
   const instantiated = new Map<string, Map<string, Value>>();
 
   return {
@@ -128,7 +137,7 @@ export function createNodeResolver(): ModuleResolver {
       // Anything that is not a std module is a path to a Lumen source file.
       if (spec.startsWith('std/')) return undefined;
 
-      const base = path.dirname(path.resolve(fromFile));
+      const base = path.dirname(path.resolve(options.base ?? '.', fromFile));
       const candidates = spec.endsWith('.lm')
         ? [path.resolve(base, spec)]
         : [path.resolve(base, spec + '.lm'), path.resolve(base, spec, 'index.lm')];
@@ -136,7 +145,14 @@ export function createNodeResolver(): ModuleResolver {
       for (const candidate of candidates) {
         try {
           const source = await fsp.readFile(candidate, 'utf8');
-          return { key: candidate, file: candidate, source };
+          // The cache key stays absolute — two spellings of one file must not
+          // load it twice. The *reported* name is relative to `base` when there
+          // is one, so a diagnostic raised inside an imported module reads
+          // `helpers/say.lm:8:1` instead of a path that differs per checkout.
+          // Resolving that name again re-bases it, so a chain of imports works.
+          const file =
+            options.base === undefined ? candidate : path.relative(options.base, candidate);
+          return { key: candidate, file, source };
         } catch {
           // Try the next shape.
         }

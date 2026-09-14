@@ -13,7 +13,7 @@ import * as path from 'node:path';
 
 import { LumenError, checkModule, parse } from '@lumen-lang/core';
 
-import { collectFiles, displayPath, newInterpreter, useColor } from '../support.js';
+import { checkOptions, collectFiles, displayPath, newInterpreter, useColor } from '../support.js';
 
 export async function checkFiles(target: string): Promise<void> {
   const root = path.resolve(target);
@@ -26,7 +26,7 @@ export async function checkFiles(target: string): Promise<void> {
 
   const color = useColor();
   // One interpreter for the prelude names; nothing is executed with it.
-  const globals = newInterpreter().globals.ownNames();
+  const options = checkOptions(newInterpreter().globals.ownNames());
 
   let clean = 0;
   let withProblems = 0;
@@ -34,7 +34,7 @@ export async function checkFiles(target: string): Promise<void> {
     const relative = displayPath(file);
     const source = await fsp.readFile(file, 'utf8');
     try {
-      checkModule(parse(source, file), source, { globals });
+      checkModule(parse(source, file), source, options);
       clean += 1;
     } catch (error) {
       withProblems += 1;

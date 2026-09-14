@@ -14,6 +14,9 @@
  *   RS005  assignment to a binding introduced with `let`
  *   RS006  `break` or `continue` outside a loop
  *   RS007  a struct field or enum variant declared twice
+ *   RS008  `main()` written out in a module that already has it called
+ *   RS009  an import of a name a known module does not export
+ *   RS010  an import from a module that does not exist
  *
  * The guiding rule is **no false positives**. A check that rejects a valid
  * program is worse than one that misses an invalid one, so anything the
@@ -27,6 +30,7 @@ import type {
   Block,
   EnumDecl,
   Expr,
+  ImportSpecifier,
   MatchArm,
   Module,
   Param,
@@ -134,13 +138,30 @@ export interface ResolveOptions {
   /**
    * Names a module is known to export, keyed by module path. Imports of a
    * module not listed here are trusted rather than guessed at.
+   *
+   * This is how the standard library reaches a resolver that cannot import it.
+   * `packages/core` depends on nothing, so it cannot look up what `std/list`
+   * exports; the caller, which has a fully built interpreter in hand, can.
+   * Core learns a data format rather than a dependency.
    */
   readonly moduleExports?: ReadonlyMap<string, readonly string[]>;
+  /**
+   * Module paths beginning with one of these are *completely* described by
+   * `moduleExports`, so one that is missing from it does not exist.
+   *
+   * Without this the resolver cannot tell `"std/lst"` — a typo it should
+   * report — from `"./helpers"`, a local file it has never read and must not
+   * guess about. The caller names the namespaces it owns; everything else
+   * stays trusted.
+   */
+  readonly closedPrefixes?: readonly string[];
 }
 
 class Resolver {
   private readonly diagnostics: Diagnostic[] = [];
   private readonly enums = new Map<string, readonly string[]>();
+  private readonly moduleExports: ReadonlyMap<string, readonly string[]>;
+  private readonly closedPrefixes: readonly string[];
   private scope: Scope;
   /** Greater than zero while walking a function body, whose execution is deferred. */
   private deferred = 0;
@@ -152,6 +173,8 @@ class Resolver {
   private loops = 0;
 
   constructor(options: ResolveOptions) {
+    this.moduleExports = options.moduleExports ?? new Map();
+    this.closedPrefixes = options.closedPrefixes ?? [];
     const root = new Scope(undefined);
     for (const name of options.globals) {
       root.declare(name, { mutable: false, span: ZERO_SPAN, kind: 'built-in' });
@@ -268,6 +291,54 @@ class Resolver {
   }
 
   /**
+   * An `import` against what the caller says the module actually exports.
+   *
+   * Until this existed, `import { nope } from "std/list"` passed every static
+   * check and failed at run time — the one class of typo `lumen check` could
+   * not see, because the checker has no way to read a module it does not
+   * import. It still cannot; the caller supplies the answer (`ResolveOptions`).
+   *
+   * Restraint, as everywhere in this file: a module the caller did not describe
+   * is trusted completely. Only a path under a prefix the caller claims to own
+   * can be wrong, and only a name missing from a listed module's exports.
+   */
+  private checkImport(
+    from: string,
+    specifiers: readonly ImportSpecifier[],
+    span: Span,
+  ): void {
+    const exports = this.moduleExports.get(from);
+    if (exports === undefined) {
+      if (!this.closedPrefixes.some((prefix) => from.startsWith(prefix))) return;
+      const hint = suggest(from, [...this.moduleExports.keys()]);
+      this.report(
+        'RS010',
+        'there is no module "' + from + '"',
+        span,
+        'no such module',
+        hint === undefined
+          ? ['the modules available are: ' + [...this.moduleExports.keys()].sort().join(', ')]
+          : ['did you mean "' + hint + '"?'],
+      );
+      return;
+    }
+
+    for (const spec of specifiers) {
+      if (exports.includes(spec.name)) continue;
+      const hint = suggest(spec.name, exports);
+      this.report(
+        'RS009',
+        'module "' + from + '" has no export named `' + spec.name + '`',
+        spec.span,
+        'not exported',
+        hint === undefined
+          ? ['it exports: ' + [...exports].sort().join(', ')]
+          : ['did you mean `' + hint + '`?'],
+      );
+    }
+  }
+
+  /**
    * Note every binding this scope will introduce, so a function body written
    * above one of them can still see it.
    */
@@ -377,6 +448,7 @@ class Resolver {
         return;
 
       case 'ImportDecl':
+        this.checkImport(stmt.from, stmt.specifiers, stmt.span);
         for (const spec of stmt.specifiers) {
           this.declare(spec.alias ?? spec.name, spec.span, false, 'import');
         }
