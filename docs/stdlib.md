@@ -527,6 +527,15 @@ now() -> Num
 sleep(milliseconds: Num) -> Nil
 ```
 
+### `std/csv`
+
+```text
+records(text: Str, delimiter: Str = ...) -> Result
+rows(text: Str, delimiter: Str = ...) -> Result
+write(rows: List, delimiter: Str = ...) -> Result
+writeRecords(records: List, columns: List<Str> = ..., delimiter: Str = ...) -> Result
+```
+
 ### `std/fs`
 
 ```text

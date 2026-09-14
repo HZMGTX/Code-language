@@ -128,9 +128,9 @@ created two throwaway Maps per iteration.
 
 ## The standard library
 
-Seventeen modules. What was missing at the end of v0.2, and has since been
-added: `std/path`, `std/regex`, `std/process`, seeded randomness, `inputAll`,
-and `stat`/`copy`/`rename`/`makeDir`/`walk` in `std/fs`.
+Eighteen modules. What was missing at the end of v0.2, and has since been
+added: `std/path`, `std/regex`, `std/process`, `std/csv`, seeded randomness,
+`inputAll`, and `stat`/`copy`/`rename`/`makeDir`/`walk` in `std/fs`.
 
 What is still missing, in rough order of how often it is wanted:
 
@@ -142,7 +142,7 @@ What is still missing, in rough order of how often it is wanted:
   produces a bundle has to shell out for it.
 - **Binary data.** Everything is text: `std/fs.read` decodes as UTF-8, and
   there is no byte-array type for anything that is not.
-- **Structured formats besides JSON.** No CSV, no TOML, no YAML.
+- **Structured formats besides JSON and CSV.** No TOML, no YAML.
 - **A hashing or checksum function.** `std/set` has one internally and does not
   export it, because what it computes is an implementation detail.
 

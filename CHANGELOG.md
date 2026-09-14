@@ -53,6 +53,21 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   the name — and that span is what made rename possible, since replacing the
   declaration's span would have replaced the declaration.
 
+- **`std/csv`** — comma-separated values, as they actually arrive. Quoted
+  fields containing the delimiter, a newline or a doubled quote; `\r\n` and
+  `\n` mixed in one file; a delimiter that is not a comma. Reading and writing
+  are inverses byte for byte, and a fixture asserts it.
+
+  A ragged row is an `Err` naming the row rather than a guess: padding it makes
+  every later column wrong by one, and dropping the extras throws data away. So
+  is a duplicate column name, because one of the two would silently win and
+  which one is not something a reader could predict. `rows` gives the raw grid
+  for a caller who knows better.
+
+  CSV has one type and it is text, so a `Num` written and read back is a `Str`.
+  That is the format being honest rather than this module guessing which
+  columns were numbers.
+
 - **`std/path`** — paths as text, with **one separator** everywhere. A path is
   written with `/` and read with either, so a Windows path pasted into a
   program works and a path this module produces looks the same on every
