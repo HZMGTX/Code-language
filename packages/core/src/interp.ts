@@ -468,17 +468,34 @@ export class Interpreter {
   /**
    * Evaluate an expression that cannot possibly do I/O, without a promise.
    *
-   * Returns `undefined` for anything else, so callers fall back to the async
-   * path. It handles only leaves — literals and names — which is exactly where
-   * the cost was: `while i < 300000 { total += i * 2 - 1 }` evaluates six
-   * leaves per iteration, and each one was allocating a promise that resolved
-   * immediately. There is no correctness question, because none of these can
-   * suspend; the two paths return the same value for the same node.
+   * Returns `undefined` for anything else, so every caller falls back to the
+   * async path with `this.evalLeaf(e, env) ?? (await this.evaluate(e, env))`.
    *
-   * This is a narrow version of the hybrid sync/async evaluator the roadmap
-   * describes. The full one means rewriting every `for…of` with an await into
-   * a step function and every `try` to handle a throw and a rejection — a CPS
-   * rewrite that a bytecode VM would then discard. This part is none of that.
+   * It began as literals and names alone, which is where the cost obviously
+   * was: `while i < 300000 { total += i * 2 - 1 }` evaluates six of them per
+   * iteration and each was allocating a promise that resolved immediately. But
+   * the *shape* around them was still paying — the `Binary` node joining two
+   * leaves allocated one too, and so did the `IndexExpr` reading `xs[i]` and
+   * the `MemberExpr` reading `p.x`. So it now recurses over every kind that
+   * provably cannot suspend, and a whole expression like `xs[i] * 2 - 1`
+   * resolves without a single promise.
+   *
+   * **Calls are not among them, deliberately.** Any call may do I/O — that is
+   * the point of Lumen having no async colouring, and there is no way to know
+   * from the call site. `match`, `if` and blocks are excluded for the same
+   * reason: their arms are statements, which can contain anything.
+   *
+   * The rule for adding a kind here is that it must reduce to these operations
+   * and nothing else, and that bailing out part-way must be harmless. It is:
+   * everything below is pure, so a sub-expression that turns out to need the
+   * async path costs one wasted evaluation of its siblings and nothing more.
+   * The two paths share their real work — `applyBinary`, `readIndex`,
+   * `readMember`, `lookupName` — so they cannot come to different answers.
+   *
+   * This is still a narrow version of the hybrid sync/async evaluator the
+   * roadmap describes. The full one means rewriting every `for…of` with an
+   * await into a step function and every `try` to handle a throw and a
+   * rejection — a CPS rewrite that a bytecode VM would then discard.
    */
   private evalLeaf(expr: Expr, env: Env): Value | undefined {
     switch (expr.kind) {
@@ -492,9 +509,96 @@ export class Interpreter {
         return NIL;
       case 'Ident':
         return this.lookupName(expr, env);
+
+      case 'Binary': {
+        const left = this.evalLeaf(expr.left, env);
+        if (left === undefined) return undefined;
+        const right = this.evalLeaf(expr.right, env);
+        if (right === undefined) return undefined;
+        return this.applyBinary(expr.op, left, right, expr.span);
+      }
+
+      case 'Unary': {
+        const operand = this.evalLeaf(expr.operand, env);
+        if (operand === undefined) return undefined;
+        return this.applyUnary(expr.op, operand, expr.span);
+      }
+
+      case 'Logical': {
+        const left = this.evalLeaf(expr.left, env);
+        if (left === undefined) return undefined;
+        const takeRight = expr.op === '&&' ? truthy(left) : !truthy(left);
+        // Short-circuiting is preserved exactly: the right side is not looked
+        // at at all when the left decides the answer, so a call there stays
+        // uncalled rather than forcing this expression onto the async path.
+        if (!takeRight) return left;
+        return this.evalLeaf(expr.right, env);
+      }
+
+      case 'IndexExpr': {
+        const target = this.evalLeaf(expr.target, env);
+        if (target === undefined) return undefined;
+        const index = this.evalLeaf(expr.index, env);
+        if (index === undefined) return undefined;
+        return this.readIndex(target, index, expr.span);
+      }
+
+      case 'MemberExpr': {
+        const target = this.evalLeaf(expr.target, env);
+        if (target === undefined) return undefined;
+        if (expr.optional && target.k === 'nil') return NIL;
+        return this.readMember(target, expr.name, expr.span);
+      }
+
+      case 'ListLit': {
+        const items: Value[] = [];
+        for (const item of expr.items) {
+          const value = this.evalLeaf(item, env);
+          if (value === undefined) return undefined;
+          items.push(value);
+        }
+        return list(items);
+      }
+
+      case 'MapLit': {
+        const entries = new Map<string, Value>();
+        for (const entry of expr.entries) {
+          const key = this.evalLeaf(entry.key, env);
+          if (key === undefined) return undefined;
+          if (key.k !== 'str') {
+            this.fail(
+              'RT009',
+              'map keys must be Str, got ' + typeName(key),
+              entry.key.span,
+              'not a string key',
+            );
+          }
+          const value = this.evalLeaf(entry.value, env);
+          if (value === undefined) return undefined;
+          entries.set(key.v, value);
+        }
+        return map(entries);
+      }
+
       default:
         return undefined;
     }
+  }
+
+  /**
+   * A unary operator on a value already evaluated.
+   *
+   * Split out for the same reason as `applyBinary`: one copy of the rule, used
+   * by both the synchronous path and the async one.
+   */
+  private applyUnary(op: string, operand: Value, span: Span): Value {
+    if (op === '-') {
+      if (operand.k !== 'num') {
+        this.fail('RT006', 'cannot negate ' + typeName(operand), span, 'expected a Num');
+      }
+      return num(-operand.v);
+    }
+    return bool(!truthy(operand));
   }
 
   /** The `Ident` case, shared by both paths so they cannot drift apart. */
@@ -540,13 +644,7 @@ export class Interpreter {
 
       case 'Unary': {
         const operand = this.evalLeaf(expr.operand, env) ?? (await this.evaluate(expr.operand, env));
-        if (expr.op === '-') {
-          if (operand.k !== 'num') {
-            this.fail('RT006', 'cannot negate ' + typeName(operand), expr.span, 'expected a Num');
-          }
-          return num(-operand.v);
-        }
-        return bool(!truthy(operand));
+        return this.applyUnary(expr.op, operand, expr.span);
       }
 
       case 'Binary':
@@ -599,7 +697,7 @@ export class Interpreter {
       case 'MapLit': {
         const entries = new Map<string, Value>();
         for (const entry of expr.entries) {
-          const key = await this.evaluate(entry.key, env);
+          const key = this.evalLeaf(entry.key, env) ?? (await this.evaluate(entry.key, env));
           if (key.k !== 'str') {
             this.fail(
               'RT009',
@@ -608,7 +706,10 @@ export class Interpreter {
               'not a string key',
             );
           }
-          entries.set(key.v, await this.evaluate(entry.value, env));
+          entries.set(
+            key.v,
+            this.evalLeaf(entry.value, env) ?? (await this.evaluate(entry.value, env)),
+          );
         }
         return map(entries);
       }
@@ -799,7 +900,18 @@ export class Interpreter {
   ): Promise<Value> {
     const left = this.evalLeaf(leftExpr, env) ?? (await this.evaluate(leftExpr, env));
     const right = this.evalLeaf(rightExpr, env) ?? (await this.evaluate(rightExpr, env));
+    return this.applyBinary(op, left, right, span);
+  }
 
+  /**
+   * A binary operator on two values that have already been evaluated.
+   *
+   * Split out from `evalBinary` so `evalLeaf` can use it: nothing below here
+   * suspends, so once both operands are in hand the whole of arithmetic,
+   * comparison and equality is synchronous. One copy, so the fast path and the
+   * async path cannot come to different answers.
+   */
+  private applyBinary(op: string, left: Value, right: Value, span: Span): Value {
     if (op === '==') return bool(valuesEqual(left, right));
     if (op === '!=') return bool(!valuesEqual(left, right));
 

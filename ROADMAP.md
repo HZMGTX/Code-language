@@ -17,7 +17,7 @@ decisions, not oversights.
 | **Type checking is gradual** | Annotations are enforced where written (`TY001`-`TY008`), an unannotated `let` takes its value's type, an operator whose operands are both known is checked, and the standard library declares its own types — so `upper(1)`, `"abc".padStart("x")` and `[1].push()` are caught without running. But there is no inference for parameters or `var`, no type variables, and no flow analysis. An unannotated program that calls nothing produces no type diagnostic at all, by design — which is also the limit: `fn f(a) { a + "x" }` is reported only when it runs. |
 | **Ranges are materialised** | `0..n` builds a list, capped at 10,000,000 elements. Large spans need a `while` loop. |
 | **No methods on your own types** | `Str`, `List`, `Map`, `Num`, `Option` and `Result` have methods, and `str`, `inspect`, `type`, `clone` and `isNil` work on every value — but a `struct` you define gets none. `f(x)` and `x \|> f()` are how your own functions are called. Method syntax is a calling convention rather than an object model (spec §4.7), so there is nowhere to register one; traits would be the mechanism, and they are v0.2. |
-| **Performance** | A tree-walking interpreter in which every evaluation is a promise. `npm run bench` measures it. Profiling the `while` benchmark puts roughly **37% of non-library ticks in promise machinery** alone (`RunMicrotasks`, `AsyncFunctionAwait*`, `FulfillPromise`, `EnqueueMicrotask`, `PerformPromiseThen`), which is what the v0.3 work below is aimed at. |
+| **Performance** | A tree-walking interpreter in which most evaluation is a promise. `npm run bench` measures it. Profiling the `while` benchmark puts roughly **22% of non-library ticks in promise machinery** (`AsyncFunctionAwait*`, `RunMicrotasks`, `FulfillPromise`, `EnqueueMicrotask`, `PerformPromiseThen` and friends). That was 37% before `evalLeaf` learned to recurse, which is the figure this line used to carry; the rest is what the v0.3 work below is aimed at. |
 | **`await` is inert** | Accepted and evaluates to its operand. I/O is awaited implicitly. |
 | **No package manager** | Imports are `std/*` modules or relative `.lm` paths. |
 | **`lumen fmt` only fixes indentation** | It rewrites leading whitespace and nothing else: it never moves a line break, and never changes spacing inside a line. Reflowing a long line is the part most formatters do and this one does not, because a line break ends a statement in Lumen (spec §1.1) and moving one changes what the program means. Widening it needs the parser, not the lexer — the formatter would have to know that a break is inside an expression before it could move it. See §1.3 for what it does guarantee. |
@@ -70,20 +70,32 @@ Measured, not guessed. `npm run bench` is the baseline; profile before and after
 - **Returning `Value | Promise<Value>` rather than always a promise** — costed,
   and deliberately not done in full.
 
-  A narrow piece of it *has* landed: leaf expressions — number, string and
-  boolean literals, `nil`, and plain names — are evaluated synchronously by
-  `evalLeaf`, with every caller falling back to the async path for anything
-  else. None of those can suspend, so there is no correctness question, and
-  they are the bulk of what a tight loop evaluates: `while i < 300000 { total
-  += i * 2 - 1 }` has six of them per iteration, each previously allocating a
-  promise that resolved immediately. Best-of-three on the suite went from
-  2.86s to 2.39s, about 16%; comparing medians rather than bests puts it
-  nearer 25%.
+  A real piece of it *has* landed, in two steps. First the leaves — number,
+  string and boolean literals, `nil`, and plain names — were evaluated
+  synchronously by `evalLeaf`, with every caller falling back to the async path
+  for anything else. Then `evalLeaf` learned to **recurse**, over every kind
+  that provably cannot suspend: `Binary`, `Unary`, `Logical`, `IndexExpr`,
+  `MemberExpr`, `ListLit` and `MapLit`, each only when all of its parts also
+  resolve synchronously. So `xs[i] * 2 - 1` and `p.x * p.y` now resolve without
+  a single promise, where before the leaves were fast and every node joining
+  them still allocated one.
 
-  The rest is still deliberately not done. The interpreter awaits I/O so user code needs
-  no `async`, and that must not change; but almost nothing it evaluates is
-  actually asynchronous, and awaiting a plain value still costs a microtask.
-  The profile above attributes ~37% of the work to exactly that.
+  Measured by interleaving two bundles, best of five, which is the only way this
+  is worth measuring: `loop.lm` −26%, `structs.lm` −17%, `fib.lm` −15%,
+  `strings.lm` −6%, `collections.lm` unchanged, and about −18% over the suite —
+  with roughly 60 ms of process start inside every one of those figures, so the
+  effect on the interpreter itself is larger. `collections.lm` is unchanged
+  because it spends its time in library calls, which stay on the async path and
+  always will.
+
+  Calls are excluded deliberately, and that is not a gap to close: any call may
+  do I/O, which is the entire point of Lumen having no async colouring.
+
+  The rest is still deliberately not done. The interpreter awaits I/O so user
+  code needs no `async`, and that must not change; but almost nothing it
+  evaluates is actually asynchronous, and awaiting a plain value still costs a
+  microtask. The profile above attributes ~22% of the work to exactly that,
+  down from 37%.
 
   The scope is larger than the 80 `await` sites suggest. Without `async`, every
   `for ... of` loop containing an await — in `ListLit`, `MapLit`, `evalArgs`,

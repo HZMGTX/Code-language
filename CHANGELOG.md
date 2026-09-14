@@ -65,6 +65,31 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
 
 ### Performance
 
+- **The synchronous fast path recurses, and the benchmarks are 15-26% faster.**
+  `evalLeaf` evaluated an expression without allocating a promise, but only
+  literals and plain names — so in `xs[i] * 2 - 1` the leaves were fast and
+  every node joining them still allocated one. It now handles `Binary`,
+  `Unary`, `Logical`, `IndexExpr`, `MemberExpr`, `ListLit` and `MapLit` as
+  well, each only when every part of it also resolves synchronously, returning
+  `undefined` to fall back the moment one does not.
+
+  Calls stay asynchronous, deliberately and permanently: any call may do I/O,
+  which is the whole point of Lumen having no async colouring.
+
+  Measured by interleaving two bundles, best of five — `loop.lm` −26%,
+  `structs.lm` −17%, `fib.lm` −15%, `strings.lm` −6%, `collections.lm`
+  unchanged, about −18% over the suite. `collections.lm` is unchanged because it
+  spends its time in library calls, which stay on the async path. Promise
+  machinery is now about 22% of non-library ticks on the `while` benchmark,
+  down from the 37% the roadmap has been quoting.
+
+  The measurement is the interesting part. The first run of it said
+  `collections.lm` had **regressed 31%**, which was entirely an artifact of
+  comparing the built CLI (thirty-odd ES modules) against a bundle (one
+  CommonJS file). `scripts/bench.mjs` now takes `--this` as well as `--against`
+  so that like is compared with like, and interleaves the two builds — A then B,
+  then B then A — so that whatever the machine is doing lands on both.
+
 - **Leaf expressions no longer allocate a promise.** Number, string and boolean
   literals, `nil`, and plain names cannot suspend, so they are evaluated
   synchronously and every caller falls back to the async path for anything
