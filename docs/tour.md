@@ -371,7 +371,8 @@ rename, and formatting. `editors/vscode` is a client for it.
 
 Everything it knows, `lumen check` knows — same parser, same resolver, same
 type checker — so the editor can never tell you something the command line
-disagrees with.
+disagrees with. Warnings included: an unused import is a yellow squiggle in the
+editor and a warning on the command line, and never one without the other.
 
 ## Where next
 

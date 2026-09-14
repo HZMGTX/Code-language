@@ -32,11 +32,17 @@ import { Server } from './server.js';
  * package shares with the rest: the thing that knows about the host is the
  * thing at the edge. It is also what lets a test drive the real protocol
  * without a subprocess.
+ *
+ * Resolves with the status the caller should exit with — 0 after a `shutdown`,
+ * 1 for an `exit` that did not follow one, and 0 for a stream that simply
+ * ended, which means the editor is gone rather than that anything went wrong.
+ * Actually exiting is the caller's to do: this function knows about two
+ * streams and deliberately nothing else.
  */
 export async function serve(
   input: NodeJS.ReadableStream,
   output: NodeJS.WritableStream,
-): Promise<void> {
+): Promise<number> {
   const server = new Server({
     write: (chunk) => {
       output.write(chunk);
@@ -47,6 +53,10 @@ export async function serve(
     const finish = (): void => {
       input.off('data', onData);
       input.off('end', finish);
+      // Stop consuming, not just stop listening: attaching the listener put the
+      // stream into flowing mode, and leaving it there means still pulling
+      // bytes from a client that has said goodbye.
+      input.pause();
       resolve();
     };
     const onData = (chunk: Buffer | string): void => {
@@ -56,4 +66,8 @@ export async function serve(
     input.on('data', onData);
     input.once('end', finish);
   });
+
+  // A stream that ended without an `exit` is an editor that died, which is not
+  // this server's failure to report.
+  return server.done ? server.exitCode : 0;
 }

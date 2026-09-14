@@ -18,5 +18,12 @@ export async function startLanguageServer(): Promise<void> {
     );
     process.exit(2);
   }
-  await serve(process.stdin, process.stdout);
+  // Exiting is the point of LSP's `exit` notification, and resolving a promise
+  // is not exiting: attaching a reader put stdin into flowing mode, and Node
+  // keeps a process with a live stdin pipe alive however the stream is left.
+  // Without this line the server survives a clean shutdown forever, so every
+  // editor session leaves an orphan behind — which is the one thing `exit`
+  // exists to prevent. The status is the protocol's: 0 after a `shutdown`, 1
+  // for an `exit` that did not follow one.
+  process.exit(await serve(process.stdin, process.stdout));
 }

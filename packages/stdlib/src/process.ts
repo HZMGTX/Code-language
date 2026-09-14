@@ -54,7 +54,10 @@ interface Finished {
  * `timeout` of zero waits forever, which is what you want for a build and
  * exactly what you do not want for something a stranger's input chose. A
  * process that runs out of time is killed and reported as having timed out
- * rather than as having failed, because the two want different handling.
+ * rather than as having failed, because the two want different handling. A
+ * *negative* timeout is refused rather than rounded up to "forever": it is what
+ * `deadline - now()` gives once the deadline has passed, and a caller who has
+ * run out of time wants anything but no limit at all.
  */
 async function execute(
   command: string,
@@ -63,6 +66,21 @@ async function execute(
   cwd: string,
   timeout: number,
 ): Promise<Finished | string> {
+  // Three things checked here rather than left to the host, because the host is
+  // bad at all three. An empty name reaches Lumen as a raw `TypeError` naming
+  // Node's own parameter; a negative timeout is silently taken as no timeout at
+  // all; and a missing `cwd` fails with the same `ENOENT` as a missing program,
+  // so the message blames `pwd` for a directory that was never there. That last
+  // one is the worst kind of wrong answer: it sends the reader to look at their
+  // PATH, their spelling and their installation, none of which is the problem.
+  if (command === '') return 'cannot run a program with no name';
+  if (timeout < 0) {
+    return 'cannot run `' + command + '`: a timeout cannot be negative, got ' + String(timeout);
+  }
+  if (cwd !== '' && !(await isDirectory(cwd))) {
+    return 'cannot run `' + command + '` in `' + cwd + '`: no such directory';
+  }
+
   return await new Promise<Finished | string>((resolve) => {
     let child;
     try {
@@ -127,6 +145,23 @@ async function execute(
     if (input !== '') child.stdin?.write(input);
     child.stdin?.end();
   });
+}
+
+/**
+ * Whether a path is a directory that can be entered.
+ *
+ * Checked before spawning because the spawn cannot tell us afterwards: Node
+ * reports a missing `cwd` with exactly the `ENOENT` it reports for a missing
+ * program — same code, same errno, same `path`, which is the *command* in both
+ * cases. There is nothing in the error to branch on, so the only way to say
+ * which went wrong is to have looked first.
+ */
+async function isDirectory(path: string): Promise<boolean> {
+  try {
+    return (await fsp.stat(path)).isDirectory();
+  } catch {
+    return false;
+  }
 }
 
 /** The number behind a signal name, for the `128 + n` convention. */

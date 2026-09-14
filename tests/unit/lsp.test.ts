@@ -109,6 +109,23 @@ class Client {
     });
   }
 
+  /** Close the client's end of the pipe, as an editor that has quit does. */
+  closeInput(): void {
+    this.child.stdin?.end();
+  }
+
+  /** The status the process stopped with, or `'running'` if it never did. */
+  async settle(within = 5000): Promise<number | 'running'> {
+    if (this.child.exitCode !== null) return this.child.exitCode;
+    return await new Promise((resolve) => {
+      const timer = setTimeout(() => resolve('running'), within);
+      this.child.once('exit', (code) => {
+        clearTimeout(timer);
+        resolve(code ?? -1);
+      });
+    });
+  }
+
   stop(): void {
     this.child.kill('SIGKILL');
   }
@@ -162,6 +179,25 @@ describe('language server', () => {
     const published = (await client.notice('textDocument/publishDiagnostics')).params as Published;
     assert.equal(published.diagnostics.length, 1);
     assert.equal(published.diagnostics[0]?.code, 'TY001');
+  });
+
+  it('reports warnings, not only errors', async () => {
+    // `checkModule` throws on an error and *returns* the warnings, so a server
+    // that only catches is a server that shows none of them — and an editor
+    // silent about what `lumen check` reports is the disagreement the whole
+    // analysis module exists to prevent.
+    client.clear();
+    client.change('import { upper } from "std/str"\nlet spare = 1\nprint("ok")\n', 21);
+    const published = (await client.notice('textDocument/publishDiagnostics')).params as Published;
+    assert.equal(published.diagnostics.length, 2);
+    for (const diagnostic of published.diagnostics) {
+      assert.equal(diagnostic.code, 'RS011');
+      // 2 is LSP's warning. Reporting an unused import as an error would be a
+      // red squiggle under working code.
+      assert.equal((diagnostic as unknown as { severity: number }).severity, 2);
+    }
+    assert.match(published.diagnostics[0]?.message ?? '', /`upper` is never used/);
+    assert.match(published.diagnostics[1]?.message ?? '', /`spare` is never used/);
   });
 
   it('clears the diagnostics once the document is correct', async () => {
@@ -468,16 +504,22 @@ describe('language server: references, rename and signature help', () => {
     assert.ok(edits.every((e) => e.newText === 'n'));
   });
 
-  it('declines a new name that is not a name', async () => {
+  it('declines a new name that is not a name, and says why', async () => {
     // An editor sends whatever the person typed. Accepting `2 bad` would make a
     // file that does not parse, and silently breaking code is worse than
     // declining to do it.
+    //
+    // Declining with `null` would be silent in a different way: it is the valid
+    // answer for "no edits", an editor draws nothing for it, and somebody who
+    // typed a name that is not a name would press Enter and watch nothing
+    // happen. An error is the only answer a person actually reads.
     const answered = await client.request('textDocument/rename', {
       textDocument: { uri: URI },
       position: { line: 0, character: 19 },
       newName: '2 bad',
     });
-    assert.equal(answered.result, null);
+    assert.equal(answered.result, undefined, 'answered with a result instead of an error');
+    assert.match(answered.error?.message ?? '', /`2 bad` is not a name/);
   });
 
   it('declines to rename something the language owns', async () => {
@@ -550,5 +592,75 @@ describe('language server: references, rename and signature help', () => {
       position: { line: 0, character: 9 },
     });
     assert.equal(answered.result, null);
+  });
+});
+
+/**
+ * Stopping, which is a feature and not an afterthought.
+ *
+ * LSP's `exit` notification asks the server to exit its **process**, and the
+ * spec even says with which status: 0 when a `shutdown` came first, 1 when it
+ * did not — the second is how an editor's log shows that a server had to be
+ * killed rather than asked. A server that resolves a promise and keeps running
+ * looks correct from inside and leaves one orphaned process per session, which
+ * is exactly what `exit` exists to prevent. Driving the real binary is the only
+ * way to see that: an in-process test would pass either way, because the thing
+ * being tested is whether the process is still there.
+ */
+describe('language server shutdown', () => {
+  it('exits 0 when the client shuts it down and then asks it to go', async () => {
+    const client = new Client();
+    try {
+      await client.request('initialize', { processId: null, rootUri: null, capabilities: {} });
+      // The reply to `shutdown` has to arrive *before* the process goes: a
+      // client waits for it, and exiting early would hang the editor rather
+      // than the server.
+      const answered = await client.request('shutdown', null);
+      assert.equal(answered.result, null);
+      client.notify('exit', null);
+      assert.equal(await client.settle(), 0);
+    } finally {
+      client.stop();
+    }
+  });
+
+  it('exits 1 for an `exit` that did not follow a `shutdown`', async () => {
+    const client = new Client();
+    try {
+      await client.request('initialize', { processId: null, rootUri: null, capabilities: {} });
+      client.notify('exit', null);
+      assert.equal(await client.settle(), 1);
+    } finally {
+      client.stop();
+    }
+  });
+
+  it('exits 0 when the editor simply goes away', async () => {
+    // No `shutdown`, no `exit`, just a closed pipe — an editor that crashed, or
+    // was killed. The server has nothing to report about that, so it is not a
+    // failure.
+    const client = new Client();
+    try {
+      await client.request('initialize', { processId: null, rootUri: null, capabilities: {} });
+      client.closeInput();
+      assert.equal(await client.settle(), 0);
+    } finally {
+      client.stop();
+    }
+  });
+
+  it('refuses a request after `shutdown`, as the protocol says to', async () => {
+    const client = new Client();
+    try {
+      await client.request('initialize', { processId: null, rootUri: null, capabilities: {} });
+      await client.request('shutdown', null);
+      const answered = await client.request('textDocument/hover', {
+        textDocument: { uri: URI },
+        position: { line: 0, character: 0 },
+      });
+      assert.equal(answered.error?.code, -32600);
+    } finally {
+      client.stop();
+    }
   });
 });

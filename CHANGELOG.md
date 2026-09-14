@@ -130,6 +130,54 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
     answered `["a", "b"]`, which looks like an answer and was an accident of
     which branch ran first. Refused now, with the reason.
 
+- **Five more bugs, from turning the same adversarial probe on `std/process`
+  and the language server.** The pattern that found the last three found these:
+  use the thing the way a program would, then ask what it says when the answer
+  is inconvenient.
+
+  - **`lumen lsp` never exited.** LSP's `exit` notification asks a server to
+    end its *process*; this one resolved a promise and kept running, because
+    attaching a reader puts stdin into flowing mode and Node keeps a process
+    with a live stdin pipe alive however the stream is left. So every editor
+    session left an orphan behind — which is the one thing `exit` exists to
+    prevent. It now exits with the status the protocol specifies: 0 after a
+    `shutdown`, 1 for an `exit` that did not follow one, which is how an
+    editor's log distinguishes a server that was asked to stop from one that
+    had to be killed. The existing tests could not have caught it: they end by
+    killing the child, so the process staying alive looked exactly like the
+    process being shut down.
+
+  - **The editor never showed a warning.** `checkModule` raises on errors and
+    *returns* warnings, and the language server dropped the return value on the
+    floor — so `RS011` was a warning on the command line and nothing at all in
+    the editor, while the module's own header promised the two could never
+    disagree. Two lines, and an editor that now draws what `lumen check` prints.
+
+  - **A missing `cwd` blamed the program.** `run("pwd", cwd: "/gone")` answered
+    ``cannot run `pwd`: no such program`` — a wrong answer of the worst kind,
+    the sort that sends the reader to check their PATH, their spelling and
+    their installation, none of which is the problem. Node reports a missing
+    directory with exactly the `ENOENT` it reports for a missing program, right
+    down to naming the *command* in `path`, so there is nothing in the error to
+    branch on: the module looks at the directory before it spawns, in order to
+    be able to say which one was missing.
+
+  - **An empty command name leaked a Node `TypeError`.** ``run("")`` answered
+    with "The argument 'file' cannot be empty", naming a parameter of a
+    function the reader has never called, in a language they are not writing.
+    Every other error in the module is a sentence; this one is now too.
+
+  - **A negative timeout meant "wait forever".** Zero means no limit and is
+    documented, but a negative number is what `deadline - now()` gives once the
+    deadline has passed — so a program that had run out of time waited the
+    longest of all. It is an `Err` naming the value.
+
+  Two smaller things went with them: a rename the server declines because the
+  new name is not a name now says so, rather than answering `null` — which is
+  the valid answer for "no edits", so the person pressed Enter and watched
+  nothing happen; and a comment claiming Lumen only ever produces errors, which
+  stopped being true when `RS011` landed.
+
 - **`std/csv`** — comma-separated values, as they actually arrive. Quoted
   fields containing the delimiter, a newline or a doubled quote; `\r\n` and
   `\n` mixed in one file; a delimiter that is not a comma. Reading and writing

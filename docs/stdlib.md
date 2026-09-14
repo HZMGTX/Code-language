@@ -474,7 +474,15 @@ field rather than a status to interpret, because a timeout and a failure want
 different handling.
 
 `timeout` of zero waits forever, which is what a build wants and exactly what
-something a stranger's input chose does not.
+something a stranger's input chose does not. A *negative* timeout is an `Err`
+rather than a longer wait: it is what `deadline - now()` gives once the deadline
+has passed, and a caller who has run out of time wants anything but no limit.
+
+`Err` names the thing that was actually wrong. A missing `cwd` says so — `cannot
+run \`pwd\` in \`/tmp/gone\`: no such directory` — rather than blaming the program,
+which is what the host's own error would do: Node reports a missing directory
+with exactly the `ENOENT` it reports for a missing program, so this module looks
+at the directory before it spawns in order to be able to tell you which.
 
 ### Randomness
 

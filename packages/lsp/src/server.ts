@@ -46,7 +46,7 @@ import {
 } from './analysis.js';
 import { ERROR, encode, MessageBuffer, type Message } from './rpc.js';
 
-/** LSP severities. Lumen only ever produces errors; see `Severity`. */
+/** LSP severities. `RS011` is a warning; everything else is an error. */
 const SEVERITY = { error: 1, warning: 2 } as const;
 
 /** LSP `CompletionItemKind`, the few this server uses. */
@@ -62,6 +62,18 @@ const KEYWORDS = [
 interface Documented {
   readonly detail: string;
   readonly doc: string | undefined;
+}
+
+/**
+ * A request declined with a reason, as against declined with `null`.
+ *
+ * The protocol distinguishes them and so does an editor: `null` is "nothing to
+ * do here" and is drawn as nothing, while an error carries a message a person
+ * actually reads. Anything a person could have done differently should be the
+ * second one.
+ */
+class Refused {
+  constructor(readonly why: string) {}
 }
 
 export interface Connection {
@@ -110,6 +122,18 @@ export class Server {
   /** True once the client has sent `exit`, so the process may stop. */
   get done(): boolean {
     return this.exited;
+  }
+
+  /**
+   * The status LSP says to exit with: 0 after a `shutdown`, 1 without one.
+   *
+   * The second is not pedantry. `exit` with no `shutdown` before it means the
+   * client gave up on a server it could not shut down cleanly, and the status
+   * is how that shows up in an editor's log rather than looking like an
+   * ordinary stop.
+   */
+  get exitCode(): number {
+    return this.shuttingDown ? 0 : 1;
   }
 
   private send(message: Message): void {
@@ -196,9 +220,16 @@ export class Server {
         case 'textDocument/prepareRename':
           this.reply(id, this.prepareRename(params));
           return;
-        case 'textDocument/rename':
-          this.reply(id, this.rename(params));
+        case 'textDocument/rename': {
+          const answer = this.rename(params);
+          // A refusal has to reach the person, not just the client. `null` is a
+          // valid answer meaning "no edits", and an editor draws nothing for
+          // it — so somebody who typed a name that is not a name would press
+          // Enter and watch nothing happen, with no clue why.
+          if (answer instanceof Refused) this.fail(id, ERROR.invalidRequest, answer.why);
+          else this.reply(id, answer);
           return;
+        }
         case 'textDocument/signatureHelp':
           this.reply(id, this.signatureHelp(params));
           return;
@@ -480,8 +511,12 @@ export class Server {
     if (typeof newName !== 'string' || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(newName)) {
       // An editor will happily send anything the person typed. A name that is
       // not a name would produce a file that does not parse, and silently
-      // breaking somebody's code is worse than declining.
-      return null;
+      // breaking somebody's code is worse than declining — but declining
+      // silently is its own small cruelty, so say which name and why.
+      return new Refused(
+        '`' + String(newName) + '` is not a name: a name starts with a letter or `_` and ' +
+          'continues with letters, digits or `_`',
+      );
     }
     const binding = this.bindingAt(found.analysis, found.offset);
     if (binding === undefined) return null;

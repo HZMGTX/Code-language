@@ -46,6 +46,7 @@ export interface Analysis {
   readonly text: string;
   /** Undefined when the source could not be parsed at all. */
   readonly module: Module | undefined;
+  /** Errors when the file has them, otherwise whatever warnings it has. */
   readonly diagnostics: readonly Diagnostic[];
   /** Every expression the checker typed, innermost last at a given position. */
   readonly types: readonly { expr: Expr; ty: Ty }[];
@@ -80,8 +81,13 @@ export function analyse(uri: string, version: number, text: string, globals: rea
     };
   }
 
+  // `checkModule` throws on an error and *returns* the warnings, so the return
+  // value is not a leftover to discard: dropping it is how an editor ends up
+  // silent about `RS011` while `lumen check` reports it, which is exactly the
+  // disagreement this module exists to prevent.
+  let warnings: readonly Diagnostic[];
   try {
-    checkModule(module, text, {
+    warnings = checkModule(module, text, {
       ...checkOptions(globals),
       record: (expr, ty) => types.push({ expr, ty }),
       reference: (reference) => references.push(reference),
@@ -90,7 +96,7 @@ export function analyse(uri: string, version: number, text: string, globals: rea
     return { uri, version, text, module, diagnostics: diagnosticsOf(error), types, references };
   }
 
-  return { uri, version, text, module, diagnostics: [], types, references };
+  return { uri, version, text, module, diagnostics: warnings, types, references };
 }
 
 function diagnosticsOf(error: unknown): readonly Diagnostic[] {

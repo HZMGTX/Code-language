@@ -131,6 +131,49 @@ describe('std/process', () => {
     assert.equal(text, 'true\nNone\nfalse');
   });
 
+  it('blames the directory when the directory is what is missing', async () => {
+    // The wrong answer this replaces was the worst kind: `pwd` exists, and
+    // being told it does not sends the reader to check their PATH, their
+    // spelling and their installation — everything except the directory they
+    // asked to run in. Node gives the two cases the same `ENOENT`, with the
+    // *command* in `path` either way, so the only way to tell them apart is to
+    // have looked at the directory first.
+    const text = await out(
+      IMPORT +
+        'match run("pwd", [], cwd: "/no/such/directory/here") {\n' +
+        '  Ok(r)    => print("unexpectedly ran in ${r.out.trim()}"),\n' +
+        '  Err(why) => print("${why}"),\n' +
+        '}',
+    );
+    assert.equal(text, 'cannot run `pwd` in `/no/such/directory/here`: no such directory');
+  });
+
+  it('says what is wrong with an empty command instead of leaking a TypeError', async () => {
+    // This used to answer with Node's own words — "TypeError
+    // [ERR_INVALID_ARG_VALUE]: The argument 'file' cannot be empty" — which
+    // names a parameter of a function the reader has never called, in a
+    // language they are not writing.
+    const text = await out(
+      IMPORT + 'match run("") { Ok(r) => print("ran ${r.status}"), Err(why) => print("${why}") }',
+    );
+    assert.equal(text, 'cannot run a program with no name');
+  });
+
+  it('refuses a negative timeout rather than taking it for no timeout', async () => {
+    // Zero means "wait forever" and is documented. A negative number is what
+    // `deadline - now()` gives once the deadline has passed, and treating that
+    // as "no limit at all" is the exact opposite of what the caller meant — a
+    // program that has run out of time would wait the longest of all.
+    const text = await out(
+      IMPORT +
+        'match run("sleep", ["10"], timeout: 0 - 1) {\n' +
+        '  Ok(r)    => print("ran, timedOut ${r.timedOut}"),\n' +
+        '  Err(why) => print("${why}"),\n' +
+        '}',
+    );
+    assert.equal(text, 'cannot run `sleep`: a timeout cannot be negative, got -1');
+  });
+
   it('checks the type of what it is given, like everything else', async () => {
     const result = await runSource(IMPORT + 'print(run("echo", ["a", 1]))');
     assert.equal(result.failed, true);
