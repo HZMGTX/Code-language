@@ -14,7 +14,7 @@
  */
 
 import { bool, enumValue, truthy, type CallCtx, type EnumValue, type Value } from '@lumen-lang/core';
-import { None, Some, arg, expectFn, fn, moduleOf } from './support.js';
+import { None, Some, arg, expectFn, fn, moduleOf, withSignatures } from './support.js';
 
 /** The Option a function was handed, or a panic naming what it got instead. */
 function expectOption(value: Value, ctx: CallCtx, where: string): EnumValue {
@@ -28,8 +28,25 @@ const isSome = (o: EnumValue): boolean => o.variant === 'Some';
 /** `Some(x)` always carries exactly one value, so index 0 is always there. */
 const inner = (o: EnumValue): Value => o.values[0] as Value;
 
+/**
+ * An `Option` in, and usually an `Option` out. What the option *holds* has no
+ * name here — `Ty` has no type variables — so `unwrapOr` answers `Any`.
+ */
+const SIGNATURES: Readonly<Record<string, string>> = {
+  isSome: '(option: Option) -> Bool',
+  isNone: '(option: Option) -> Bool',
+  unwrapOr: '(option: Option, fallback: Any) -> Any',
+  map: '(option: Option, f: fn(Any) -> Any) -> Option',
+  andThen: '(option: Option, f: fn(Any) -> Any) -> Option',
+  filter: '(option: Option, predicate: fn(Any) -> Any) -> Option',
+  or: '(option: Option, other: Option) -> Option',
+  okOr: '(option: Option, error: Any) -> Result',
+  toList: '(option: Option) -> List',
+};
+
 export function stdOption(): Map<string, Value> {
-  return moduleOf(
+  return withSignatures(
+    moduleOf(
     fn(
       'isSome',
       ['option'],
@@ -124,5 +141,7 @@ export function stdOption(): Map<string, Value> {
       },
       'A list of one element, or an empty one — so an Option can be mapped over.',
     ),
+    ),
+    SIGNATURES,
   );
 }

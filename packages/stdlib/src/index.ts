@@ -12,9 +12,20 @@ import * as path from 'node:path';
 
 import * as readline from 'node:readline';
 
-import { Interpreter, type Host, type ModuleResolver, type ResolvedModule, type Value } from '@lumen-lang/core';
+import {
+  Interpreter,
+  UNIVERSAL,
+  methodTy,
+  signatureTy,
+  type Host,
+  type ModuleResolver,
+  type ResolveOptions,
+  type ResolvedModule,
+  type Ty,
+  type Value,
+} from '@lumen-lang/core';
 
-import { STD_MODULES, STD_MODULE_NAMES } from './modules.js';
+import { STD_MODULES, STD_MODULE_NAMES, stdModuleExports } from './modules.js';
 import { stdCore } from './core.js';
 import { makeHelp, methodTables, preludeExtras, universalMethods } from './prelude.js';
 
@@ -161,6 +172,85 @@ export function createNodeResolver(options: { base?: string } = {}): ModuleResol
     },
   };
 }
+
+/**
+ * The type of every name the prelude puts in scope, for `checkTypes`.
+ *
+ * Read off a real interpreter rather than assembled separately, because a
+ * second assembly is a second thing to keep in step: whatever is actually in
+ * scope is what gets typed, and a name the prelude stops exporting disappears
+ * from here on the same day.
+ *
+ * A native with no declared signature is simply absent, and stays `Any` in and
+ * `Any` out — which is how the whole library behaved before any of it was
+ * typed.
+ */
+export function stdSignatures(): ReadonlyMap<string, Ty> {
+  if (globalSignatures !== undefined) return globalSignatures;
+  const interpreter = createInterpreter();
+  const built = new Map<string, Ty>();
+  for (const name of interpreter.globals.ownNames()) {
+    const value = interpreter.globals.lookup(name)?.value;
+    if (value?.k === 'native' && value.signature !== undefined) {
+      built.set(name, signatureTy(value.signature));
+    }
+  }
+  globalSignatures = built;
+  return built;
+}
+
+/**
+ * The type of every method, keyed `"Str.upper"` — the receiver already removed.
+ *
+ * Keyed by what `typeName` reports at run time, because that is what method
+ * tables are registered under: the checker and the interpreter have to agree
+ * about what a method is called or they are checking different programs. The
+ * handful that belong to every value are keyed under `UNIVERSAL`.
+ */
+export function stdMethodSignatures(): ReadonlyMap<string, Ty> {
+  if (methodSignatures !== undefined) return methodSignatures;
+  const built = new Map<string, Ty>();
+  const add = (type: string, name: string, value: Value): void => {
+    if (value.k === 'native' && value.signature !== undefined) {
+      built.set(type + '.' + name, methodTy(signatureTy(value.signature)));
+    }
+  };
+  for (const [type, functions] of Object.entries(methodTables())) {
+    for (const [name, value] of functions) add(type, name, value);
+  }
+  const core = stdCore();
+  const interpreter = createInterpreter();
+  for (const [name, value] of universalMethods(
+    (n) => interpreter.globals.lookup(n)?.value ?? core.get(n),
+  )) {
+    add(UNIVERSAL, name, value);
+  }
+  methodSignatures = built;
+  return built;
+}
+
+/**
+ * Everything `checkModule` needs to know about the world outside the file:
+ * what the prelude holds, what the standard modules export, and what any of it
+ * means. One function, because four callers need exactly this and a check one
+ * of them performs and another skips is a program that passes `lumen check`
+ * and fails `lumen run`.
+ */
+export function checkOptions(globals: readonly string[]): ResolveOptions {
+  return {
+    globals,
+    moduleExports: stdModuleExports(),
+    // Everything under `std/` is accounted for, so a path there that is not in
+    // the map is a typo. A local `./helper.lm` is not, and stays trusted.
+    closedPrefixes: ['std/'],
+    signatures: stdSignatures(),
+    methods: stdMethodSignatures(),
+  };
+}
+
+/** Both built once; parsing 200 signatures per checked file would be waste. */
+let globalSignatures: ReadonlyMap<string, Ty> | undefined;
+let methodSignatures: ReadonlyMap<string, Ty> | undefined;
 
 /**
  * Build a fully-equipped interpreter: the language, the standard library's

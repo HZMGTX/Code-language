@@ -1,7 +1,0 @@
-error[RT036]: `add` is missing a value for `b`
- --> wrong-arity.lm:2:7
-  |
-2 | print(add(1))
-  |       ^^^^^^ required argument not supplied
-  |
-  = note: it takes: a, b

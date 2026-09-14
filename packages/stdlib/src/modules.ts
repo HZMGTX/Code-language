@@ -5,7 +5,7 @@
  * importing `index.ts`, which imports the prelude in turn.
  */
 
-import type { Value } from '@lumen-lang/core';
+import { signatureTy, type Ty, type Value } from '@lumen-lang/core';
 
 import { stdAi } from './ai.js';
 import { stdCore } from './core.js';
@@ -53,24 +53,40 @@ export const STD_MODULES: ReadonlyMap<string, () => Map<string, Value>> = new Ma
 export const STD_MODULE_NAMES: readonly string[] = [...STD_MODULES.keys()].sort();
 
 /** Built once; instantiating fourteen modules per checked file would be waste. */
-let exportNames: ReadonlyMap<string, readonly string[]> | undefined;
+let exportTypes: ReadonlyMap<string, ReadonlyMap<string, Ty>> | undefined;
 
 /**
- * What every standard module exports, as names.
+ * What every standard module exports, and the type of each.
  *
- * This is what lets `lumen check` catch `import { nope } from "std/list"`
- * without running the program. The resolver in `@lumen-lang/core` cannot
- * import the standard library — that is the dependency rule the whole project
- * rests on — so it takes the answer as data instead, through
- * `ResolveOptions.moduleExports`.
+ * This is what lets `lumen check` catch `import { nope } from "std/list"`, and
+ * then `upper(1)` once `upper` has been imported, without running the program.
+ * The static passes in `@lumen-lang/core` cannot import the standard library —
+ * that is the dependency rule the whole project rests on — so they take the
+ * answer as data instead, through `ResolveOptions.moduleExports`.
  *
  * Derived by instantiating each module rather than written down beside it, so
- * a new export cannot be added without the checker learning about it.
+ * a new export cannot be added without the checker learning about it. An export
+ * with no declared signature is `Any`, exactly as it was before any of the
+ * library was typed.
  */
-export function stdModuleExports(): ReadonlyMap<string, readonly string[]> {
-  if (exportNames !== undefined) return exportNames;
-  const built = new Map<string, readonly string[]>();
-  for (const [name, factory] of STD_MODULES) built.set(name, [...factory().keys()]);
-  exportNames = built;
+export function stdModuleExports(): ReadonlyMap<string, ReadonlyMap<string, Ty>> {
+  if (exportTypes !== undefined) return exportTypes;
+  const built = new Map<string, ReadonlyMap<string, Ty>>();
+  for (const [moduleName, factory] of STD_MODULES) {
+    const types = new Map<string, Ty>();
+    for (const [name, value] of factory()) {
+      types.set(
+        name,
+        value.k === 'native' && value.signature !== undefined
+          ? signatureTy(value.signature)
+          : ANY,
+      );
+    }
+    built.set(moduleName, types);
+  }
+  exportTypes = built;
   return built;
 }
+
+/** Anything the library has not described: compatible with everything. */
+const ANY: Ty = { k: 'any' };

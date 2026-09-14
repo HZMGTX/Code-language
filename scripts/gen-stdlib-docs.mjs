@@ -14,6 +14,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { showSignature, signatureTy } from '../packages/core/dist/index.js';
 import { STD_MODULES, createInterpreter } from '../packages/stdlib/dist/index.js';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -23,10 +24,23 @@ const END = '<!-- END GENERATED REFERENCE -->';
 const PRELUDE_BEGIN = '<!-- BEGIN GENERATED PRELUDE -->';
 const PRELUDE_END = '<!-- END GENERATED PRELUDE -->';
 
-/** Render one export as a Lumen-looking signature. */
+/**
+ * Render one export as a Lumen-looking signature.
+ *
+ * The declared one when there is one, which is already written in exactly this
+ * syntax — so the reference says `upper(s: Str) -> Str` rather than `upper(s)`,
+ * and says it because the library says it, not because somebody typed it here.
+ * Anything not yet typed falls back to its parameter names, which is what all
+ * of these looked like before.
+ */
 function signature(name, value) {
   if (value.k !== 'native') return name + ': ' + value.k;
   if (value.variadic === true) return name + '(...)';
+  if (value.signature !== undefined) {
+    const ty = signatureTy(value.signature);
+    const dropped = ty.k === 'fn' ? ty.params.length - value.params.length : 0;
+    return name + showSignature(dropped > 0 ? { ...ty, params: ty.params.slice(dropped) } : ty);
+  }
   const params = value.params
     .map((p) => (p.defaultValue === undefined ? p.name : p.name + ' = ...'))
     .join(', ');

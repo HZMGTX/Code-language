@@ -1,0 +1,42 @@
+// Everything correct, and the checker says nothing at all.
+//
+// The companion to `stdlib-types.lm`, and the more important of the two: a
+// check that rejects a working program is worse than one that misses a broken
+// one, so this is what keeps the library's declared types honest. Every line
+// here runs.
+import { parts, plus, iso } from "std/time"
+import { of, union } from "std/set"
+import { getOr } from "std/map"
+
+print([3, 1, 2].sorted().map(fn(n) { n * 2 }).sum())
+print("a,b".split(",").join("-"))
+print("hello".upper().padStart(8, "."))
+print({a: 1}.getOr("a", 0) + 1)
+print(of([1, 1, 2]).len() + union([1], [2]).len())
+print(iso(plus(0, days: 1)))
+print(parts(0).getOr("year", 0))
+print(range(3).map(fn(n) { n }).len())
+print([1, 2].first().unwrapOr(0) + 1)
+print("7".toNum().unwrapOr(0) + 1)
+print(len("abc") + len([1]) + len({a: 1}))
+print(fixed(1.5, 2) + "!")
+print([1, 2, 3].chunk(2).len())
+print(2.0.sqrt() + (0 - 3).abs())
+
+// A default may be left out, and a named argument still pairs by name.
+print("7".padStart(3))
+print("7".padStart(width: 3, fill: "0"))
+
+// `min` and `max` take a list *or* the numbers themselves, which no fixed
+// parameter list describes — so they declare no signature, and every spelling
+// of them stays silent rather than half of them being reported.
+print(min([3, 1]) + max(1, 2))
+print(min(3, 1, 2) + max([1, 2]))
+
+// An unannotated function is Any in and Any out, so nothing about how its
+// result is used can be a mistake the checker knows about. `whatever(1) + "x"`
+// is silent here too, and `RT016` when it runs — see `operand-types-quiet.lm`,
+// which is where that trade is written down.
+fn whatever(x) { x }
+print(whatever("text").len())
+print(whatever(1) + 1)

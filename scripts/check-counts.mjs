@@ -15,6 +15,7 @@
  *   - every `examples/*.lm` appears in the README's table, and the table names
  *     nothing that does not exist
  *   - every `std/*` module has a row in the generated stdlib reference
+ *   - most of the standard library declares a type
  *   - every `RS` and `TY` diagnostic the implementation can emit is named in the
  *     specification, **and** in the header comment of the file that emits it
  *
@@ -184,6 +185,37 @@ for (const [relative, family] of HEADERED) {
   }
 }
 
+// ------------------------------------------- the library declares its types
+
+/**
+ * How much of the standard library carries a declared type.
+ *
+ * Not a demand that all of it does — `map(xs, f)` returns a list of whatever
+ * `f` gives back, and `Ty` has no type variables, so forcing a signature onto
+ * it would be worse than leaving it alone; a variadic cannot have one at all.
+ * This is here so the work cannot silently stall, and so that removing one is a
+ * decision somebody makes rather than a thing that happens.
+ *
+ * `tests/unit/signatures.test.ts` is what checks each signature against the
+ * function it describes. This only counts them.
+ */
+let natives = 0;
+let typed = 0;
+for (const factory of STD_MODULES.values()) {
+  for (const value of factory().values()) {
+    if (value.k !== 'native') continue;
+    natives += 1;
+    if (value.signature !== undefined) typed += 1;
+  }
+}
+const MINIMUM_TYPED = 0.8;
+if (typed / natives < MINIMUM_TYPED) {
+  problems.push(
+    'only ' + typed + ' of ' + natives + ' standard-library functions declare a type (want ' +
+      Math.round(MINIMUM_TYPED * 100) + '%)',
+  );
+}
+
 // ------------------------------------------------ every module is documented
 
 const stdlib = readFileSync(path.join(ROOT, 'docs', 'stdlib.md'), 'utf8');
@@ -203,7 +235,8 @@ if (FIX && fixed !== readme) {
 const summary =
   String(actual.tests) + ' tests, ' + String(actual.fixtures) + ' fixtures, ' +
   String(actual.examples) + ' examples, ' + String(actual.modules) + ' modules, ' +
-  String(emitted.size) + ' static checks';
+  String(emitted.size) + ' static checks, ' +
+  String(typed) + '/' + String(natives) + ' typed';
 
 if (problems.length === 0) {
   process.stdout.write('README matches the repository (' + summary + ')\n');

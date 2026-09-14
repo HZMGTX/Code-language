@@ -100,6 +100,27 @@ describe('functions', () => {
     assert.equal(await code('fn g(a, b) { a }\ng(a: 1, 2)'), 'RT037');
   });
 
+  it('reports a wrong argument count in both layers', async () => {
+    // The checker now catches this before the program runs, which is the better
+    // place — but the specification promises a host that embeds the interpreter
+    // without the static passes is not left unguarded, and only `runUnchecked`
+    // still exercises that.
+    assert.equal(await code('fn add(a, b) { a }\nadd(1)'), 'TY008');
+    assert.equal(codeOf(await runUnchecked('fn add(a, b) { a }\nadd(1)')), 'RT036');
+
+    assert.equal(await code('fn one(a) { a }\none(1, 2)'), 'TY007');
+    assert.equal(codeOf(await runUnchecked('fn one(a) { a }\none(1, 2)')), 'RT040');
+  });
+
+  it('says nothing about a count it cannot be sure of', async () => {
+    // A `fn(...)` annotation records no defaults, so a value of that type may
+    // well be `fn(a, b = 1)` and a one-argument call is perfectly good. And the
+    // moment an argument is named, the interpreter has a better answer than a
+    // count — `nmae` is a typo, not a missing `name`.
+    assert.equal(await out('fn apply(f: fn(Num, Num) -> Num) { f(1) }\nprint("ok")'), 'ok');
+    assert.equal(await code('fn greet(name) { name }\ngreet(nmae: "Ada")'), 'RT039');
+  });
+
   it('names the parameter when one is supplied twice', async () => {
     assert.equal(await code('fn g(a) { a }\ng(1, a: 2)'), 'RT044');
   });

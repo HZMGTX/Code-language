@@ -44,7 +44,7 @@
  */
 
 import { bool, list, num, type MapValue, type Value } from '@lumen-lang/core';
-import { arg, expectList, fn, moduleOf, withDocs } from './support.js';
+import { arg, expectList, fn, moduleOf, withDocs, withSignatures } from './support.js';
 
 /**
  * Identity for values that have no structure to compare — functions, modules,
@@ -150,8 +150,32 @@ function dedupe(xs: readonly Value[]): Value[] {
   return out;
 }
 
+/**
+ * A set is a List with no repeats (there is no set type — see the header), so
+ * every one of these is `List` in and `List` out. What the elements are has no
+ * name here, so `value` is `Any`.
+ */
+const SIGNATURES: Readonly<Record<string, string>> = {
+  of: '(xs: List) -> List',
+  has: '(s: List, value: Any) -> Bool',
+  add: '(s: List, value: Any) -> List',
+  remove: '(s: List, value: Any) -> List',
+  union: '(a: List, b: List) -> List',
+  intersection: '(a: List, b: List) -> List',
+  difference: '(a: List, b: List) -> List',
+  symmetricDifference: '(a: List, b: List) -> List',
+  isSubset: '(a: List, b: List) -> Bool',
+  isSuperset: '(a: List, b: List) -> Bool',
+  isDisjoint: '(a: List, b: List) -> Bool',
+  equals: '(a: List, b: List) -> Bool',
+  size: '(s: List) -> Num',
+  isSet: '(xs: List) -> Bool',
+  duplicates: '(xs: List) -> List',
+};
+
 export function stdSet(): Map<string, Value> {
-  return withDocs(
+  return withSignatures(
+    withDocs(
     moduleOf(
       /** The set of a list: the same elements in the same order, minus repeats. */
       fn('of', ['xs'], (a, c) => list(dedupe(expectList(arg(a, 0), c, 'of(xs)').items))),
@@ -299,6 +323,8 @@ export function stdSet(): Map<string, Value> {
       isSet: 'True if the list has no duplicates already.',
       duplicates: 'The elements that appear more than once, first occurrence order.',
     },
+    ),
+    SIGNATURES,
   );
 }
 

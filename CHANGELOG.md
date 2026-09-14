@@ -79,6 +79,61 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
 
 ### Static checks
 
+- **The standard library declares its own types, so calling it is checked.**
+  `upper(1)`, `"abc".padStart("x")`, `[1, 2].take("two")` and `{a: 1}.get(1)`
+  all passed every static check and failed when they ran. They are `TY001` now.
+
+  This is the largest thing the checker has gained, because a program that
+  writes no annotations of its own still calls the library on nearly every
+  line: the type checker had no channel to it at all, so every standard call
+  was `Any` in and `Any` out.
+
+  It still has no channel — `packages/core` imports nothing, which is the rule
+  the whole project rests on. It is *told*: whoever builds an interpreter hands
+  the static passes the type of every prelude name, every module export and
+  every method, as data. The signatures live beside the implementations they
+  describe, in the language's own annotation syntax, and are parsed with the
+  real parser:
+
+  ```text
+  upper      (s: Str) -> Str
+  padStart   (s: Str, width: Num, fill: Str = " ") -> Str
+  split      (s: Str, separator: Str) -> List<Str>
+  ```
+
+  All 200 functions carry one. `tests/unit/signatures.test.ts` checks every one
+  against the function it describes — same parameter names, same order, same
+  ones optional — because a signature that has drifted is worse than none: a
+  named argument would silently stop being checked.
+
+  Three restraints keep it sound, all the no-false-positives rule. A function
+  with no signature stays `Any`. Nothing is narrowed past what the
+  implementation accepts — `contains(xs, value)` takes a list of anything, and
+  `slice`'s `end` defaults to nil and means "to the end". And a variadic
+  declares nothing at all: `min` and `max` take a list *or* the numbers
+  themselves, which no fixed parameter list describes.
+
+- **Method calls are checked.** `x.f(a)` is a call whose callee is a member
+  expression, so giving the member its real type was the whole change — the
+  three spellings of a call (§4.7) share one code path and cannot disagree
+  about what they accept.
+
+- **`TY007` and `TY008`: the wrong number of arguments.** Once a function's
+  parameters are known, so is how many arguments a call may have. `[1].push()`
+  and `"abc".upper(1)` are static errors now; so is `add(1)` for a two-parameter
+  `add`.
+
+  Reported only for a function that was actually *declared*. A `fn(Num, Num) ->
+  Num` annotation records no defaults, so a value of that type may well be
+  `fn(a, b = 1)` and a one-argument call is fine. And they stay quiet the moment
+  an argument is named, because the interpreter then has a better answer than a
+  count: `greet(nmae: "Ada")` is a typo in `nmae`, not a missing `name`.
+
+- **`accepts` compares one `fn` type against another**, having returned `true`
+  for every pair of them since it was written. Covariant in the result,
+  contravariant in the parameters, and deliberately silent about arity, which a
+  call reports where it happens and with a span pointing at it.
+
 - **`RS009` and `RS010`: an import that names something that is not there.**
   `import { nope } from "std/list"` and `import { map } from "std/lst"` used to
   pass every static check and fail at run time, which made a mistyped import the
@@ -141,6 +196,21 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   `examples/schedule.lm` and wondering why its output was duplicated.
 
 ### Fixed
+
+- **`std/str.replace` had a parameter no Lumen program could declare.** It was
+  called `from`, which is a keyword: you can pass it by name, because the parser
+  is lenient about a keyword before a `:` in a call, but `fn replace(s, from,
+  to)` is a syntax error. So the standard library had a function that could not
+  have been written in the language the standard library is for. It is
+  `replace(s, old, new)` now, which is also what Python calls it. Every
+  parameter in the library is now checked for being an identifier.
+
+- **`help()` says what a parameter is, not only what it is called.**
+  `help(range)` was `range(start, end = ..., step = ...)`; it is
+  `range(start: Num, end = ..., step: Num = ...) -> List<Num>`. A bound method
+  drops as many leading parameters from its signature as the value itself has
+  dropped, so `help("a,b".split)` is `split(separator: Str) -> List<Str>`. The
+  generated reference in `docs/stdlib.md` is regenerated from the same source.
 
 - **`parseExpression` threw an internal exception.** It was the one entry point
   that did not catch the parser's own unwinding signal, so a bad expression

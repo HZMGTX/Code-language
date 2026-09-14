@@ -38,7 +38,7 @@ import type {
   Stmt,
 } from './ast.js';
 import { type Diagnostic, type Note, type Span, LumenError } from './diagnostics.js';
-import { checkTypes } from './types.js';
+import { checkTypes, type CheckOptions, type Ty } from './types.js';
 import { suggest } from './values.js';
 
 interface Binding {
@@ -132,19 +132,31 @@ class Scope {
   }
 }
 
-export interface ResolveOptions {
+/**
+ * Everything the static passes are told about the world outside the module.
+ *
+ * It extends `CheckOptions` rather than repeating it, so the one call that runs
+ * both passes takes one object: names and scoping need the export lists, types
+ * need the signatures, and a caller that has an interpreter in hand has both.
+ */
+export interface ResolveOptions extends CheckOptions {
   /** Names available with no declaration — the prelude. */
   readonly globals: readonly string[];
   /**
-   * Names a module is known to export, keyed by module path. Imports of a
-   * module not listed here are trusted rather than guessed at.
+   * What a module is known to export, and the type of each, keyed by module
+   * path. Imports of a module not listed here are trusted rather than guessed
+   * at.
    *
    * This is how the standard library reaches a resolver that cannot import it.
    * `packages/core` depends on nothing, so it cannot look up what `std/list`
    * exports; the caller, which has a fully built interpreter in hand, can.
    * Core learns a data format rather than a dependency.
+   *
+   * Names and types together in one map rather than two, because two
+   * statements of one fact drift: a name in the list and missing from the
+   * types is a name the checker silently stops checking.
    */
-  readonly moduleExports?: ReadonlyMap<string, readonly string[]>;
+  readonly moduleExports?: ReadonlyMap<string, ReadonlyMap<string, Ty>>;
   /**
    * Module paths beginning with one of these are *completely* described by
    * `moduleExports`, so one that is missing from it does not exist.
@@ -160,7 +172,7 @@ export interface ResolveOptions {
 class Resolver {
   private readonly diagnostics: Diagnostic[] = [];
   private readonly enums = new Map<string, readonly string[]>();
-  private readonly moduleExports: ReadonlyMap<string, readonly string[]>;
+  private readonly moduleExports: ReadonlyMap<string, ReadonlyMap<string, Ty>>;
   private readonly closedPrefixes: readonly string[];
   private scope: Scope;
   /** Greater than zero while walking a function body, whose execution is deferred. */
@@ -324,15 +336,15 @@ class Resolver {
     }
 
     for (const spec of specifiers) {
-      if (exports.includes(spec.name)) continue;
-      const hint = suggest(spec.name, exports);
+      if (exports.has(spec.name)) continue;
+      const hint = suggest(spec.name, [...exports.keys()]);
       this.report(
         'RS009',
         'module "' + from + '" has no export named `' + spec.name + '`',
         spec.span,
         'not exported',
         hint === undefined
-          ? ['it exports: ' + [...exports].sort().join(', ')]
+          ? ['it exports: ' + [...exports.keys()].sort().join(', ')]
           : ['did you mean `' + hint + '`?'],
       );
     }
@@ -848,7 +860,7 @@ export function checkModule(module: Module, source: string, options: ResolveOpti
   if (scopeProblems.length > 0) {
     throw new LumenError(scopeProblems, module.file, source);
   }
-  const typeProblems = checkTypes(module);
+  const typeProblems = checkTypes(module, options);
   if (typeProblems.length > 0) {
     throw new LumenError(typeProblems, module.file, source);
   }

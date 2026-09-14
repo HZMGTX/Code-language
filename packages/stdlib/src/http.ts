@@ -7,7 +7,7 @@
  */
 
 import { map, num, str, type Value } from '@lumen-lang/core';
-import { Err, Ok, arg, expectMap, expectStr, fn, moduleOf } from './support.js';
+import { Err, Ok, arg, expectMap, expectStr, fn, moduleOf, withSignatures } from './support.js';
 
 const NO_HEADERS: Value = map(new Map());
 
@@ -65,8 +65,21 @@ async function send(
   }
 }
 
+/**
+ * Every request answers a `Result`: `Ok(response)` when the request completed,
+ * `Err(message)` when it could not be made at all. A non-2xx status is still
+ * `Ok` — the request succeeded, the answer was a refusal — so the status is in
+ * the response map rather than in the shape of the result.
+ */
+const SIGNATURES: Readonly<Record<string, string>> = {
+  get: '(url: Str, headers: Map = {}) -> Result',
+  post: '(url: Str, body: Str, headers: Map = {}) -> Result',
+  request: '(method: Str, url: Str, body: Any = nil, headers: Map = {}) -> Result',
+};
+
 export function stdHttp(): Map<string, Value> {
-  return moduleOf(
+  return withSignatures(
+    moduleOf(
     fn('get', ['url', { name: 'headers', defaultValue: NO_HEADERS }], async (a, c) =>
       await send(
         'GET',
@@ -101,5 +114,7 @@ export function stdHttp(): Map<string, Value> {
         );
       },
     ),
+    ),
+    SIGNATURES,
   );
 }

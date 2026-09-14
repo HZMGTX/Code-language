@@ -10,10 +10,55 @@ import {
   fn,
   moduleOf,
   withDocs,
+  withSignatures,
 } from './support.js';
 
+/**
+ * Every function's type, in Lumen's own annotation syntax.
+ *
+ * `Str` throughout, because that is what this module is: there is no reading of
+ * `upper(1)` that works, and until these existed the checker had no way to know
+ * it. What is deliberately *not* here is as important — nothing is narrowed
+ * past what the implementation actually accepts, since a signature that is
+ * tighter than the code rejects a program that would have run.
+ */
+const SIGNATURES: Readonly<Record<string, string>> = {
+  upper: '(s: Str) -> Str',
+  lower: '(s: Str) -> Str',
+  trim: '(s: Str) -> Str',
+  trimStart: '(s: Str) -> Str',
+  trimEnd: '(s: Str) -> Str',
+  capitalize: '(s: Str) -> Str',
+  title: '(s: Str) -> Str',
+  reverse: '(s: Str) -> Str',
+  split: '(s: Str, separator: Str) -> List<Str>',
+  splitOnce: '(s: Str, separator: Str) -> List<Str>',
+  lines: '(s: Str) -> List<Str>',
+  chars: '(s: Str) -> List<Str>',
+  words: '(s: Str) -> List<Str>',
+  contains: '(s: Str, needle: Str) -> Bool',
+  startsWith: '(s: Str, prefix: Str) -> Bool',
+  endsWith: '(s: Str, suffix: Str) -> Bool',
+  isEmpty: '(s: Str) -> Bool',
+  replace: '(s: Str, old: Str, new: Str) -> Str',
+  // `end` defaults to nil and means "to the end", so it genuinely accepts
+  // either a Num or nil — narrowing it to Num would reject a program that runs.
+  slice: '(s: Str, start: Num, end: Any = nil) -> Str',
+  indexOf: '(s: Str, needle: Str) -> Num',
+  count: '(s: Str, needle: Str) -> Num',
+  len: '(s: Str) -> Num',
+  repeat: '(s: Str, count: Num) -> Str',
+  padStart: '(s: Str, width: Num, fill: Str = " ") -> Str',
+  padEnd: '(s: Str, width: Num, fill: Str = " ") -> Str',
+  center: '(s: Str, width: Num, pad: Str = " ") -> Str',
+  removePrefix: '(s: Str, prefix: Str) -> Str',
+  removeSuffix: '(s: Str, suffix: Str) -> Str',
+  toNum: '(s: Str) -> Result',
+};
+
 export function stdStr(): Map<string, Value> {
-  return withDocs(
+  return withSignatures(
+    withDocs(
     moduleOf(
     fn('upper', ['s'], (a, c) => str(expectStr(arg(a, 0), c, 'upper(s)').toUpperCase())),
     fn('lower', ['s'], (a, c) => str(expectStr(arg(a, 0), c, 'lower(s)').toLowerCase())),
@@ -45,11 +90,16 @@ export function stdStr(): Map<string, Value> {
       bool(expectStr(arg(a, 0), c, 'endsWith(s)').endsWith(expectStr(arg(a, 1), c, 'suffix'))),
     ),
 
-    fn('replace', ['s', 'from', 'to'], (a, c) => {
+    // `old` and `new` rather than `from` and `to`, because `from` is a keyword:
+    // no Lumen program could declare a parameter by that name, so the library
+    // had one that could not have been written in the language it is for. They
+    // are also what Python calls them, which is where most readers are arriving
+    // from.
+    fn('replace', ['s', 'old', 'new'], (a, c) => {
       const source = expectStr(arg(a, 0), c, 'replace(s)');
-      const from = expectStr(arg(a, 1), c, 'replace from');
-      const to = expectStr(arg(a, 2), c, 'replace to');
-      return str(source.split(from).join(to));
+      const old = expectStr(arg(a, 1), c, 'replace old');
+      const replacement = expectStr(arg(a, 2), c, 'replace new');
+      return str(source.split(old).join(replacement));
     }),
 
     fn('slice', ['s', 'start', { name: 'end', defaultValue: { k: 'nil' } }], (a, c) => {
@@ -222,6 +272,8 @@ export function stdStr(): Map<string, Value> {
       center: 'Pad both sides until the string reaches a width.',
       removePrefix: 'The text with a prefix removed, if it is there.',
       removeSuffix: 'The text with a suffix removed, if it is there.',
-    },
+      },
+    ),
+    SIGNATURES,
   );
 }

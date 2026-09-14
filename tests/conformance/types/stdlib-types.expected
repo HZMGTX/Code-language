@@ -1,0 +1,55 @@
+error[TY001]: `upper` expects Str for `s` but was given Num
+  --> stdlib-types.lm:13:13
+   |
+13 | print(upper(1))
+   |             ^ expected Str
+   |
+   = note: the parameter is declared as `s: Str`
+
+error[TY001]: `padStart` expects Num for `width` but was given Str
+  --> stdlib-types.lm:17:22
+   |
+17 | print("abc".padStart("x"))
+   |                      ^^^ expected Num
+   |
+   = note: the parameter is declared as `width: Num`
+
+error[TY001]: `take` expects Num for `n` but was given Str
+  --> stdlib-types.lm:18:19
+   |
+18 | print([1, 2].take("two"))
+   |                   ^^^^^ expected Num
+   |
+   = note: the parameter is declared as `n: Num`
+
+error[TY001]: `get` expects Str for `key` but was given Num
+  --> stdlib-types.lm:19:18
+   |
+19 | print({a: 1}.get(1))
+   |                  ^ expected Str
+   |
+   = note: the parameter is declared as `key: Str`
+
+error[TY001]: `sortBy` expects fn(Any) -> Any for `key` but was given Str
+  --> stdlib-types.lm:22:21
+   |
+22 | print([2, 1].sortBy("nope"))
+   |                     ^^^^^^ expected fn(Any) -> Any
+   |
+   = note: the parameter is declared as `key: fn(Any) -> Any`
+
+error[TY001]: `upper` expects Str for `s` but was given Num
+  --> stdlib-types.lm:25:7
+   |
+25 | print(1 |> upper())
+   |       ^ expected Str
+   |
+   = note: the parameter is declared as `s: Str`
+
+error[TY005]: cannot apply `-` to Num and Str
+  --> stdlib-types.lm:28:7
+   |
+28 | print("abc".len() - "x")
+   |       ^^^^^^^^^^^^^^^^^ mismatched operands
+   |
+   = note: `-` wants two Nums

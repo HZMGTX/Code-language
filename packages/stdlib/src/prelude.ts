@@ -15,6 +15,8 @@ import {
   bool,
   list,
   num,
+  showSignature,
+  signatureTy,
   str,
   truthy,
   type CallCtx,
@@ -73,9 +75,26 @@ function extremum(which: 'min' | 'max') {
   };
 }
 
-/** Render a function's signature the way it would be written in Lumen. */
+/**
+ * Render a function's signature the way it would be written in Lumen.
+ *
+ * The declared one when there is one, because it says more and is already
+ * written in exactly this syntax: `upper(s: Str) -> Str` rather than
+ * `upper(s)`. Falls back to the parameter names for anything not yet typed,
+ * which is what every one of these looked like before.
+ */
 function signatureOf(value: NativeValue): string {
   if (value.variadic === true) return value.name + '(...)';
+  if (value.signature !== undefined) {
+    const ty = signatureTy(value.signature);
+    // A bound method has already lost its receiver from `params`; the signature
+    // string still describes the whole function, so drop as many leading
+    // parameters as the value itself has dropped rather than assuming a number.
+    const dropped = ty.k === 'fn' ? ty.params.length - value.params.length : 0;
+    const shown =
+      ty.k === 'fn' && dropped > 0 ? { ...ty, params: ty.params.slice(dropped) } : ty;
+    return value.name + showSignature(shown);
+  }
   const params = value.params
     .map((p) => (p.defaultValue === undefined ? p.name : p.name + ' = ...'))
     .join(', ');
@@ -115,6 +134,12 @@ export function preludeExtras(): Map<string, Value> {
   define(alias(take(M, 'ceil'), 'ceil', 'Round up to a whole number.'));
   define(alias(take(M, 'fixed'), 'fixed', 'A number as text with a fixed number of decimals: fixed(4.5, 2) is "4.50".'));
 
+  // No signature on either of these, deliberately. They take a list *or* the
+  // numbers themselves — `min([1, 2])` and `min(1, 2)` are both good, because
+  // guessing wrong about which one a beginner meant is a bad first experience —
+  // and a fixed parameter list cannot describe that. A variadic never carries
+  // one: see `withSignatures`, which refuses to attach a signature to one, so
+  // that the checker's argument-count rule can never be wrong about them.
   define({
     k: 'native',
     name: 'min',
@@ -162,6 +187,10 @@ export function preludeExtras(): Map<string, Value> {
         return list(items);
       },
       'A list of numbers: range(5), range(2, 6), or range(10, 0, -2).',
+      // `end` defaults to nil and changes what `start` means — `range(5)`
+      // counts to five, `range(2, 6)` counts from two — so it takes a Num or
+      // nil, and narrowing it to Num would reject the commoner of the two.
+      '(start: Num, end: Any = nil, step: Num = 1) -> List<Num>',
     ),
   );
 
@@ -182,6 +211,7 @@ export function preludeExtras(): Map<string, Value> {
         return line === undefined ? None : Some(str(line));
       },
       'Read one line from the console. Some(text), or None at end of input.',
+      '(prompt: Str = "") -> Option',
     ),
   );
 

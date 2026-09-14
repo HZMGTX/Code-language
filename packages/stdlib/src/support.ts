@@ -49,18 +49,32 @@ export function expectFn(value: Value, ctx: CallCtx, what: string): Value {
   return value;
 }
 
-/** Define a native with fixed, named parameters (so named arguments work). */
+/**
+ * Define a native with fixed, named parameters (so named arguments work).
+ *
+ * `signature` is the function's type, written in Lumen's own annotation syntax
+ * — `'(s: Str, separator: Str) -> List<Str>'`. It goes here, beside the
+ * implementation it describes, for the same reason the docstrings do: a fact
+ * about a function kept anywhere else is a fact that goes stale. The checker
+ * reads it (via `stdSignatures`) and so does the documentation generator.
+ *
+ * Omitting it leaves the function `Any` in and `Any` out, exactly as every
+ * native was before any of them were typed. Nothing is silently half-checked:
+ * a parameter with no annotation inside a signature is `Any` too.
+ */
 export function fn(
   name: string,
   params: readonly (string | { name: string; defaultValue: Value })[],
   call: (args: readonly Value[], ctx: CallCtx) => Value | Promise<Value>,
   doc?: string,
+  signature?: string,
 ): NativeValue {
   return {
     k: 'native',
     name,
     params: params.map((p) => (typeof p === 'string' ? { name: p } : p)),
     ...(doc === undefined ? {} : { doc }),
+    ...(signature === undefined ? {} : { signature }),
     call,
   };
 }
@@ -86,6 +100,33 @@ export function withDocs(
     const value = module.get(name);
     if (value === undefined || value.k !== 'native') continue;
     module.set(name, { ...value, doc });
+  }
+  return module;
+}
+
+/**
+ * Attach types to a module's functions, written in Lumen's own syntax.
+ *
+ * Beside `withDocs` and for the same reason: a table of prose reads as prose,
+ * and a table of signatures reads as a reference. Both sit next to the
+ * implementations they describe, so neither can be updated without the other
+ * being right there.
+ *
+ * A name with no entry keeps no signature and stays `Any` in and `Any` out,
+ * which is how every native behaved before any of them were typed.
+ */
+export function withSignatures(
+  module: Map<string, Value>,
+  signatures: Readonly<Record<string, string>>,
+): Map<string, Value> {
+  for (const [name, signature] of Object.entries(signatures)) {
+    const value = module.get(name);
+    if (value === undefined || value.k !== 'native') continue;
+    // A variadic takes any number of arguments, which a fixed parameter list
+    // cannot describe — and the checker's arity rule would then be wrong about
+    // it in the one direction that rejects working programs.
+    if (value.variadic === true) continue;
+    module.set(name, { ...value, signature });
   }
   return module;
 }

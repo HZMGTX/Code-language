@@ -1,7 +1,44 @@
 /** `std/math` — numeric helpers and constants. */
 
 import { num, str, type Value } from '@lumen-lang/core';
-import { arg, expectInt, expectNum, fn, moduleOf } from './support.js';
+import { arg, expectInt, expectNum, fn, moduleOf, withSignatures } from './support.js';
+
+/**
+ * Every function's type. `Num` throughout, which is the whole of this module.
+ *
+ * `randomInt` and `fixed` are the only ones that answer with something else,
+ * and `fixed` is the reason `n.fixed(2)` reads as text: it is a rendering, not
+ * a rounding.
+ */
+const SIGNATURES: Readonly<Record<string, string>> = {
+  abs: '(n: Num) -> Num',
+  floor: '(n: Num) -> Num',
+  ceil: '(n: Num) -> Num',
+  round: '(n: Num) -> Num',
+  trunc: '(n: Num) -> Num',
+  sign: '(n: Num) -> Num',
+  sin: '(n: Num) -> Num',
+  cos: '(n: Num) -> Num',
+  tan: '(n: Num) -> Num',
+  exp: '(n: Num) -> Num',
+  asin: '(n: Num) -> Num',
+  acos: '(n: Num) -> Num',
+  atan: '(n: Num) -> Num',
+  cbrt: '(n: Num) -> Num',
+  sqrt: '(n: Num) -> Num',
+  atan2: '(y: Num, x: Num) -> Num',
+  hypot: '(a: Num, b: Num) -> Num',
+  gcd: '(a: Num, b: Num) -> Num',
+  lcm: '(a: Num, b: Num) -> Num',
+  log: '(n: Num, base: Num = 0) -> Num',
+  pow: '(base: Num, exponent: Num) -> Num',
+  min: '(a: Num, b: Num) -> Num',
+  max: '(a: Num, b: Num) -> Num',
+  clamp: '(n: Num, low: Num, high: Num) -> Num',
+  fixed: '(n: Num, places: Num = 0) -> Str',
+  random: '() -> Num',
+  randomInt: '(low: Num, high: Num) -> Num',
+};
 
 export function stdMath(): Map<string, Value> {
   const unary = (name: string, op: (n: number) => number) =>
@@ -144,5 +181,5 @@ export function stdMath(): Map<string, Value> {
   // Not a literal anyone can write: `1e400` is a lexer error, and this is the
   // only way to name the value that comparisons against "no limit" want.
   exports.set('INFINITY', num(Infinity));
-  return exports;
+  return withSignatures(exports, SIGNATURES);
 }

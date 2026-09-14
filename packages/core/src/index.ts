@@ -42,7 +42,19 @@ export { Parser, parse, parseExpression } from './parser.js';
 
 export { resolve, checkModule, type ResolveOptions } from './resolver.js';
 
-export { checkTypes, accepts, showTy, type Ty } from './types.js';
+export {
+  UNIVERSAL,
+  accepts,
+  checkTypes,
+  methodTy,
+  showSignature,
+  showTy,
+  signatureTy,
+  typeNameOf,
+  type CheckOptions,
+  type ParamTy,
+  type Ty,
+} from './types.js';
 
 export type * as ast from './ast.js';
 export type {

@@ -18,7 +18,7 @@ import * as path from 'node:path';
 
 import { NIL, bool, display, map, num, str, type Value } from '@lumen-lang/core';
 import { toJson } from './json.js';
-import { arg, expectFn, expectInt, expectList, expectStr, fn, moduleOf } from './support.js';
+import { arg, expectFn, expectInt, expectList, expectStr, fn, moduleOf, withSignatures } from './support.js';
 
 /**
  * Whether this process was started as a server — `lumen serve` rather than
@@ -220,8 +220,34 @@ function escapeHtml(input: string): string {
     .replace(/'/g, '&#39;');
 }
 
+/**
+ * A response is a `Map` with `status`, `headers` and `body`, and everything
+ * that builds one says so. A handler is `fn(req) -> response`, which is spelled
+ * `fn(Map) -> Map` — the one shape this module is organised around.
+ *
+ * `serve` never returns, so its type is `Nil` by default rather than by
+ * meaning; the checker has no way to express "does not return" and does not
+ * need one.
+ */
+const SIGNATURES: Readonly<Record<string, string>> = {
+  html: '(body: Str, status: Num = 200) -> Map',
+  text: '(body: Str, status: Num = 200) -> Map',
+  json: '(value: Any, status: Num = 200) -> Map',
+  notFound: '(body: Str = "Not Found") -> Map',
+  redirect: '(location: Str, status: Num = 302) -> Map',
+  route: '(method: Str, path: Str, handler: fn(Map) -> Map) -> Map',
+  router: '(routes: List, notFound: Any = nil) -> fn(Map) -> Map',
+  escape: '(text: Str) -> Str',
+  form: '(req: Map) -> Map',
+  file: '(path: Str, root: Str = ".", type: Str = "") -> Map',
+  page: '(title: Str, body: Str, style: Str = "") -> Map',
+  serve: '(handler: fn(Map) -> Map, port: Num = 3000, host: Str = "127.0.0.1") -> Nil',
+  isServer: '() -> Bool',
+};
+
 export function stdWeb(): Map<string, Value> {
-  return moduleOf(
+  return withSignatures(
+    moduleOf(
     fn('html', ['body', { name: 'status', defaultValue: num(200) }], (a, c) =>
       response(
         expectInt(arg(a, 1), c, 'html status'),
@@ -635,5 +661,7 @@ export function stdWeb(): Map<string, Value> {
 
     /** True when started with `lumen serve`, false under `lumen run`. */
     fn('isServer', [], () => bool(serveMode)),
+    ),
+    SIGNATURES,
   );
 }

@@ -8,7 +8,7 @@
  */
 
 import { NIL, bool, inspect, list, map, num, str, type Value } from '@lumen-lang/core';
-import { None, Some, arg, expectNum, expectStr, fn, moduleOf } from './support.js';
+import { None, Some, arg, expectNum, expectStr, fn, moduleOf, withSignatures } from './support.js';
 
 /** Deep copy, so mutating the result cannot affect the original. */
 /**
@@ -69,8 +69,28 @@ function clone(value: Value, copies = new Map<Value, Value>()): Value {
   }
 }
 
+/**
+ * The handful of things that are about the program itself rather than about a
+ * value: the clock, the environment, the arguments, stopping.
+ *
+ * `clone` and `inspect` take anything and are honest about giving back
+ * anything, which is what `Any` is for. `env` answers an `Option` because a
+ * variable that is not set is not an empty string.
+ */
+const SIGNATURES: Readonly<Record<string, string>> = {
+  now: '() -> Num',
+  env: '(name: Str) -> Option',
+  args: '() -> List<Str>',
+  exit: '(code: Num = 0) -> Nil',
+  sleep: '(milliseconds: Num) -> Nil',
+  inspect: '(value: Any) -> Str',
+  clone: '(value: Any) -> Any',
+  isNil: '(value: Any) -> Bool',
+};
+
 export function stdCore(): Map<string, Value> {
-  return moduleOf(
+  return withSignatures(
+    moduleOf(
     /** Milliseconds since the Unix epoch. */
     fn('now', [], (_a, c) => num(c.host.now())),
 
@@ -126,5 +146,7 @@ export function stdCore(): Map<string, Value> {
     fn('clone', ['value'], (a) => clone(arg(a, 0))),
 
     fn('isNil', ['value'], (a) => bool(arg(a, 0).k === 'nil')),
+    ),
+    SIGNATURES,
   );
 }

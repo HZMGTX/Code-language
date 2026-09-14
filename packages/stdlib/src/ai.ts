@@ -17,7 +17,7 @@
  */
 
 import { NIL, list, num, str, type CallCtx, type Value } from '@lumen-lang/core';
-import { Err, Ok, arg, expectInt, expectList, expectStr, fn, moduleOf } from './support.js';
+import { Err, Ok, arg, expectInt, expectList, expectStr, fn, moduleOf, withSignatures } from './support.js';
 
 type Provider = 'anthropic' | 'openai' | 'mock';
 
@@ -177,8 +177,25 @@ const COMMON_PARAMS = [
   { name: 'provider', defaultValue: NIL },
 ] as const;
 
+/**
+ * A model call can always fail — no key, no network, a refusal — so `chat` and
+ * `converse` answer a `Result` rather than raising. `model`, `system` and
+ * `provider` default to nil, meaning "whatever the environment says", so they
+ * take a Str or nil and are typed `Any`.
+ */
+const SIGNATURES: Readonly<Record<string, string>> = {
+  chat:
+    '(prompt: Str, model: Any = nil, system: Any = nil, maxTokens: Num = 1024, provider: Any = nil) -> Result',
+  converse:
+    '(messages: List, model: Any = nil, system: Any = nil, maxTokens: Num = 1024, provider: Any = nil) -> Result',
+  message: '(role: Str, content: Str) -> Map',
+  provider: '() -> Str',
+  providers: '() -> List<Str>',
+};
+
 export function stdAi(): Map<string, Value> {
-  return moduleOf(
+  return withSignatures(
+    moduleOf(
     /** One-shot question. Returns `Ok(reply)` or `Err(message)`. */
     fn('chat', ['prompt', ...COMMON_PARAMS], async (a, c) => {
       const prompt = expectStr(arg(a, 0), c, 'chat(prompt)');
@@ -218,5 +235,7 @@ export function stdAi(): Map<string, Value> {
 
     /** The providers this build knows about. */
     fn('providers', [], () => list([str('anthropic'), str('openai'), str('mock')])),
+    ),
+    SIGNATURES,
   );
 }

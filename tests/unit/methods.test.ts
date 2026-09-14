@@ -186,15 +186,27 @@ describe('help', () => {
   });
 
   it('describes a function with its signature and documentation', async () => {
+    // The *declared* signature, now that the library has them: `help` says what
+    // a parameter is as well as what it is called, which is the question
+    // somebody reaching for `help` most often has.
     const text = await out('help(range)');
-    assert.match(text, /range\(start, end = \.\.\., step = \.\.\.\)/);
+    assert.match(text, /range\(start: Num, end = \.\.\., step: Num = \.\.\.\) -> List<Num>/);
     assert.match(text, /A list of numbers/);
   });
 
   it('describes a method with the receiver already dropped', async () => {
+    // From the signature, with as many leading parameters removed as the bound
+    // value itself has lost — so this cannot go wrong by assuming the number.
     const text = await out('help("a,b".split)');
-    assert.match(text, /split\(separator\)/);
-    assert.doesNotMatch(text, /split\(s,/);
+    assert.match(text, /split\(separator: Str\) -> List<Str>/);
+    assert.doesNotMatch(text, /split\(s[,:]/);
+  });
+
+  it('falls back to parameter names for anything not typed', async () => {
+    // A variadic declares no signature — no fixed parameter list describes one
+    // — and `help` still has something useful to say about it.
+    assert.match(await out('help(min)'), /min\(\.\.\.\)/);
+    assert.match(await out('help(print)'), /print\(\.\.\.\)/);
   });
 
   it('lists a module by name', async () => {

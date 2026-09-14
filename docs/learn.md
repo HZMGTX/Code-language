@@ -1089,16 +1089,21 @@ methods you can call on it:
   capitalize, center, chars, clone, contains, count, endsWith, indexOf, inspect, isEmpty, isNil, len, lines, lower, padEnd, padStart, removePrefix, removeSuffix, repeat, replace, reverse, slice, split, splitOnce, startsWith, str, title, toNum, trim, trimEnd, trimStart, type, upper, words
 ```
 
-`help` on a function explains that function:
+`help` on a function explains that function — what it takes, what each of those
+is, and what comes back:
 
 ```lumen
 help(range)
 ```
 
 ```
-range(start, end = ..., step = ...)
+range(start: Num, end = ..., step: Num = ...) -> List<Num>
   A list of numbers: range(5), range(2, 6), or range(10, 0, -2).
 ```
+
+`end = ...` means you may leave it out. It has no type shown because it takes
+either a number or nothing — `range(5)` counts *to* five, `range(2, 6)` counts
+*from* two.
 
 `help()` with nothing lists everything available without an import, plus the
 modules you can reach for; and `help("std/list")` lists what one module holds.

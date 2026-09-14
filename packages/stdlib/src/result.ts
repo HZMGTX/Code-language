@@ -10,7 +10,7 @@
  */
 
 import { bool, enumValue, type CallCtx, type EnumValue, type Value } from '@lumen-lang/core';
-import { None, Some, arg, expectFn, fn, moduleOf } from './support.js';
+import { None, Some, arg, expectFn, fn, moduleOf, withSignatures } from './support.js';
 
 function expectResult(value: Value, ctx: CallCtx, where: string): EnumValue {
   if (value.k === 'enum' && value.enumName === 'Result') return value;
@@ -23,8 +23,24 @@ const isOk = (r: EnumValue): boolean => r.variant === 'Ok';
 /** Both variants carry exactly one value, so index 0 is always there. */
 const inner = (r: EnumValue): Value => r.values[0] as Value;
 
+/**
+ * A `Result` in, and — except for the two questions and the two conversions —
+ * a `Result` out. What it carries has no name here, so `unwrapOr` is `Any`.
+ */
+const SIGNATURES: Readonly<Record<string, string>> = {
+  isOk: '(result: Result) -> Bool',
+  isErr: '(result: Result) -> Bool',
+  unwrapOr: '(result: Result, fallback: Any) -> Any',
+  map: '(result: Result, f: fn(Any) -> Any) -> Result',
+  mapErr: '(result: Result, f: fn(Any) -> Any) -> Result',
+  andThen: '(result: Result, f: fn(Any) -> Any) -> Result',
+  ok: '(result: Result) -> Option',
+  err: '(result: Result) -> Option',
+};
+
 export function stdResult(): Map<string, Value> {
-  return moduleOf(
+  return withSignatures(
+    moduleOf(
     fn('isOk', ['result'], (a, c) => bool(isOk(expectResult(arg(a, 0), c, 'isOk(result)'))),
       'True when it succeeded.'),
 
@@ -97,5 +113,7 @@ export function stdResult(): Map<string, Value> {
       },
       'The error as an Option, discarding the success.',
     ),
+    ),
+    SIGNATURES,
   );
 }

@@ -574,6 +574,8 @@ Annotations are **checked where they are written**, before the program runs:
 | `TY004` | A struct literal field does not match the field's declared type |
 | `TY005` | An operator's operands cannot be what they are |
 | `TY006` | An assignment does not match the target's declared type |
+| `TY007` | A call passes more arguments than the function takes |
+| `TY008` | A call leaves out an argument the function requires |
 
 `TY005` speaks only when **both** operand types are known. `1 - "x"` is reported;
 `a - "x"` for an unannotated `a` is not, because `a` is `Any`. That restraint is
@@ -614,10 +616,55 @@ never asked to be checked. The exception is an unannotated `let`: because `let`
 is immutable, the binding can never later hold a different type, so taking the
 type from its value cannot become wrong. A `var` stays `Any`.
 
+### The standard library's types
+
+The checker cannot read the standard library — the language core depends on
+nothing, which is what makes a browser or an embedded host a wiring exercise
+rather than a rewrite. So it is *told*: an implementation hands the static
+passes the type of every name the prelude puts in scope, every module export,
+and every method, and the checker treats them exactly as it treats an
+annotation somebody wrote.
+
+That is what makes `upper(1)`, `"abc".padStart("x")` and `[1, 2].take("two")`
+static errors rather than run-time ones, and it is where most of what this pass
+catches now comes from — a program that writes no annotations of its own still
+calls the library on nearly every line.
+
+A signature is written in the language's own annotation syntax, so there is
+nothing new to learn and nothing that can drift into a private notation:
+
+```text
+upper      (s: Str) -> Str
+padStart   (s: Str, width: Num, fill: Str = " ") -> Str
+split      (s: Str, separator: Str) -> List<Str>
+```
+
+Three restraints keep this sound, all of them the no-false-positives rule:
+
+- **A function with no declared signature is `Any`.** The library can be typed
+  a piece at a time, and an untyped function is exactly as unchecked as it was
+  before any of it was typed.
+- **Nothing is narrowed past what the implementation accepts.** `contains(xs,
+  value)` works on a list of anything, so `value` is `Any`; `slice`'s `end`
+  defaults to nil and means "to the end", so it is `Any` rather than `Num`.
+- **A variadic declares nothing.** `min` and `max` take a list *or* the numbers
+  themselves, which no fixed parameter list describes, so they declare none and
+  every spelling of them stays silent.
+
+`TY007` and `TY008` follow from the same knowledge — once a function's
+parameters are known, so is how many arguments a call may have. Both are
+reported only for a function that was actually *declared*: a `fn(Num, Num) ->
+Num` annotation records no defaults, so a value of that type may well be
+`fn(a, b = 1)`, and a one-argument call is perfectly good. They also stay quiet
+the moment an argument is named, because the interpreter then has a better
+answer than a count: `greet(nmae: "Ada")` is a typo in `nmae`, not a missing
+`name`.
+
 What is **not** checked in this pass: parameters and `var` bindings without
-annotations, the standard library's own signatures, method calls, function-type
-compatibility, and anything requiring flow analysis or generics. Those need the
-full checker; see [ROADMAP.md](../ROADMAP.md).
+annotations, anything requiring flow analysis, and generics — `map(xs, f)`
+returns a list of whatever `f` gives back, and there is no way to say so, so its
+element type is left off. Those need the full checker; see
+[ROADMAP.md](../ROADMAP.md).
 
 Arity, field names and operand types are also checked at run time, so a host
 embedding the interpreter without running these passes is not left unguarded.

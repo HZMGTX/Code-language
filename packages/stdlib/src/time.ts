@@ -43,7 +43,7 @@
  */
 
 import { bool, list, map, num, str, truthy, type Value } from '@lumen-lang/core';
-import { Err, Ok, arg, expectInt, expectNum, expectStr, fn, moduleOf, withDocs } from './support.js';
+import { Err, Ok, arg, expectInt, expectNum, expectStr, fn, moduleOf, withDocs, withSignatures } from './support.js';
 
 const MINUTE = 60000;
 const HOUR = 3600000;
@@ -106,8 +106,34 @@ function isoOf(d: Date): string {
   );
 }
 
+/**
+ * An instant is a `Num` — milliseconds since the epoch, UTC throughout — which
+ * is why so many of these take and give one. `parts` and `fromParts` are the
+ * two that cross between that and a calendar.
+ */
+const SIGNATURES: Readonly<Record<string, string>> = {
+  iso: '(instant: Num) -> Str',
+  date: '(instant: Num) -> Str',
+  time: '(instant: Num, seconds: Bool = false) -> Str',
+  parts: '(instant: Num) -> Map',
+  fromParts:
+    '(year: Num, month: Num = 1, day: Num = 1, hour: Num = 0, minute: Num = 0, second: Num = 0, millisecond: Num = 0) -> Num',
+  parseIso: '(text: Str) -> Result',
+  plus:
+    '(instant: Num, days: Num = 0, hours: Num = 0, minutes: Num = 0, seconds: Num = 0, milliseconds: Num = 0) -> Num',
+  startOfDay: '(instant: Num) -> Num',
+  weekdayName: '(instant: Num) -> Str',
+  monthName: '(instant: Num) -> Str',
+  weekdayNames: '() -> List<Str>',
+  monthNames: '() -> List<Str>',
+  format: '(instant: Num, template: Str = "") -> Str',
+  describe: '(milliseconds: Num) -> Str',
+  offsetMinutes: '(instant: Num) -> Num',
+};
+
 export function stdTime(): Map<string, Value> {
-  return withDocs(
+  return withSignatures(
+    withDocs(
     moduleOf(
       /** `2026-09-13T12:34:56.789Z` — the one format every other system reads. */
       fn('iso', ['instant'], (a, c) => str(isoOf(instant(arg(a, 0), c, 'iso(instant)')))),
@@ -391,6 +417,8 @@ export function stdTime(): Map<string, Value> {
       format: 'An instant as text, replacing YYYY MM DD hh mm ss SSS in a template.',
       describe: 'A length of time written for a person: "2h 3m".',
       offsetMinutes: 'This machine’s offset from UTC in minutes at that instant.',
-    },
+      },
+    ),
+    SIGNATURES,
   );
 }

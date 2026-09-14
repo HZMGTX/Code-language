@@ -33,6 +33,7 @@ import {
   fn,
   moduleOf,
   withDocs,
+  withSignatures,
 } from './support.js';
 
 /** Compare two values for sorting; only Nums and Strs have a natural order. */
@@ -42,8 +43,68 @@ function orderOf(a: Value, b: Value, panic: (m: string) => never): number {
   return panic('cannot order ' + typeName(a) + ' against ' + typeName(b));
 }
 
+/**
+ * Every function's type, in Lumen's own annotation syntax.
+ *
+ * Conservative on purpose, because `Ty` has no type variables. `map(xs, f)`
+ * genuinely returns a list of whatever `f` gives back, and there is no way to
+ * write that here — so the element type is left off, and a `List` is all the
+ * checker learns. That is enough for `xs.map(f) + 1` to be caught and not
+ * enough to be wrong about, which is the right side to err on.
+ *
+ * `value` parameters stay `Any` for the same reason: `contains(xs, value)`
+ * works on a list of anything, and narrowing it to the element type is a
+ * promise this pass cannot keep.
+ */
+const SIGNATURES: Readonly<Record<string, string>> = {
+  map: '(xs: List, f: fn(Any) -> Any) -> List',
+  filter: '(xs: List, predicate: fn(Any) -> Any) -> List',
+  reduce: '(xs: List, f: fn(Any, Any) -> Any, initial: Any) -> Any',
+  find: '(xs: List, predicate: fn(Any) -> Any) -> Option',
+  any: '(xs: List, predicate: Any = nil) -> Bool',
+  all: '(xs: List, predicate: Any = nil) -> Bool',
+  count: '(xs: List, predicate: fn(Any) -> Any) -> Num',
+  len: '(xs: List) -> Num',
+  isEmpty: '(xs: List) -> Bool',
+  first: '(xs: List) -> Option',
+  last: '(xs: List) -> Option',
+  at: '(xs: List, index: Num) -> Option',
+  push: '(xs: List, value: Any) -> List',
+  pop: '(xs: List) -> List',
+  // `end` defaults to nil and means "to the end", so it takes a Num or nil.
+  slice: '(xs: List, start: Num, end: Any = nil) -> List',
+  take: '(xs: List, n: Num) -> List',
+  drop: '(xs: List, n: Num) -> List',
+  reverse: '(xs: List) -> List',
+  contains: '(xs: List, value: Any) -> Bool',
+  indexOf: '(xs: List, value: Any) -> Num',
+  unique: '(xs: List) -> List',
+  flatten: '(xs: List) -> List',
+  join: '(xs: List, separator: Str = "") -> Str',
+  sort: '(xs: List) -> List',
+  sortBy: '(xs: List, key: fn(Any) -> Any) -> List',
+  sum: '(xs: List) -> Num',
+  zip: '(xs: List, ys: List) -> List',
+  groupBy: '(xs: List, key: fn(Any) -> Any) -> Map',
+  partition: '(xs: List, predicate: fn(Any) -> Any) -> List',
+  chunk: '(xs: List, size: Num) -> List',
+  windows: '(xs: List, size: Num) -> List',
+  flatMap: '(xs: List, f: fn(Any) -> Any) -> List',
+  scan: '(xs: List, f: fn(Any, Any) -> Any, initial: Any) -> List',
+  intersperse: '(xs: List, value: Any) -> List',
+  insert: '(xs: List, index: Num, value: Any) -> List',
+  removeAt: '(xs: List, index: Num) -> List',
+  concat: '(xs: List, ys: List) -> List',
+  minimum: '(xs: List) -> Option',
+  maximum: '(xs: List) -> Option',
+  minBy: '(xs: List, key: fn(Any) -> Any) -> Option',
+  maxBy: '(xs: List, key: fn(Any) -> Any) -> Option',
+  enumerate: '(xs: List, start: Num = 0) -> List',
+};
+
 export function stdList(): Map<string, Value> {
-  return withDocs(
+  return withSignatures(
+    withDocs(
     moduleOf(
     fn('map', ['xs', 'f'], async (a, c) => {
       const xs = expectList(arg(a, 0), c, 'map(xs)');
@@ -467,6 +528,8 @@ export function stdList(): Map<string, Value> {
       maximum: 'The largest element. Some(x), or None if empty.',
       minBy: 'The element with the smallest key. Some(x), or None if empty.',
       maxBy: 'The element with the largest key. Some(x), or None if empty.',
-    },
+      },
+    ),
+    SIGNATURES,
   );
 }

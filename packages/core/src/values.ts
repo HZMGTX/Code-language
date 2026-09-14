@@ -121,6 +121,19 @@ export interface NativeValue {
    * implementation detail nobody wrote and cannot act on.
    */
   readonly positional?: boolean;
+  /**
+   * Its type, written in Lumen's own annotation syntax: `'(s: Str) -> Str'`.
+   *
+   * A string rather than a `Ty`, so declaring one costs a standard-library
+   * author nothing but the sentence they would write in the documentation
+   * anyway, and so it is spelled in exactly the syntax a user writes. The
+   * checker parses it with the real parser — see `signatureTy`.
+   *
+   * Optional, and absent means `Any`: the 204 natives can be typed one at a
+   * time, and an untyped one is exactly as unchecked as it was before any of
+   * them were typed.
+   */
+  readonly signature?: string;
   call(args: readonly Value[], ctx: CallCtx): Value | Promise<Value>;
 }
 

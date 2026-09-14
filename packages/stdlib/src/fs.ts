@@ -9,7 +9,7 @@ import { promises as fsp } from 'node:fs';
 import * as path from 'node:path';
 
 import { NIL, bool, list, str, type Value } from '@lumen-lang/core';
-import { Err, Ok, arg, expectStr, fn, moduleOf } from './support.js';
+import { Err, Ok, arg, expectStr, fn, moduleOf, withSignatures } from './support.js';
 
 /**
  * Turn a Node filesystem error into a message Lumen owns.
@@ -56,8 +56,23 @@ function messageOf(error: unknown, action: string, target: string): string {
   }
 }
 
+/**
+ * Every one of these can fail — a file may not be there, a directory may not be
+ * writable — so every one answers a `Result` rather than raising. `exists` is
+ * the exception: asking whether something is there cannot itself fail.
+ */
+const SIGNATURES: Readonly<Record<string, string>> = {
+  read: '(path: Str) -> Result',
+  write: '(path: Str, contents: Str) -> Result',
+  append: '(path: Str, contents: Str) -> Result',
+  exists: '(path: Str) -> Bool',
+  list: '(path: Str) -> Result',
+  remove: '(path: Str) -> Result',
+};
+
 export function stdFs(): Map<string, Value> {
-  return moduleOf(
+  return withSignatures(
+    moduleOf(
     fn('read', ['path'], async (a, c) => {
       const target = expectStr(arg(a, 0), c, 'read(path)');
       try {
@@ -119,5 +134,7 @@ export function stdFs(): Map<string, Value> {
         return Err(str(messageOf(error, 'remove', target)));
       }
     }),
+    ),
+    SIGNATURES,
   );
 }

@@ -24,6 +24,8 @@
  *   TY004  struct literal field does not match the field's declared type
  *   TY005  an operator's operands cannot be the types they are
  *   TY006  a value assigned to an annotated binding does not match it
+ *   TY007  more arguments than the function takes
+ *   TY008  a required argument the call does not supply
  */
 
 import type {
@@ -38,6 +40,7 @@ import type {
   TypeExpr,
 } from './ast.js';
 import { type Diagnostic, type Note, type Span } from './diagnostics.js';
+import { parse } from './parser.js';
 
 // ------------------------------------------------------------------- types
 
@@ -146,10 +149,55 @@ export function accepts(to: Ty, from: Ty): boolean {
     case 'struct':
     case 'enum':
       return to.name === (from as { name: string }).name;
-    case 'fn':
-      return true; // function shapes are not compared in this pass
+    case 'fn': {
+      const f = from as { params: readonly ParamTy[]; ret: Ty };
+      // Covariant in the result: a function returning Num may be used where one
+      // returning Num is wanted, and `Any` either way keeps quiet.
+      if (!accepts(to.ret, f.ret)) return false;
+      // Contravariant in the parameters, and only where both sides have one.
+      // Arity is deliberately not compared: a call with the wrong number of
+      // arguments is reported where the call is, with a span pointing at it,
+      // and guessing here would reject `fn(a, b = 1)` passed as `fn(Num)`.
+      for (const [i, want] of to.params.entries()) {
+        const got = f.params[i];
+        if (got === undefined) break;
+        if (!accepts(got.ty, want.ty)) return false;
+      }
+      return true;
+    }
     default:
       return true;
+  }
+}
+
+/**
+ * What the interpreter calls a value of this type, or undefined when unknown.
+ *
+ * The same strings `typeName` produces at run time, because they are the keys
+ * method tables are registered under: the two passes must agree about what a
+ * method is called or they check different programs.
+ */
+export function typeNameOf(ty: Ty): string | undefined {
+  switch (ty.k) {
+    case 'any':
+      return undefined;
+    case 'nil':
+      return 'Nil';
+    case 'bool':
+      return 'Bool';
+    case 'num':
+      return 'Num';
+    case 'str':
+      return 'Str';
+    case 'list':
+      return 'List';
+    case 'map':
+      return 'Map';
+    case 'fn':
+      return 'Fn';
+    case 'struct':
+    case 'enum':
+      return ty.name;
   }
 }
 
@@ -182,9 +230,27 @@ class Checker {
   private readonly reported = new Set<string>();
   private readonly structs = new Map<string, StructInfo>();
   private readonly enums = new Set<string>();
-  private scope = new Scope(undefined);
+  /** `"Str.upper"` to the type of `x.upper`, with the receiver already removed. */
+  private readonly methods: ReadonlyMap<string, Ty>;
+  /** What each described module exports, so an imported name has a type. */
+  private readonly moduleExports: ReadonlyMap<string, ReadonlyMap<string, Ty>>;
+  private scope: Scope;
   /** The declared return type of the function being checked, if any. */
   private returnTy: Ty = ANY;
+
+  constructor(options: CheckOptions = {}) {
+    this.methods = options.methods ?? new Map();
+    this.moduleExports = options.moduleExports ?? new Map();
+    // The prelude, seeded into the scope everything else nests inside. Without
+    // this every standard-library call was `Any` in and `Any` out, so
+    // `upper(1)` passed every static check and failed when it ran.
+    const root = new Scope(undefined);
+    for (const [name, ty] of options.signatures ?? []) root.declare(name, ty);
+    this.scope = new Scope(root);
+    // `Result` and `Option` are always matchable and always annotatable,
+    // whatever the module declares — the same two the resolver seeds.
+    this.enums.add('Result').add('Option');
+  }
 
   /**
    * What a target ends up holding after an assignment.
@@ -302,39 +368,9 @@ class Checker {
 
   /** Convert a written annotation into a type. Unknown names become Any. */
   private toTy(annotation: TypeExpr | undefined): Ty {
-    if (annotation === undefined) return ANY;
-    if (annotation.kind === 'TypeFn') {
-      return {
-        k: 'fn',
-        params: annotation.params.map((p) => ({
-          name: undefined,
-          ty: this.toTy(p),
-          optional: false,
-          rest: false,
-        })),
-        ret: this.toTy(annotation.ret),
-      };
-    }
-    const first = annotation.args[0];
-    switch (annotation.name) {
-      case 'Num':
-        return NUM;
-      case 'Str':
-        return STR;
-      case 'Bool':
-        return BOOL;
-      case 'Nil':
-        return NIL;
-      case 'List':
-        return { k: 'list', of: this.toTy(first) };
-      case 'Map':
-        return { k: 'map', of: this.toTy(first) };
-      default:
-        if (this.structs.has(annotation.name)) return { k: 'struct', name: annotation.name };
-        if (this.enums.has(annotation.name)) return { k: 'enum', name: annotation.name };
-        // `Any`, a generic parameter, or a name this pass does not know.
-        return ANY;
-    }
+    return tyOf(annotation, (name) =>
+      this.structs.has(name) ? 'struct' : this.enums.has(name) ? 'enum' : undefined,
+    );
   }
 
   private fnTy(params: readonly Param[], ret: TypeExpr | undefined): Ty {
@@ -472,9 +508,16 @@ class Checker {
         this.typeOf(stmt.expr);
         return;
 
-      case 'ImportDecl':
-        for (const spec of stmt.specifiers) this.scope.declare(spec.alias ?? spec.name, ANY);
+      case 'ImportDecl': {
+        // An imported name is typed when the caller has described the module,
+        // and `Any` otherwise — a local `./helper.lm` is a file this pass has
+        // never read, and guessing about it is the one thing it must not do.
+        const exports = this.moduleExports.get(stmt.from);
+        for (const spec of stmt.specifiers) {
+          this.scope.declare(spec.alias ?? spec.name, exports?.get(spec.name) ?? ANY);
+        }
         return;
+      }
 
       case 'ExportDecl':
         this.stmt(stmt.declaration);
@@ -636,12 +679,13 @@ class Checker {
 
       case 'MemberExpr': {
         const target = this.typeOf(expr.target);
+        // A struct's own field wins, exactly as it does at run time.
         if (target.k === 'struct') {
           const info = this.structs.get(target.name);
           const field = info?.fields.get(expr.name);
           if (field !== undefined) return field;
         }
-        return ANY;
+        return this.methodTy(target, expr.name) ?? ANY;
       }
 
       case 'AssignExpr': {
@@ -723,6 +767,25 @@ class Checker {
     }
   }
 
+  /**
+   * The type of `x.name`, or undefined when there is nothing to say.
+   *
+   * `x.f(a)` is `CallExpr{callee: MemberExpr}`, so a method call needs no case
+   * of its own: giving the member its real type is enough for `checkCall` to do
+   * the rest, and the three spellings of a call stay one code path.
+   *
+   * A receiver whose type is unknown answers nothing, as always. So does a
+   * method nobody supplied a signature for.
+   */
+  private methodTy(receiver: Ty, name: string): Ty | undefined {
+    const typeName = typeNameOf(receiver);
+    if (typeName === undefined) return undefined;
+    // The type's own table first, then the handful that belong to every value
+    // (`str`, `inspect`, `type`, `clone`, `isNil`) — the same order the
+    // interpreter looks them up in, so a type-specific method still wins.
+    return this.methods.get(typeName + '.' + name) ?? this.methods.get(UNIVERSAL + '.' + name);
+  }
+
   private structLit(expr: Extract<Expr, { kind: 'StructLit' }>): Ty {
     const info = this.structs.get(expr.name);
     for (const field of expr.fields) {
@@ -742,7 +805,12 @@ class Checker {
   }
 
   private call(expr: Extract<Expr, { kind: 'CallExpr' }>): Ty {
-    return this.checkCall(this.typeOf(expr.callee), calleeName(expr.callee), this.argTys(expr.args));
+    return this.checkCall(
+      this.typeOf(expr.callee),
+      calleeName(expr.callee),
+      this.argTys(expr.args),
+      expr.span,
+    );
   }
 
   /**
@@ -761,12 +829,83 @@ class Checker {
     };
     if (expr.right.kind === 'CallExpr') {
       const callee = this.typeOf(expr.right.callee);
-      return this.checkCall(callee, calleeName(expr.right.callee), [
-        piped,
-        ...this.argTys(expr.right.args),
-      ]);
+      return this.checkCall(
+        callee,
+        calleeName(expr.right.callee),
+        [piped, ...this.argTys(expr.right.args)],
+        expr.span,
+      );
     }
-    return this.checkCall(this.typeOf(expr.right), calleeName(expr.right), [piped]);
+    return this.checkCall(this.typeOf(expr.right), calleeName(expr.right), [piped], expr.span);
+  }
+
+  /**
+   * Too many arguments, or a required one missing.
+   *
+   * The interpreter already reports both (`RT040` and `RT036`) and reported
+   * them alone until the standard library had types: nothing could know that
+   * `"abc".upper(1)` was wrong without knowing that `upper` takes no argument
+   * beyond its receiver. Now that it does, this is the cheapest thing a
+   * signature buys, and the commonest mistake it catches.
+   *
+   * Two restraints, both about saying the useful thing rather than the first
+   * thing:
+   *
+   * **Only for a function whose parameters have names**, which means one that
+   * was actually declared — a `fn` written in Lumen, or a native that declared
+   * its signature. A `fn(Num, Num) -> Num` *annotation* says nothing about
+   * defaults, so a value of that type may well be `fn(a, b = 1)` and a call
+   * with one argument is perfectly good. Reporting it would be exactly the
+   * false positive this pass exists not to produce.
+   *
+   * **Only when every argument is positional.** The moment one is named there
+   * is a family of shapes the interpreter already describes better than a count
+   * can — `RT039` names a misspelt parameter, `RT037` a positional argument
+   * after a named one, `RT044` one supplied twice — and `greet(nmae: "Ada")` is
+   * a typo in `nmae`, not a missing `name`. Reporting the consequence instead
+   * of the cause is the same mistake as reporting a type error for an undefined
+   * variable, which is why scope errors come before type errors in the first
+   * place.
+   */
+  private checkArity(
+    callee: Extract<Ty, { k: 'fn' }>,
+    fnName: string,
+    args: readonly ArgTy[],
+    span: Span,
+  ): void {
+    if (callee.params.some((p) => p.name === undefined)) return;
+    if (args.some((a) => a.name !== undefined)) return;
+
+    const positional = args;
+    const takesAnyNumber = callee.params.some((p) => p.rest);
+
+    if (!takesAnyNumber && positional.length > callee.params.length) {
+      const extra = positional[callee.params.length];
+      if (extra !== undefined) {
+        this.report(
+          'TY007',
+          '`' + fnName + '` takes ' + String(callee.params.length) +
+            (callee.params.length === 1 ? ' argument' : ' arguments'),
+          extra.span,
+          'too many arguments',
+          callee.params.length === 0
+            ? ['it takes no arguments']
+            : ['it takes: ' + callee.params.map((p) => p.name ?? '_').join(', ')],
+        );
+      }
+    }
+
+    for (const [i, param] of callee.params.entries()) {
+      if (param.optional || param.name === undefined) continue;
+      if (i < positional.length) continue;
+      this.report(
+        'TY008',
+        '`' + fnName + '` is missing a value for `' + param.name + '`',
+        args[args.length - 1]?.span ?? span,
+        'required argument not supplied',
+        ['it takes: ' + callee.params.map((p) => (p.rest ? '..' : '') + (p.name ?? '_')).join(', ')],
+      );
+    }
   }
 
   /** Every argument typed once, in source order, whatever the call's spelling. */
@@ -785,8 +924,10 @@ class Checker {
    * resolver and interpreter already report arity and naming problems, so this
    * pass only compares the types of arguments it can pair up.
    */
-  private checkCall(callee: Ty, fnName: string, args: readonly ArgTy[]): Ty {
+  private checkCall(callee: Ty, fnName: string, args: readonly ArgTy[], span: Span): Ty {
     if (callee.k !== 'fn') return ANY;
+
+    this.checkArity(callee, fnName, args, span);
 
     let next = 0;
     for (const arg of args) {
@@ -835,7 +976,159 @@ function calleeName(callee: Expr): string {
   return 'this function';
 }
 
+/**
+ * A written annotation as a type.
+ *
+ * A free function rather than a method, so a signature can be converted with no
+ * module around it — the standard library's are, at the point the caller builds
+ * the maps in `CheckOptions`.
+ *
+ * `named` says what a name that is not built in refers to; a name it does not
+ * recognise becomes `Any`, which is what makes an unknown annotation harmless
+ * rather than an error.
+ */
+function tyOf(
+  annotation: TypeExpr | undefined,
+  named: (name: string) => 'struct' | 'enum' | undefined,
+): Ty {
+  if (annotation === undefined) return ANY;
+  if (annotation.kind === 'TypeFn') {
+    return {
+      k: 'fn',
+      params: annotation.params.map((p) => ({
+        name: undefined,
+        ty: tyOf(p, named),
+        optional: false,
+        rest: false,
+      })),
+      ret: tyOf(annotation.ret, named),
+    };
+  }
+  const first = annotation.args[0];
+  switch (annotation.name) {
+    case 'Num':
+      return NUM;
+    case 'Str':
+      return STR;
+    case 'Bool':
+      return BOOL;
+    case 'Nil':
+      return NIL;
+    case 'List':
+      return { k: 'list', of: tyOf(first, named) };
+    case 'Map':
+      return { k: 'map', of: tyOf(first, named) };
+    default: {
+      const kind = named(annotation.name);
+      if (kind === 'struct') return { k: 'struct', name: annotation.name };
+      if (kind === 'enum') return { k: 'enum', name: annotation.name };
+      // `Any`, a generic parameter, or a name this pass does not know.
+      return ANY;
+    }
+  }
+}
+
+/**
+ * What the checker is told about the world outside the module.
+ *
+ * The checker cannot read the standard library — `packages/core` imports
+ * nothing — so the caller, which has a fully built interpreter in hand, hands
+ * over the types as data. Both maps are optional: without them every call is
+ * `Any` in and `Any` out, which is exactly how this pass behaved before they
+ * existed.
+ */
+export interface CheckOptions {
+  /** Type of a name that is in scope with no declaration — the prelude. */
+  readonly signatures?: ReadonlyMap<string, Ty>;
+  /**
+   * Type of `x.name(...)`, keyed `"Str.upper"`, with the receiver parameter
+   * already removed — the shape a call actually has to match.
+   *
+   * The type half of the key is what `typeName` reports at run time, because
+   * that is what method tables are registered under. A method that belongs to
+   * every value is keyed `"*.str"`.
+   */
+  readonly methods?: ReadonlyMap<string, Ty>;
+  /**
+   * What each module exports and the type of each, keyed by module path.
+   *
+   * The same map the resolver uses for `RS009`, so an import cannot be checked
+   * for existence by one pass and for type by another that disagrees about
+   * what the module holds.
+   */
+  readonly moduleExports?: ReadonlyMap<string, ReadonlyMap<string, Ty>>;
+}
+
+/**
+ * A signature written in Lumen's own annotation syntax, as a type.
+ *
+ *     signatureTy('(s: Str, separator: Str) -> List<Str>')
+ *
+ * Parsed with the real parser, on a real function declaration, so what the
+ * standard library says about itself is spelled in exactly the syntax a user
+ * writes and cannot drift into a private notation. A signature that does not
+ * parse raises, which is what makes a typo in one a build failure rather than a
+ * function that quietly stops being checked.
+ *
+ * Only the built-in type names mean anything here — there are no user structs
+ * at the point a standard-library signature is read — so `Task` or a generic
+ * `T` becomes `Any`, and the call is left unchecked rather than wrongly
+ * rejected. `Option` and `Result` are known, being part of the language.
+ */
+export function signatureTy(signature: string): Ty {
+  const module = parse('fn __signature' + signature + ' {}', '<signature>');
+  const decl = module.stmts[0];
+  if (decl === undefined || decl.kind !== 'FnDecl') {
+    throw new Error('not a signature: ' + signature);
+  }
+  const known = (name: string): 'enum' | undefined =>
+    name === 'Option' || name === 'Result' ? 'enum' : undefined;
+  return {
+    k: 'fn',
+    params: decl.params.map((param) => ({
+      name: param.name,
+      ty: tyOf(param.type, known),
+      optional: param.defaultValue !== undefined || param.rest,
+      rest: param.rest,
+    })),
+    ret: tyOf(decl.ret, known),
+  };
+}
+
+/**
+ * A `fn` type written the way a signature is: `(s: Str, fill: Str = ...) -> Str`.
+ *
+ * The inverse of `signatureTy`, near enough — a default *value* is not kept in
+ * a type, so an optional parameter comes back as `= ...`, which is how `help()`
+ * has always rendered one. Used to describe a function to a person: a bound
+ * method's receiver is gone from its parameters, so this is what shows
+ * `split(separator: Str)` rather than the `split(s: Str, separator: Str)` the
+ * free function has.
+ */
+export function showSignature(ty: Ty): string {
+  if (ty.k !== 'fn') return showTy(ty);
+  const params = ty.params.map((p) => {
+    const name = (p.rest ? '..' : '') + (p.name ?? '_');
+    const typed = p.ty.k === 'any' ? name : name + ': ' + showTy(p.ty);
+    return p.optional && !p.rest ? typed + ' = ...' : typed;
+  });
+  return '(' + params.join(', ') + ')' + (ty.ret.k === 'any' ? '' : ' -> ' + showTy(ty.ret));
+}
+
+/**
+ * The same signature as a method's: the receiver is the first parameter of the
+ * function and is already supplied by the time `x.f(a)` is written, so it comes
+ * off — exactly as `bindReceiver` takes it off the value at run time.
+ */
+export function methodTy(signature: Ty): Ty {
+  if (signature.k !== 'fn') return signature;
+  return { k: 'fn', params: signature.params.slice(1), ret: signature.ret };
+}
+
+/** The type half of a method key that applies to every value. */
+export const UNIVERSAL = '*';
+
 /** Type-check a module. An empty result means nothing conflicted. */
-export function checkTypes(module: Module): readonly Diagnostic[] {
-  return new Checker().check(module);
+export function checkTypes(module: Module, options?: CheckOptions): readonly Diagnostic[] {
+  return new Checker(options).check(module);
 }

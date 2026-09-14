@@ -10,7 +10,7 @@ import { promises as fsp } from 'node:fs';
 import * as path from 'node:path';
 
 import { LumenError, checkModule, parse, type Host } from '@lumen-lang/core';
-import { createInterpreter, createNodeResolver, stdModuleExports } from '@lumen-lang/stdlib';
+import { checkOptions, createInterpreter, createNodeResolver } from '@lumen-lang/stdlib';
 
 /** The environment every fixture sees. `mock` keeps `std/ai` offline. */
 const FIXED_ENV: Readonly<Record<string, string>> = {
@@ -90,13 +90,7 @@ async function execute(
 
   try {
     const module = parse(source, fileName);
-    if (check) {
-      checkModule(module, source, {
-        globals: interpreter.globals.ownNames(),
-        moduleExports: stdModuleExports(),
-        closedPrefixes: ['std/'],
-      });
-    }
+    if (check) checkModule(module, source, checkOptions(interpreter.globals.ownNames()));
     await interpreter.runModule(module, source);
     return { output, failed: false };
   } catch (error) {

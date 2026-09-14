@@ -1730,28 +1730,37 @@ function compare(op: string, a: number | string, b: number | string): boolean {
  * `"a,b".split(",")` reports errors about `separator`, not about `s`.
  */
 function bindReceiver(fn: NativeValue, receiver: Value): NativeValue {
+  // Spread rather than rebuild field by field: this used to list the fields it
+  // knew about and silently dropped `positional`, and would have dropped
+  // `signature` the day that was added. A method keeps everything the function
+  // had except its first parameter.
   return {
-    k: 'native',
-    name: fn.name,
+    ...fn,
     params: fn.params.slice(1),
-    ...(fn.doc === undefined ? {} : { doc: fn.doc }),
-    ...(fn.variadic === true ? { variadic: true } : {}),
     call: (args, ctx) => fn.call([receiver, ...args], ctx),
   };
 }
 
-/** Define a native function with named parameters. */
+/**
+ * Define a native function with named parameters.
+ *
+ * `signature` is its type in Lumen's own annotation syntax — see
+ * `NativeValue.signature`. Omitting it leaves the function `Any` in and `Any`
+ * out, which is how every native behaved before any of them were typed.
+ */
 export function native(
   name: string,
   params: readonly string[],
   call: (args: readonly Value[], ctx: CallCtx) => Value | Promise<Value>,
   doc?: string,
+  signature?: string,
 ): NativeValue {
   return {
     k: 'native',
     name,
     params: params.map((p) => ({ name: p })),
     ...(doc === undefined ? {} : { doc }),
+    ...(signature === undefined ? {} : { signature }),
     call,
   };
 }
@@ -1803,12 +1812,16 @@ function installBuiltins(globals: Env): void {
         default:
           return ctx.panic('len() needs a Str, List or Map, got ' + typeName(value));
       }
-    }, 'How many characters, elements or entries a value has.'),
+    }, 'How many characters, elements or entries a value has.', '(value: Any) -> Num'),
   );
 
-  define(native('type', ['value'], (args) => str(typeName(args[0] ?? NIL)), "The value's type name, as a Str."));
+  define(
+    native('type', ['value'], (args) => str(typeName(args[0] ?? NIL)), "The value's type name, as a Str.", '(value: Any) -> Str'),
+  );
 
-  define(native('str', ['value'], (args) => str(display(args[0] ?? NIL)), 'The value rendered as a Str.'));
+  define(
+    native('str', ['value'], (args) => str(display(args[0] ?? NIL)), 'The value rendered as a Str.', '(value: Any) -> Str'),
+  );
 
   define(
     native('num', ['value'], (args) => {
@@ -1819,10 +1832,12 @@ function installBuiltins(globals: Env): void {
         return value.v.trim() !== '' && !Number.isNaN(parsed) ? enumOk(num(parsed)) : enumErr(str('`' + value.v + '` is not a number'));
       }
       return enumErr(str('cannot convert ' + typeName(value) + ' to Num'));
-    }, 'Parse a Str as a number. Ok(n), or Err if it is not one.'),
+    }, 'Parse a Str as a number. Ok(n), or Err if it is not one.', '(value: Any) -> Result'),
   );
 
-  define(native('bool', ['value'], (args) => bool(truthy(args[0] ?? NIL)), 'The value as a Bool: everything except nil and false is true.'));
+  define(
+    native('bool', ['value'], (args) => bool(truthy(args[0] ?? NIL)), 'The value as a Bool: everything except nil and false is true.', '(value: Any) -> Bool'),
+  );
 
   define(
     native('assert', ['condition', 'message'], (args, ctx) => {
@@ -1831,20 +1846,26 @@ function installBuiltins(globals: Env): void {
       if (truthy(condition)) return NIL;
       const text = message !== undefined && message.k === 'str' ? message.v : 'assertion failed';
       return ctx.panic(text);
-    }, 'Stop with a message unless the condition is true. The whole of a test framework.'),
+    }, 'Stop with a message unless the condition is true. The whole of a test framework.', '(condition: Any, message: Str) -> Nil'),
   );
 
   define(
     native('panic', ['message'], (args, ctx) => {
       const message = args[0] ?? NIL;
       return ctx.panic(message.k === 'str' ? message.v : display(message));
-    }, 'Stop the program with a located error.'),
+    }, 'Stop the program with a located error.', '(message: Str) -> Nil'),
   );
 
   // Result and Option constructors, available without an import.
-  define(native('Ok', ['value'], (args) => enumOk(args[0] ?? NIL), 'A Result that succeeded, carrying a value.'));
-  define(native('Err', ['error'], (args) => enumErr(args[0] ?? NIL), 'A Result that failed, carrying an error.'));
-  define(native('Some', ['value'], (args) => enumValue('Option', 'Some', [args[0] ?? NIL]), 'An Option that holds a value.'));
+  define(
+    native('Ok', ['value'], (args) => enumOk(args[0] ?? NIL), 'A Result that succeeded, carrying a value.', '(value: Any) -> Result'),
+  );
+  define(
+    native('Err', ['error'], (args) => enumErr(args[0] ?? NIL), 'A Result that failed, carrying an error.', '(error: Any) -> Result'),
+  );
+  define(
+    native('Some', ['value'], (args) => enumValue('Option', 'Some', [args[0] ?? NIL]), 'An Option that holds a value.', '(value: Any) -> Option'),
+  );
   globals.declare('None', NONE, false);
 
   // The enum types themselves, so `Result.Ok` and `match` on them read naturally.

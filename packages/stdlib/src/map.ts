@@ -18,10 +18,40 @@ import {
   fn,
   moduleOf,
   withDocs,
+  withSignatures,
 } from './support.js';
 
+/**
+ * Every function's type, in Lumen's own annotation syntax.
+ *
+ * A Map's keys are always Str (§3), so every `key` parameter is one. The values
+ * are anything, and `Ty` has no type variables, so `get` answers `Option` and
+ * `values` answers `List` without saying of what.
+ */
+const SIGNATURES: Readonly<Record<string, string>> = {
+  keys: '(m: Map) -> List<Str>',
+  values: '(m: Map) -> List',
+  entries: '(m: Map) -> List',
+  get: '(m: Map, key: Str) -> Option',
+  getOr: '(m: Map, key: Str, fallback: Any) -> Any',
+  has: '(m: Map, key: Str) -> Bool',
+  set: '(m: Map, key: Str, value: Any) -> Map',
+  remove: '(m: Map, key: Str) -> Map',
+  merge: '(m: Map, other: Map) -> Map',
+  len: '(m: Map) -> Num',
+  isEmpty: '(m: Map) -> Bool',
+  update: '(m: Map, key: Str, f: fn(Any) -> Any, fallback: Any = nil) -> Map',
+  mapValues: '(m: Map, f: fn(Any) -> Any) -> Map',
+  filter: '(m: Map, predicate: fn(Any, Any) -> Any) -> Map',
+  invert: '(m: Map) -> Map',
+  pick: '(m: Map, keys: List<Str>) -> Map',
+  omit: '(m: Map, keys: List<Str>) -> Map',
+  fromEntries: '(pairs: List) -> Map',
+};
+
 export function stdMap(): Map<string, Value> {
-  return withDocs(
+  return withSignatures(
+    withDocs(
     moduleOf(
     fn('keys', ['m'], (a, c) =>
       list([...expectMap(arg(a, 0), c, 'keys(m)').entries.keys()].map((k) => str(k))),
@@ -195,6 +225,8 @@ export function stdMap(): Map<string, Value> {
       invert: 'Keys and values swapped; the last of a repeated value wins.',
       pick: 'A copy holding only the named keys.',
       omit: 'A copy without the named keys.',
-    },
+      },
+    ),
+    SIGNATURES,
   );
 }

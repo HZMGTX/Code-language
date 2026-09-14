@@ -14,7 +14,7 @@ decisions, not oversights.
 | Limitation | Detail |
 |---|---|
 | **`match` exhaustiveness is checked, but only where it can be proved** | The resolver reports a missing variant (`RS002`) when every arm names variants of one enum it can see. A `match` over a value whose enum it cannot determine — a parameter with no annotation, say — still falls back to the run-time `RT020`. Closing that gap needs the type checker. |
-| **Type checking is gradual and shallow** | Annotations are enforced where written (`TY001`-`TY006`), an unannotated `let` takes its value's type, and an operator whose operands are both known is checked. But there is no inference for parameters or `var`, the standard library carries no signatures, method calls are unchecked, and there is no flow analysis or generics. An unannotated program produces no type diagnostic at all, by design — which is also the limit: `fn f(a) { a + "x" }` is reported only when it runs. |
+| **Type checking is gradual** | Annotations are enforced where written (`TY001`-`TY008`), an unannotated `let` takes its value's type, an operator whose operands are both known is checked, and the standard library declares its own types — so `upper(1)`, `"abc".padStart("x")` and `[1].push()` are caught without running. But there is no inference for parameters or `var`, no type variables, and no flow analysis. An unannotated program that calls nothing produces no type diagnostic at all, by design — which is also the limit: `fn f(a) { a + "x" }` is reported only when it runs. |
 | **Ranges are materialised** | `0..n` builds a list, capped at 10,000,000 elements. Large spans need a `while` loop. |
 | **No methods on your own types** | `Str`, `List`, `Map`, `Num`, `Option` and `Result` have methods, and `str`, `inspect`, `type`, `clone` and `isNil` work on every value — but a `struct` you define gets none. `f(x)` and `x \|> f()` are how your own functions are called. Method syntax is a calling convention rather than an object model (spec §4.7), so there is nowhere to register one; traits would be the mechanism, and they are v0.2. |
 | **Performance** | A tree-walking interpreter in which every evaluation is a promise. `npm run bench` measures it. Profiling the `while` benchmark puts roughly **37% of non-library ticks in promise machinery** alone (`RunMicrotasks`, `AsyncFunctionAwait*`, `FulfillPromise`, `EnqueueMicrotask`, `PerformPromiseThen`), which is what the v0.3 work below is aimed at. |
@@ -29,15 +29,35 @@ decisions, not oversights.
 Annotations now mean something where they are written. The rest of the theme is
 depth: knowing the types of things nobody annotated.
 
+**Done:**
+
+- ~~Signatures for the standard library, so `upper(1)` is caught.~~ All 200
+  functions declare one, written in the language's own annotation syntax and
+  parsed with the real parser. The checker is *told* them — `packages/core`
+  still imports nothing — which is also what types an imported name and made
+  `lumen check` able to see a mistyped import (`RS009`, `RS010`).
+- ~~Type-checked method calls.~~ `x.f(a)` is `CallExpr{callee: MemberExpr}`, so
+  giving the member its real type was enough: the three spellings of a call
+  share one code path and cannot disagree.
+- ~~Function-type compatibility.~~ `accepts` compares `fn` against `fn`
+  properly — covariant in the result, contravariant in the parameters, and
+  silent about arity, which a call reports where it happens.
+- Argument counts (`TY007`, `TY008`), which were not on this list and fall out
+  of knowing a function's parameters.
+
+**Still ahead:**
+
 - Inference for parameters and `var` bindings, so a function's types can be
   known without writing them
-- Signatures for the standard library, so `upper(1)` is caught
-- Type-checked method calls
-- Function-type compatibility, rather than treating every `fn` as interchangeable
+- Type variables, so `map(xs, f)` can say it returns a list of whatever `f`
+  gives back rather than a `List` of nothing in particular — the one thing that
+  stopped the standard library's own signatures being more precise
 - Full `match` exhaustiveness, including values whose enum only the type checker
   can determine (the resolver already covers the cases it can prove)
 - Generics and traits, and with traits, methods on your own types
-- Unused-binding warnings (the resolver already reports duplicate declarations)
+- Unused-binding warnings (the resolver already reports duplicate declarations).
+  `Severity` has had a `'warning'` arm since v0.1 and nothing has ever emitted
+  one; this would be the first.
 
 ## v0.3 — Speed
 

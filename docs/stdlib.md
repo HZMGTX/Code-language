@@ -13,42 +13,42 @@ with the same name always shadows the prelude one.
 
 | Name | Meaning |
 |---|---|
-| `Err(error)` | A Result that failed, carrying an error. |
+| `Err(error) -> Result` | A Result that failed, carrying an error. |
 | `None` | a value of the `Option` enum |
-| `Ok(value)` | A Result that succeeded, carrying a value. |
+| `Ok(value) -> Result` | A Result that succeeded, carrying a value. |
 | `Option` | the `Option` enum type |
 | `Result` | the `Result` enum type |
-| `Some(value)` | An Option that holds a value. |
-| `abs(n)` | Distance from zero. |
-| `all(xs, predicate = ...)` | True if every element is truthy, or matches the predicate if one is given. |
-| `any(xs, predicate = ...)` | True if any element is truthy, or matches the predicate if one is given. |
-| `assert(condition, message)` | Stop with a message unless the condition is true. The whole of a test framework. |
-| `bool(value)` | The value as a Bool: everything except nil and false is true. |
-| `ceil(n)` | Round up to a whole number. |
-| `enumerate(xs, start = ...)` | Pair each element with its index: [[0, a], [1, b]]. Pass start: 1 to count from one. |
-| `filter(xs, predicate)` | Keep the elements a predicate says true to. |
-| `fixed(n, places = ...)` | A number as text with a fixed number of decimals: fixed(4.5, 2) is "4.50". |
-| `floor(n)` | Round down to a whole number. |
+| `Some(value) -> Option` | An Option that holds a value. |
+| `abs(n: Num) -> Num` | Distance from zero. |
+| `all(xs: List, predicate = ...) -> Bool` | True if every element is truthy, or matches the predicate if one is given. |
+| `any(xs: List, predicate = ...) -> Bool` | True if any element is truthy, or matches the predicate if one is given. |
+| `assert(condition, message: Str) -> Nil` | Stop with a message unless the condition is true. The whole of a test framework. |
+| `bool(value) -> Bool` | The value as a Bool: everything except nil and false is true. |
+| `ceil(n: Num) -> Num` | Round up to a whole number. |
+| `enumerate(xs: List, start: Num = ...) -> List` | Pair each element with its index: [[0, a], [1, b]]. Pass start: 1 to count from one. |
+| `filter(xs: List, predicate: fn(Any) -> Any) -> List` | Keep the elements a predicate says true to. |
+| `fixed(n: Num, places: Num = ...) -> Str` | A number as text with a fixed number of decimals: fixed(4.5, 2) is "4.50". |
+| `floor(n: Num) -> Num` | Round down to a whole number. |
 | `help(subject = ...)` | Describe a value, a function, or a module. Call help() alone for an overview. |
-| `input(prompt = ...)` | Read one line from the console. Some(text), or None at end of input. |
-| `join(xs, separator = ...)` | Join a list into a string with a separator. |
-| `len(value)` | How many characters, elements or entries a value has. |
-| `map(xs, f)` | Apply a function to every element, giving a new list. |
+| `input(prompt: Str = ...) -> Option` | Read one line from the console. Some(text), or None at end of input. |
+| `join(xs: List, separator: Str = ...) -> Str` | Join a list into a string with a separator. |
+| `len(value) -> Num` | How many characters, elements or entries a value has. |
+| `map(xs: List, f: fn(Any) -> Any) -> List` | Apply a function to every element, giving a new list. |
 | `max(...)` | The largest of a list, or of the numbers given. |
 | `min(...)` | The smallest of a list, or of the numbers given. |
-| `num(value)` | Parse a Str as a number. Ok(n), or Err if it is not one. |
-| `panic(message)` | Stop the program with a located error. |
+| `num(value) -> Result` | Parse a Str as a number. Ok(n), or Err if it is not one. |
+| `panic(message: Str) -> Nil` | Stop the program with a located error. |
 | `print(...)` | Write values to the output, separated by spaces, followed by a newline. |
-| `range(start, end = ..., step = ...)` | A list of numbers: range(5), range(2, 6), or range(10, 0, -2). |
-| `reduce(xs, f, initial)` | Fold a list down to a single value. |
-| `reversed(xs)` | A reversed copy of a list. |
-| `round(n)` | Round to the nearest whole number. |
-| `sorted(xs)` | A sorted copy of a list. The original is untouched. |
-| `split(s, separator)` | Split a string on a separator, giving a list. |
-| `str(value)` | The value rendered as a Str. |
-| `sum(xs)` | Add up a list of numbers. |
-| `type(value)` | The value's type name, as a Str. |
-| `zip(xs, ys)` | Pair up two lists, stopping at the shorter one. |
+| `range(start: Num, end = ..., step: Num = ...) -> List<Num>` | A list of numbers: range(5), range(2, 6), or range(10, 0, -2). |
+| `reduce(xs: List, f: fn(Any, Any) -> Any, initial)` | Fold a list down to a single value. |
+| `reversed(xs: List) -> List` | A reversed copy of a list. |
+| `round(n: Num) -> Num` | Round to the nearest whole number. |
+| `sorted(xs: List) -> List` | A sorted copy of a list. The original is untouched. |
+| `split(s: Str, separator: Str) -> List<Str>` | Split a string on a separator, giving a list. |
+| `str(value) -> Str` | The value rendered as a Str. |
+| `sum(xs: List) -> Num` | Add up a list of numbers. |
+| `type(value) -> Str` | The value's type name, as a Str. |
+| `zip(xs: List, ys: List) -> List` | Pair up two lists, stopping at the shorter one. |
 
 <!-- END GENERATED PRELUDE -->
 
@@ -395,120 +395,120 @@ A parameter shown as `name = ...` has a default and may be omitted.
 ### `std/ai`
 
 ```text
-chat(prompt, model = ..., system = ..., maxTokens = ..., provider = ...)
-converse(messages, model = ..., system = ..., maxTokens = ..., provider = ...)
-message(role, content)
-provider()
-providers()
+chat(prompt: Str, model = ..., system = ..., maxTokens: Num = ..., provider = ...) -> Result
+converse(messages: List, model = ..., system = ..., maxTokens: Num = ..., provider = ...) -> Result
+message(role: Str, content: Str) -> Map
+provider() -> Str
+providers() -> List<Str>
 ```
 
 ### `std/core`
 
 ```text
-args()
+args() -> List<Str>
 clone(value)
-env(name)
-exit(code = ...)
-inspect(value)
-isNil(value)
-now()
-sleep(milliseconds)
+env(name: Str) -> Option
+exit(code: Num = ...) -> Nil
+inspect(value) -> Str
+isNil(value) -> Bool
+now() -> Num
+sleep(milliseconds: Num) -> Nil
 ```
 
 ### `std/fs`
 
 ```text
-append(path, contents)
-exists(path)
-list(path)
-read(path)
-remove(path)
-write(path, contents)
+append(path: Str, contents: Str) -> Result
+exists(path: Str) -> Bool
+list(path: Str) -> Result
+read(path: Str) -> Result
+remove(path: Str) -> Result
+write(path: Str, contents: Str) -> Result
 ```
 
 ### `std/http`
 
 ```text
-get(url, headers = ...)
-post(url, body, headers = ...)
-request(method, url, body = ..., headers = ...)
+get(url: Str, headers: Map = ...) -> Result
+post(url: Str, body: Str, headers: Map = ...) -> Result
+request(method: Str, url: Str, body = ..., headers: Map = ...) -> Result
 ```
 
 ### `std/json`
 
 ```text
-parse(text)
-stringify(value, indent = ...)
+parse(text: Str) -> Result
+stringify(value, indent: Num = ...) -> Str
 ```
 
 ### `std/list`
 
 ```text
-all(xs, predicate = ...)
-any(xs, predicate = ...)
-at(xs, index)
-chunk(xs, size)
-concat(xs, ys)
-contains(xs, value)
-count(xs, predicate)
-drop(xs, n)
-enumerate(xs, start = ...)
-filter(xs, predicate)
-find(xs, predicate)
-first(xs)
-flatMap(xs, f)
-flatten(xs)
-groupBy(xs, key)
-indexOf(xs, value)
-insert(xs, index, value)
-intersperse(xs, value)
-isEmpty(xs)
-join(xs, separator = ...)
-last(xs)
-len(xs)
-map(xs, f)
-maxBy(xs, key)
-maximum(xs)
-minBy(xs, key)
-minimum(xs)
-partition(xs, predicate)
-pop(xs)
-push(xs, value)
-reduce(xs, f, initial)
-removeAt(xs, index)
-reverse(xs)
-scan(xs, f, initial)
-slice(xs, start, end = ...)
-sort(xs)
-sortBy(xs, key)
-sum(xs)
-take(xs, n)
-unique(xs)
-windows(xs, size)
-zip(xs, ys)
+all(xs: List, predicate = ...) -> Bool
+any(xs: List, predicate = ...) -> Bool
+at(xs: List, index: Num) -> Option
+chunk(xs: List, size: Num) -> List
+concat(xs: List, ys: List) -> List
+contains(xs: List, value) -> Bool
+count(xs: List, predicate: fn(Any) -> Any) -> Num
+drop(xs: List, n: Num) -> List
+enumerate(xs: List, start: Num = ...) -> List
+filter(xs: List, predicate: fn(Any) -> Any) -> List
+find(xs: List, predicate: fn(Any) -> Any) -> Option
+first(xs: List) -> Option
+flatMap(xs: List, f: fn(Any) -> Any) -> List
+flatten(xs: List) -> List
+groupBy(xs: List, key: fn(Any) -> Any) -> Map
+indexOf(xs: List, value) -> Num
+insert(xs: List, index: Num, value) -> List
+intersperse(xs: List, value) -> List
+isEmpty(xs: List) -> Bool
+join(xs: List, separator: Str = ...) -> Str
+last(xs: List) -> Option
+len(xs: List) -> Num
+map(xs: List, f: fn(Any) -> Any) -> List
+maxBy(xs: List, key: fn(Any) -> Any) -> Option
+maximum(xs: List) -> Option
+minBy(xs: List, key: fn(Any) -> Any) -> Option
+minimum(xs: List) -> Option
+partition(xs: List, predicate: fn(Any) -> Any) -> List
+pop(xs: List) -> List
+push(xs: List, value) -> List
+reduce(xs: List, f: fn(Any, Any) -> Any, initial)
+removeAt(xs: List, index: Num) -> List
+reverse(xs: List) -> List
+scan(xs: List, f: fn(Any, Any) -> Any, initial) -> List
+slice(xs: List, start: Num, end = ...) -> List
+sort(xs: List) -> List
+sortBy(xs: List, key: fn(Any) -> Any) -> List
+sum(xs: List) -> Num
+take(xs: List, n: Num) -> List
+unique(xs: List) -> List
+windows(xs: List, size: Num) -> List
+zip(xs: List, ys: List) -> List
 ```
 
 ### `std/map`
 
 ```text
-entries(m)
-filter(m, predicate)
-fromEntries(pairs)
-get(m, key)
-getOr(m, key, fallback)
-has(m, key)
-invert(m)
-isEmpty(m)
-keys(m)
-len(m)
-mapValues(m, f)
-merge(m, other)
-omit(m, keys)
-pick(m, keys)
-remove(m, key)
-set(m, key, value)
-update(m, key, f, fallback = ...)
-values(m)
+entries(m: Map) -> List
+filter(m: Map, predicate: fn(Any, Any) -> Any) -> Map
+fromEntries(pairs: List) -> Map
+get(m: Map, key: Str) -> Option
+getOr(m: Map, key: Str, fallback)
+has(m: Map, key: Str) -> Bool
+invert(m: Map) -> Map
+isEmpty(m: Map) -> Bool
+keys(m: Map) -> List<Str>
+len(m: Map) -> Num
+mapValues(m: Map, f: fn(Any) -> Any) -> Map
+merge(m: Map, other: Map) -> Map
+omit(m: Map, keys: List<Str>) -> Map
+pick(m: Map, keys: List<Str>) -> Map
+remove(m: Map, key: Str) -> Map
+set(m: Map, key: Str, value) -> Map
+update(m: Map, key: Str, f: fn(Any) -> Any, fallback = ...) -> Map
+values(m: Map) -> List
 ```
 
 ### `std/math`
@@ -518,152 +518,152 @@ E: num
 INFINITY: num
 PI: num
 TAU: num
-abs(n)
-acos(n)
-asin(n)
-atan(n)
-atan2(y, x)
-cbrt(n)
-ceil(n)
-clamp(n, low, high)
-cos(n)
-exp(n)
-fixed(n, places = ...)
-floor(n)
-gcd(a, b)
-hypot(a, b)
-lcm(a, b)
-log(n, base = ...)
-max(a, b)
-min(a, b)
-pow(base, exponent)
-random()
-randomInt(low, high)
-round(n)
-sign(n)
-sin(n)
-sqrt(n)
-tan(n)
-trunc(n)
+abs(n: Num) -> Num
+acos(n: Num) -> Num
+asin(n: Num) -> Num
+atan(n: Num) -> Num
+atan2(y: Num, x: Num) -> Num
+cbrt(n: Num) -> Num
+ceil(n: Num) -> Num
+clamp(n: Num, low: Num, high: Num) -> Num
+cos(n: Num) -> Num
+exp(n: Num) -> Num
+fixed(n: Num, places: Num = ...) -> Str
+floor(n: Num) -> Num
+gcd(a: Num, b: Num) -> Num
+hypot(a: Num, b: Num) -> Num
+lcm(a: Num, b: Num) -> Num
+log(n: Num, base: Num = ...) -> Num
+max(a: Num, b: Num) -> Num
+min(a: Num, b: Num) -> Num
+pow(base: Num, exponent: Num) -> Num
+random() -> Num
+randomInt(low: Num, high: Num) -> Num
+round(n: Num) -> Num
+sign(n: Num) -> Num
+sin(n: Num) -> Num
+sqrt(n: Num) -> Num
+tan(n: Num) -> Num
+trunc(n: Num) -> Num
 ```
 
 ### `std/option`
 
 ```text
-andThen(option, f)
-filter(option, predicate)
-isNone(option)
-isSome(option)
-map(option, f)
-okOr(option, error)
-or(option, other)
-toList(option)
-unwrapOr(option, fallback)
+andThen(option: Option, f: fn(Any) -> Any) -> Option
+filter(option: Option, predicate: fn(Any) -> Any) -> Option
+isNone(option: Option) -> Bool
+isSome(option: Option) -> Bool
+map(option: Option, f: fn(Any) -> Any) -> Option
+okOr(option: Option, error) -> Result
+or(option: Option, other: Option) -> Option
+toList(option: Option) -> List
+unwrapOr(option: Option, fallback)
 ```
 
 ### `std/result`
 
 ```text
-andThen(result, f)
-err(result)
-isErr(result)
-isOk(result)
-map(result, f)
-mapErr(result, f)
-ok(result)
-unwrapOr(result, fallback)
+andThen(result: Result, f: fn(Any) -> Any) -> Result
+err(result: Result) -> Option
+isErr(result: Result) -> Bool
+isOk(result: Result) -> Bool
+map(result: Result, f: fn(Any) -> Any) -> Result
+mapErr(result: Result, f: fn(Any) -> Any) -> Result
+ok(result: Result) -> Option
+unwrapOr(result: Result, fallback)
 ```
 
 ### `std/set`
 
 ```text
-add(s, value)
-difference(a, b)
-duplicates(xs)
-equals(a, b)
-has(s, value)
-intersection(a, b)
-isDisjoint(a, b)
-isSet(xs)
-isSubset(a, b)
-isSuperset(a, b)
-of(xs)
-remove(s, value)
-size(s)
-symmetricDifference(a, b)
-union(a, b)
+add(s: List, value) -> List
+difference(a: List, b: List) -> List
+duplicates(xs: List) -> List
+equals(a: List, b: List) -> Bool
+has(s: List, value) -> Bool
+intersection(a: List, b: List) -> List
+isDisjoint(a: List, b: List) -> Bool
+isSet(xs: List) -> Bool
+isSubset(a: List, b: List) -> Bool
+isSuperset(a: List, b: List) -> Bool
+of(xs: List) -> List
+remove(s: List, value) -> List
+size(s: List) -> Num
+symmetricDifference(a: List, b: List) -> List
+union(a: List, b: List) -> List
 ```
 
 ### `std/str`
 
 ```text
-capitalize(s)
-center(s, width, pad = ...)
-chars(s)
-contains(s, needle)
-count(s, needle)
-endsWith(s, suffix)
-indexOf(s, needle)
-isEmpty(s)
-len(s)
-lines(s)
-lower(s)
-padEnd(s, width, fill = ...)
-padStart(s, width, fill = ...)
-removePrefix(s, prefix)
-removeSuffix(s, suffix)
-repeat(s, count)
-replace(s, from, to)
-reverse(s)
-slice(s, start, end = ...)
-split(s, separator)
-splitOnce(s, separator)
-startsWith(s, prefix)
-title(s)
-toNum(s)
-trim(s)
-trimEnd(s)
-trimStart(s)
-upper(s)
-words(s)
+capitalize(s: Str) -> Str
+center(s: Str, width: Num, pad: Str = ...) -> Str
+chars(s: Str) -> List<Str>
+contains(s: Str, needle: Str) -> Bool
+count(s: Str, needle: Str) -> Num
+endsWith(s: Str, suffix: Str) -> Bool
+indexOf(s: Str, needle: Str) -> Num
+isEmpty(s: Str) -> Bool
+len(s: Str) -> Num
+lines(s: Str) -> List<Str>
+lower(s: Str) -> Str
+padEnd(s: Str, width: Num, fill: Str = ...) -> Str
+padStart(s: Str, width: Num, fill: Str = ...) -> Str
+removePrefix(s: Str, prefix: Str) -> Str
+removeSuffix(s: Str, suffix: Str) -> Str
+repeat(s: Str, count: Num) -> Str
+replace(s: Str, old: Str, new: Str) -> Str
+reverse(s: Str) -> Str
+slice(s: Str, start: Num, end = ...) -> Str
+split(s: Str, separator: Str) -> List<Str>
+splitOnce(s: Str, separator: Str) -> List<Str>
+startsWith(s: Str, prefix: Str) -> Bool
+title(s: Str) -> Str
+toNum(s: Str) -> Result
+trim(s: Str) -> Str
+trimEnd(s: Str) -> Str
+trimStart(s: Str) -> Str
+upper(s: Str) -> Str
+words(s: Str) -> List<Str>
 ```
 
 ### `std/time`
 
 ```text
-date(instant)
-describe(milliseconds)
-format(instant, template = ...)
-fromParts(year, month = ..., day = ..., hour = ..., minute = ..., second = ..., millisecond = ...)
-iso(instant)
-monthName(instant)
-monthNames()
-offsetMinutes(instant)
-parseIso(text)
-parts(instant)
-plus(instant, days = ..., hours = ..., minutes = ..., seconds = ..., milliseconds = ...)
-startOfDay(instant)
-time(instant, seconds = ...)
-weekdayName(instant)
-weekdayNames()
+date(instant: Num) -> Str
+describe(milliseconds: Num) -> Str
+format(instant: Num, template: Str = ...) -> Str
+fromParts(year: Num, month: Num = ..., day: Num = ..., hour: Num = ..., minute: Num = ..., second: Num = ..., millisecond: Num = ...) -> Num
+iso(instant: Num) -> Str
+monthName(instant: Num) -> Str
+monthNames() -> List<Str>
+offsetMinutes(instant: Num) -> Num
+parseIso(text: Str) -> Result
+parts(instant: Num) -> Map
+plus(instant: Num, days: Num = ..., hours: Num = ..., minutes: Num = ..., seconds: Num = ..., milliseconds: Num = ...) -> Num
+startOfDay(instant: Num) -> Num
+time(instant: Num, seconds: Bool = ...) -> Str
+weekdayName(instant: Num) -> Str
+weekdayNames() -> List<Str>
 ```
 
 ### `std/web`
 
 ```text
-escape(text)
-file(path, root = ..., type = ...)
-form(req)
-html(body, status = ...)
-isServer()
-json(value, status = ...)
-notFound(body = ...)
-page(title, body, style = ...)
-redirect(location, status = ...)
-route(method, path, handler)
-router(routes, notFound = ...)
-serve(handler, port = ..., host = ...)
-text(body, status = ...)
+escape(text: Str) -> Str
+file(path: Str, root: Str = ..., type: Str = ...) -> Map
+form(req: Map) -> Map
+html(body: Str, status: Num = ...) -> Map
+isServer() -> Bool
+json(value, status: Num = ...) -> Map
+notFound(body: Str = ...) -> Map
+page(title: Str, body: Str, style: Str = ...) -> Map
+redirect(location: Str, status: Num = ...) -> Map
+route(method: Str, path: Str, handler: fn(Map) -> Map) -> Map
+router(routes: List, notFound = ...) -> fn(Map) -> Map
+serve(handler: fn(Map) -> Map, port: Num = ..., host: Str = ...) -> Nil
+text(body: Str, status: Num = ...) -> Map
 ```
 
 <!-- END GENERATED REFERENCE -->

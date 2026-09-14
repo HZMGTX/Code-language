@@ -1,7 +1,7 @@
 /** `std/json` — JSON encoding and decoding, mapped onto Lumen values. */
 
 import { NIL, bool, list, map, num, str, type Value, typeName } from '@lumen-lang/core';
-import { Err, Ok, arg, expectNum, expectStr, fn, moduleOf } from './support.js';
+import { Err, Ok, arg, expectNum, expectStr, fn, moduleOf, withSignatures } from './support.js';
 
 /** Convert parsed JSON into Lumen values. */
 function fromJson(input: unknown): Value {
@@ -119,8 +119,19 @@ export function toJson(value: Value, open = new Set<Value>(), at = '$'): unknown
   }
 }
 
+/**
+ * Parsing is never a silent failure, which is what `Result` says here: `parse`
+ * answers `Ok(value)` or `Err(message)`. `stringify` can fail too — a cyclic
+ * value has no JSON — but it panics rather than answering, so it is a `Str`.
+ */
+const SIGNATURES: Readonly<Record<string, string>> = {
+  parse: '(text: Str) -> Result',
+  stringify: '(value: Any, indent: Num = 0) -> Str',
+};
+
 export function stdJson(): Map<string, Value> {
-  return moduleOf(
+  return withSignatures(
+    moduleOf(
     /** Returns `Ok(value)` or `Err(message)` — parsing is never a silent failure. */
     fn('parse', ['text'], (a, c) => {
       const text = expectStr(arg(a, 0), c, 'parse(text)');
@@ -153,5 +164,7 @@ export function stdJson(): Map<string, Value> {
       }
       return str(JSON.stringify(data, null, indent));
     }),
+    ),
+    SIGNATURES,
   );
 }
