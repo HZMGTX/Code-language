@@ -124,6 +124,29 @@ created two throwaway Maps per iteration.
   `editors/vscode`. Zero dependencies on both sides. Still ahead for it: rename,
   find-references, and signature help while typing a call.
 
+## The standard library
+
+Seventeen modules. What was missing at the end of v0.2, and has since been
+added: `std/path`, `std/regex`, `std/process`, seeded randomness, `inputAll`,
+and `stat`/`copy`/`rename`/`makeDir`/`walk` in `std/fs`.
+
+What is still missing, in rough order of how often it is wanted:
+
+- **Dates without times.** `std/time` has instants and calendar parts, and no
+  way to say "the 13th of September" without picking a moment on it.
+- **Decimal arithmetic.** A single `Num` is an IEEE double, so money needs
+  integers of pence and the discipline to remember it.
+- **Compression and archives.** Neither gzip nor zip, so a program that
+  produces a bundle has to shell out for it.
+- **Binary data.** Everything is text: `std/fs.read` decodes as UTF-8, and
+  there is no byte-array type for anything that is not.
+- **Structured formats besides JSON.** No CSV, no TOML, no YAML.
+- **A hashing or checksum function.** `std/set` has one internally and does not
+  export it, because what it computes is an implementation detail.
+
+Each is a module rather than a language change, which is the point: none of
+them needs the language to grow.
+
 ## v0.5 — Depth
 
 - Structured concurrency, giving `async`/`await` their real meaning

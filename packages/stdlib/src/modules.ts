@@ -17,6 +17,7 @@ import { stdMap } from './map.js';
 import { stdMath } from './math.js';
 import { stdOption } from './option.js';
 import { stdPath } from './path.js';
+import { stdProcess } from './process.js';
 import { stdRegex } from './regex.js';
 import { stdResult } from './result.js';
 import { stdSet } from './set.js';
@@ -47,6 +48,7 @@ export const STD_MODULES: ReadonlyMap<string, () => Map<string, Value>> = new Ma
   ['std/set', stdSet],
   ['std/path', stdPath],
   ['std/regex', stdRegex],
+  ['std/process', stdProcess],
   ['std/time', stdTime],
   ['std/fs', stdFs],
   ['std/http', stdHttp],

@@ -428,6 +428,36 @@ time exponential in its length, here as in most engines. A pattern from a
 trusted source is fine; one from a stranger is a denial of service, and this is
 written down rather than left to be discovered.
 
+### `std/process`
+
+**There is no shell.** A command is a name and a list of arguments, never one
+string for `/bin/sh` to take apart. That is a design rather than a precaution:
+with a shell, every call has to decide how to quote whatever it interpolates,
+and the one that forgets turns a file called `; rm -rf ~` into a disaster. With
+an argument list there is nothing to quote, because nothing is ever parsed.
+
+What that gives up is worth naming plainly:
+
+| Instead of | Write |
+|---|---|
+| `ls *.txt` | `walk(dir)` from `std/fs`, then `filter` |
+| `a \| b` | run `a`, then run `b` with its output as `input` |
+| `a > out.txt` | take `out` and `write` it |
+| `a && b` | run `a`, then run `b` if `ok` |
+
+Each is a line of Lumen instead, which is a fair price for never thinking about
+quoting again — and every one of them is clearer written out.
+
+**Nothing raises.** A command that does not exist, one that fails, and one that
+takes too long are all `Result`s. A non-zero `status` is `Ok`, because "did this
+program work" is the question the caller is asking and `grep` says "no match"
+that way; `Err` is reserved for not having run at all. `timedOut` is its own
+field rather than a status to interpret, because a timeout and a failure want
+different handling.
+
+`timeout` of zero waits forever, which is what a build wants and exactly what
+something a stranger's input chose does not.
+
 ### Randomness
 
 `random()` and `randomInt(low, high)` draw from the host by default, so a
@@ -650,6 +680,14 @@ resolve(base: Str, path: Str) -> Str
 split(path: Str) -> List<Str>
 stem(path: Str) -> Str
 withExt(path: Str, extension: Str) -> Str
+```
+
+### `std/process`
+
+```text
+isWindows() -> Bool
+run(command: Str, args: List<Str> = ..., input: Str = ..., cwd: Str = ..., timeout: Num = ...) -> Result
+which(command: Str) -> Option
 ```
 
 ### `std/regex`

@@ -75,6 +75,21 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   tree containing a link to its own parent is not unusual, and walking it
   forever is not a useful answer.
 
+- **`std/process`** — running another program, with **no shell**. A command is
+  a name and a list of arguments, never one string for `/bin/sh` to take apart:
+  with a shell, every call has to decide how to quote whatever it interpolates,
+  and the one that forgets turns a file called `; rm -rf ~` into a disaster.
+  With an argument list there is nothing to quote, because nothing is parsed.
+
+  What that gives up is written down rather than left to be discovered — no
+  `*`, no `|`, no `>`, no `&&` — with the line of Lumen that replaces each.
+
+  A non-zero status is `Ok`, because "did this program work" is the question
+  being asked and `grep` says "no match" that way; `Err` is for not having run
+  at all. `timedOut` is its own field rather than a status to interpret.
+  `which` looks along `PATH` itself, since shelling out to `which` would need
+  the shell this module does not have.
+
 - **`examples/rename.lm`** — renaming a folder full of files, safely. It plans
   every move before making any, refuses to overwrite, refuses to leave the
   folder it was pointed at, and can be run twice with nothing happening the
