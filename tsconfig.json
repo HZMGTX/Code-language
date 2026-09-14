@@ -1,9 +1,20 @@
 {
   "files": [],
   "references": [
-    { "path": "./packages/core" },
-    { "path": "./packages/stdlib" },
-    { "path": "./packages/cli" },
-    { "path": "./tests" }
+    {
+      "path": "./packages/core"
+    },
+    {
+      "path": "./packages/stdlib"
+    },
+    {
+      "path": "./packages/lsp"
+    },
+    {
+      "path": "./packages/cli"
+    },
+    {
+      "path": "./tests"
+    }
   ]
 }

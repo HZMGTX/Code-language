@@ -10,6 +10,7 @@ import { checkFiles } from './commands/check.js';
 import { formatFiles } from './commands/fmt.js';
 import { runFile } from './commands/run.js';
 import { dumpAst, dumpTokens } from './commands/inspect.js';
+import { startLanguageServer } from './commands/lsp.js';
 import { startRepl } from './commands/repl.js';
 import { runTests } from './commands/test.js';
 import { existsSync } from 'node:fs';
@@ -25,6 +26,7 @@ Usage
   lumen run <file.lm>      run a program
   lumen serve <file.lm>    run a program that starts a web server
   lumen repl               start an interactive session
+  lumen lsp                speak the Language Server Protocol (for editors)
   lumen check [path]       check every .lm under path without running it
   lumen fmt [path]         normalise indentation in place (--check to only ask)
   lumen test [path]        run every *_test.lm under path (default: .)
@@ -49,7 +51,7 @@ function usageError(message: string): never {
 
 /** Every word `lumen` accepts in the first position. */
 const COMMANDS = [
-  'run', 'serve', 'repl', 'check', 'fmt', 'test', 'tokens', 'ast', 'help', 'version',
+  'run', 'serve', 'repl', 'lsp', 'check', 'fmt', 'test', 'tokens', 'ast', 'help', 'version',
 ] as const;
 
 /**
@@ -85,6 +87,10 @@ async function main(argv: readonly string[]): Promise<void> {
   switch (first) {
     case 'repl':
       await startRepl();
+      return;
+
+    case 'lsp':
+      await startLanguageServer();
       return;
 
     case 'run':

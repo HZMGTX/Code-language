@@ -6,7 +6,7 @@ import * as path from 'node:path';
 import { Interpreter, LumenError } from '@lumen-lang/core';
 import { createInterpreter } from '@lumen-lang/stdlib';
 
-export const VERSION = '0.1.0';
+export const VERSION = '0.2.0';
 
 /** Colour is on for a terminal and off when piped, so output stays diffable. */
 export function useColor(): boolean {

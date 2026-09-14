@@ -7,6 +7,52 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.2.0] — 2026-09-14
+
+A release about **depth**: the standard library declares its types, so calling
+it is checked; the interpreter evaluates far more without allocating a promise;
+and there is a language server, so all of it reaches an editor.
+
+A `0.x` minor may change the language (spec §10), and this one does: four new
+static checks reject programs that previously passed `lumen check` and then
+failed when they ran.
+
+### Added
+
+- **A language server.** `lumen lsp` speaks the Language Server Protocol on
+  stdio: diagnostics as you type, hover with types and documentation,
+  completion, go to definition, and formatting. `editors/vscode` is a client
+  for it, installed with a symlink.
+
+  Neither side has a dependency, including no `vscode-languageclient`. LSP is
+  JSON-RPC over a stream and the framing is a few dozen lines; taking a library
+  for it would have broken the promise the rest of the project is built on.
+
+  Everything the editor knows, `lumen check` knows — the same parser, resolver
+  and type checker, so an editor can never tell you something the command line
+  disagrees with. Two hooks were added for it, both recording what was already
+  being computed and thrown away: `CheckOptions.record` hands over the type of
+  every expression, and `ResolveOptions.reference` hands over where every name
+  was declared. Working either out again in the server would have been a second
+  implementation of the same question, free to answer differently.
+
+  Completion after a `.` offers the methods on the receiver's type, which is
+  worth having only because the library declares its types. It also *repairs*
+  the document first: completion is always asked for on source that does not
+  parse — `s.` is not an expression yet — so a server that only understands
+  complete documents has no receiver type at exactly the moment it needs one.
+
+- **A `lumen` launcher in a checkout**, for macOS, Linux and Windows.
+  `lumen run app.lm` appeared throughout the documentation and existed nowhere
+  in the repository, so `./lumen run app.lm` — the first thing anyone tries
+  after cloning — failed with "not recognized".
+
+- **The version is checked for being the same in all seven places it is
+  written**, which nothing compared before: `lumen --version` could have said
+  one thing while the packages said another.
+
 ### Language
 
 - **`x |> f(a)` is type-checked.** §4.7 says `x.f(a)`, `f(x, a)` and `x |> f(a)`
@@ -506,7 +552,7 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   Windows. The messages are Lumen's now, mapped from the stable error code.
   `std/http` names the failing request instead of only "fetch failed".
 
-### Added
+### Added, continued
 
 - **`std/http` has executable coverage**, for the first time: it was the only
   standard module with no fixture, no unit test and no example, so the client

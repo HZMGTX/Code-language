@@ -8,7 +8,7 @@
  * rewrite.
  */
 
-export const VERSION = '0.1.0';
+export const VERSION = '0.2.0';
 
 export {
   LumenError,
@@ -40,7 +40,7 @@ export { format } from './format.js';
 
 export { Parser, parse, parseExpression } from './parser.js';
 
-export { resolve, checkModule, type ResolveOptions } from './resolver.js';
+export { resolve, checkModule, type Reference, type ResolveOptions } from './resolver.js';
 
 export {
   UNIVERSAL,

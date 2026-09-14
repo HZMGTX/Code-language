@@ -1,6 +1,6 @@
 {
   "name": "@lumen-lang/stdlib",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Lumen standard library: core, str, list, map, math, json, fs, http, web, ai.",
   "license": "SEE LICENSE IN ../../LICENSE",
@@ -13,8 +13,10 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "dependencies": {
-    "@lumen-lang/core": "0.1.0"
+    "@lumen-lang/core": "0.2.0"
   }
 }

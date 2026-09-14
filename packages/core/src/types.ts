@@ -234,6 +234,8 @@ class Checker {
   private readonly methods: ReadonlyMap<string, Ty>;
   /** What each described module exports, so an imported name has a type. */
   private readonly moduleExports: ReadonlyMap<string, ReadonlyMap<string, Ty>>;
+  /** Where to send every type derived, when anybody wants them. */
+  private readonly record: CheckOptions['record'];
   private scope: Scope;
   /** The declared return type of the function being checked, if any. */
   private returnTy: Ty = ANY;
@@ -241,6 +243,7 @@ class Checker {
   constructor(options: CheckOptions = {}) {
     this.methods = options.methods ?? new Map();
     this.moduleExports = options.moduleExports ?? new Map();
+    this.record = options.record;
     // The prelude, seeded into the scope everything else nests inside. Without
     // this every standard-library call was `Any` in and `Any` out, so
     // `upper(1)` passed every static check and failed when it ran.
@@ -597,8 +600,25 @@ class Checker {
 
   // ------------------------------------------------------------- expressions
 
-  /** The type of an expression, or Any when it cannot be determined. */
+  /**
+   * The type of an expression, or Any when it cannot be determined.
+   *
+   * A thin wrapper so that every type this pass derives can be handed to
+   * whoever asked for it. The checker used to throw all of them away the
+   * moment it had finished with them, which meant an editor asking "what is
+   * this" had to work it out again from scratch — and would then be a second
+   * implementation of the same question, free to answer differently.
+   *
+   * Nothing is recorded unless a caller asked, so `lumen check` pays one
+   * undefined comparison per expression and no allocation.
+   */
   private typeOf(expr: Expr): Ty {
+    const ty = this.typeOfExpr(expr);
+    this.record?.(expr, ty);
+    return ty;
+  }
+
+  private typeOfExpr(expr: Expr): Ty {
     switch (expr.kind) {
       case 'NumberLit':
         return NUM;
@@ -1057,6 +1077,15 @@ export interface CheckOptions {
    * what the module holds.
    */
   readonly moduleExports?: ReadonlyMap<string, ReadonlyMap<string, Ty>>;
+  /**
+   * Called with the type of every expression, as it is derived.
+   *
+   * For tooling: hover wants exactly this, and so does completion after a `.`.
+   * Working it out a second time elsewhere would be a second implementation of
+   * the same question, free to disagree with this one. Off unless asked, so
+   * `lumen check` pays nothing for it.
+   */
+  readonly record?: (expr: Expr, ty: Ty) => void;
 }
 
 /**

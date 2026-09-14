@@ -167,6 +167,24 @@ export interface ResolveOptions extends CheckOptions {
    * stays trusted.
    */
   readonly closedPrefixes?: readonly string[];
+  /**
+   * Called for every name that resolves, with where it was declared.
+   *
+   * For tooling: "go to definition" is this and nothing else. A built-in has a
+   * zero span, which is how a caller tells "declared in this file" from
+   * "part of the language". Off unless asked.
+   */
+  readonly reference?: (reference: Reference) => void;
+}
+
+/** A name, where it is used, and where it was declared. */
+export interface Reference {
+  readonly name: string;
+  readonly use: Span;
+  /** Zero-width at the start of the file for a built-in or the prelude. */
+  readonly declaration: Span;
+  /** What introduced it: `let`, `var`, `function`, `parameter`, `import`, … */
+  readonly kind: string;
 }
 
 class Resolver {
@@ -174,6 +192,8 @@ class Resolver {
   private readonly enums = new Map<string, readonly string[]>();
   private readonly moduleExports: ReadonlyMap<string, ReadonlyMap<string, Ty>>;
   private readonly closedPrefixes: readonly string[];
+  /** Where to send every name-to-declaration link, when anybody wants them. */
+  private readonly reference: ResolveOptions['reference'];
   private scope: Scope;
   /** Greater than zero while walking a function body, whose execution is deferred. */
   private deferred = 0;
@@ -187,6 +207,7 @@ class Resolver {
   constructor(options: ResolveOptions) {
     this.moduleExports = options.moduleExports ?? new Map();
     this.closedPrefixes = options.closedPrefixes ?? [];
+    this.reference = options.reference;
     const root = new Scope(undefined);
     for (const name of options.globals) {
       root.declare(name, { mutable: false, span: ZERO_SPAN, kind: 'built-in' });
@@ -242,7 +263,14 @@ class Resolver {
   private use(name: string, span: Span): void {
     const found =
       this.deferred > 0 ? this.scope.lookupDeferred(name) : this.scope.lookup(name);
-    if (found !== undefined) return;
+    if (found !== undefined) {
+      // Where this name was declared, for whoever asked. The resolver has
+      // always known it and always thrown it away the moment it had finished
+      // checking, so an editor's "go to definition" had to work it out again —
+      // a second implementation of the same question, free to disagree.
+      this.reference?.({ use: span, declaration: found.span, name, kind: found.kind });
+      return;
+    }
     const hint = suggest(
       name,
       this.deferred > 0 ? this.scope.visibleDeferred() : this.scope.visible(),

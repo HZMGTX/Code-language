@@ -1,6 +1,6 @@
 {
   "name": "lumen-monorepo",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Lumen \u2014 one language for scripts, servers, websites, and AI.",
   "license": "SEE LICENSE IN LICENSE",
@@ -11,6 +11,7 @@
   "workspaces": [
     "packages/core",
     "packages/stdlib",
+    "packages/lsp",
     "packages/cli"
   ],
   "scripts": {

@@ -28,7 +28,7 @@ in [ROADMAP.md](ROADMAP.md); the largest item is that type checking is **gradual
 and shallow**: annotations are enforced where you write them, and a program that
 writes none is never type-checked at all.
 
-- **906 tests**, 132 conformance fixtures, 20 example programs, 14 standard
+- **923 tests**, 132 conformance fixtures, 20 example programs, 14 standard
   modules. `npm run ci` runs all fifteen checks locally, which is how they are
   verified today — GitHub Actions is configured for Node 20/22/24 on Linux, macOS
   and Windows but has never been able to start a run on this repository, so no
@@ -194,6 +194,7 @@ lumen <file.lm>          run a program
 lumen run <file.lm>      run a program
 lumen serve <file.lm>    run a program that starts a web server
 lumen repl               start an interactive session
+lumen lsp                speak the Language Server Protocol (for editors)
 lumen check [path]       check every .lm under path without running it
 lumen fmt [path]         normalise indentation in place (--check to only ask)
 lumen test [path]        run every *_test.lm under path
@@ -221,6 +222,29 @@ token stream comes out identical, and running it twice is running it once.
 `lumen fmt --check` writes nothing and exits non-zero, which is the form CI
 wants.
 
+## In an editor
+
+`lumen lsp` is a language server: diagnostics as you type, hover, completion,
+go to definition, and formatting. `editors/vscode` is a client for it, and
+installing it is a symlink:
+
+```bash
+ln -s "$(pwd)/editors/vscode" ~/.vscode/extensions/lumen   # macOS, Linux
+```
+
+See [editors/vscode/README.md](editors/vscode/README.md) for Windows and for
+the setting that points it at a particular build.
+
+Everything it knows, `lumen check` knows — they run the same parser, the same
+resolver and the same type checker, so the editor can never tell you something
+the command line disagrees with. Completion after a `.` offers the methods that
+exist on the receiver's type, which is worth having only because the standard
+library declares its types; before that, the honest answer was every method of
+every type at once.
+
+The server has no dependencies, and neither does the VS Code client: LSP is
+JSON-RPC over stdio, and the framing is a few dozen lines.
+
 ## Documentation
 
 | Document | What it covers |
@@ -233,6 +257,7 @@ wants.
 | [docs/philosophy.md](docs/philosophy.md) | Why it is built this way, and what "built to last" means |
 | [ROADMAP.md](ROADMAP.md) | What is not done yet, stated plainly |
 | [DEVELOPING.md](DEVELOPING.md) | Building, testing, and adding to the language |
+| [editors/vscode](editors/vscode/README.md) | Installing the editor support |
 
 ## Examples
 
@@ -268,7 +293,9 @@ examples/<name>.lm` runs any of them.
 packages/core      the language: lexer, parser, AST, values, interpreter
                    — imports no host APIs, so a browser target stays possible
 packages/stdlib    std/* modules, the Node host, and the module resolver
+packages/lsp       the language server: diagnostics, hover, completion, …
 packages/cli       the `lumen` command
+editors/vscode     a VS Code client for the language server
 examples/          runnable programs, each covered by CI
 tests/unit         unit tests for the internals
 tests/conformance  golden fixtures: one .lm file plus its exact expected output

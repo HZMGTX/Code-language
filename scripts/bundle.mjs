@@ -15,7 +15,7 @@
  *    `tsc --build` output in `packages/*\/dist`.
  * 2. Every emitted module is wrapped in a factory and registered in a small
  *    map. A `require` shim resolves relative specifiers the way Node does
- *    (exact, then `.js`, then `/index.js`), maps the two `@lumen-lang/*`
+ *    (exact, then `.js`, then `/index.js`), maps the three `@lumen-lang/*`
  *    package specifiers to their entry modules, and falls through to the real
  *    `require` for `node:fs`, `node:path`, `node:http` and `node:readline`.
  *
@@ -41,12 +41,13 @@ const ENTRY = 'packages/cli/src/index.js';
 
 /**
  * `paths` in tsconfig teaches the type checker where the workspace packages
- * live, but tsc never rewrites the specifier it emits. These two bare names
+ * live, but tsc never rewrites the specifier it emits. These bare names
  * therefore survive into the output and the require shim resolves them.
  */
 const ALIASES = {
   '@lumen-lang/core': 'packages/core/src/index.js',
   '@lumen-lang/stdlib': 'packages/stdlib/src/index.js',
+  '@lumen-lang/lsp': 'packages/lsp/src/index.js',
 };
 
 /**

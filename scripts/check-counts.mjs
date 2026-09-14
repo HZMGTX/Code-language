@@ -16,6 +16,7 @@
  *     nothing that does not exist
  *   - every `std/*` module has a row in the generated stdlib reference
  *   - most of the standard library declares a type
+ *   - every file that names a version names the same one
  *   - every `RS` and `TY` diagnostic the implementation can emit is named in the
  *     specification, **and** in the header comment of the file that emits it
  *
@@ -185,6 +186,42 @@ for (const [relative, family] of HEADERED) {
   }
 }
 
+// ------------------------------------------------ one version, in five places
+
+/**
+ * The version, which is written down in more places than anybody remembers.
+ *
+ * Two TypeScript constants and five manifests, and nothing until now compared
+ * them: `lumen --version` could have said one thing while the packages said
+ * another, and the first person to notice would have been a user.
+ */
+const VERSIONS = [
+  ['package.json', /"version": "([^"]+)"/],
+  ['packages/core/package.json', /"version": "([^"]+)"/],
+  ['packages/stdlib/package.json', /"version": "([^"]+)"/],
+  ['packages/lsp/package.json', /"version": "([^"]+)"/],
+  ['packages/cli/package.json', /"version": "([^"]+)"/],
+  ['packages/core/src/index.ts', /export const VERSION = '([^']+)'/],
+  ['packages/cli/src/support.ts', /export const VERSION = '([^']+)'/],
+];
+const versions = new Map();
+for (const [relative, pattern] of VERSIONS) {
+  const found = pattern.exec(readFileSync(path.join(ROOT, relative), 'utf8'));
+  if (found === null) {
+    problems.push(relative + ' does not state a version');
+    continue;
+  }
+  versions.set(relative, found[1]);
+}
+const distinct = [...new Set(versions.values())];
+if (distinct.length > 1) {
+  problems.push(
+    'the version differs between files: ' +
+      [...versions].map(([where, what]) => where + ' says ' + what).join(', '),
+  );
+}
+const VERSION = distinct[0] ?? '(unknown)';
+
 // ------------------------------------------- the library declares its types
 
 /**
@@ -236,7 +273,7 @@ const summary =
   String(actual.tests) + ' tests, ' + String(actual.fixtures) + ' fixtures, ' +
   String(actual.examples) + ' examples, ' + String(actual.modules) + ' modules, ' +
   String(emitted.size) + ' static checks, ' +
-  String(typed) + '/' + String(natives) + ' typed';
+  String(typed) + '/' + String(natives) + ' typed, v' + VERSION;
 
 if (problems.length === 0) {
   process.stdout.write('README matches the repository (' + summary + ')\n');

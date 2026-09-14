@@ -118,7 +118,11 @@ created two throwaway Maps per iteration.
 
 - A JavaScript backend, so Lumen runs in the browser as well as on the server —
   the reason `packages/core` imports no host API
-- A language server: completion, go-to-definition, inline diagnostics
+- ~~A language server: completion, go-to-definition, inline diagnostics.~~
+  Done, and earlier than planned, because the typed standard library made the
+  interesting half of it possible: `lumen lsp`, with a VS Code client in
+  `editors/vscode`. Zero dependencies on both sides. Still ahead for it: rename,
+  find-references, and signature help while typing a call.
 
 ## v0.5 — Depth
 

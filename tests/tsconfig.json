@@ -3,12 +3,26 @@
   "compilerOptions": {
     "rootDir": ".",
     "outDir": "dist",
-    "types": ["node"]
+    "types": [
+      "node"
+    ]
   },
-  "include": ["unit/**/*.ts", "support/**/*.ts"],
+  "include": [
+    "unit/**/*.ts",
+    "support/**/*.ts"
+  ],
   "references": [
-    { "path": "../packages/core" },
-    { "path": "../packages/stdlib" },
-    { "path": "../packages/cli" }
+    {
+      "path": "../packages/core"
+    },
+    {
+      "path": "../packages/stdlib"
+    },
+    {
+      "path": "../packages/lsp"
+    },
+    {
+      "path": "../packages/cli"
+    }
   ]
 }

@@ -108,7 +108,27 @@ check('portable bundle is self-contained', () => {
     if (out !== 'Hello from Lumen!') {
       throw new Error('unexpected output: ' + JSON.stringify(out) + (r.stderr ?? ''));
     }
-    return 'ran from ' + sandbox + ' with nothing else present';
+
+    // The language server too, because it is a whole workspace the bundler had
+    // to learn about — it was left out of the bundle the day it was written,
+    // and `lumen lsp` then failed with "cannot find module" on exactly the
+    // artifact people are handed.
+    const body = Buffer.from(
+      JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { capabilities: {} } }),
+      'utf8',
+    );
+    const lsp = spawnSync(node, ['lumen.cjs', 'lsp'], {
+      cwd: sandbox,
+      encoding: 'utf8',
+      input: 'Content-Length: ' + body.length + '\r\n\r\n' + body.toString('utf8'),
+    });
+    if (!(lsp.stdout ?? '').includes('"hoverProvider":true')) {
+      throw new Error(
+        'the bundled language server did not answer `initialize`:\n' +
+          (lsp.stdout ?? '') + (lsp.stderr ?? ''),
+      );
+    }
+    return 'ran a program and a language server from ' + sandbox + ', with nothing else present';
   } finally {
     rmSync(sandbox, { recursive: true, force: true });
   }
