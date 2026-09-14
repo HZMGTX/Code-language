@@ -498,6 +498,18 @@ export interface Host {
    */
   readLine?(prompt: string): Promise<string | undefined>;
   /**
+   * Everything left on the input, as one string.
+   *
+   * The other half of reading: `readLine` is for a conversation and this is for
+   * a pipeline, and a program written for `cat file | prog` could not be
+   * written at all with only the first — `while input()` works, but it is four
+   * lines and an `Option` to say "read the input".
+   *
+   * Optional, like `readLine`, and for the same reason: a browser or a build
+   * step has no input to read.
+   */
+  readAll?(): Promise<string>;
+  /**
    * Stop the program with an exit status.
    *
    * `exit()` used to call `process.exit()` from inside the standard library,

@@ -116,6 +116,17 @@ export function createNodeHost(options: { args?: readonly string[] } = {}): Host
         waiting.push(resolve);
       });
     },
+    readAll: async (): Promise<string> => {
+      // Whatever `readLine` has already taken off the stream is still owed to
+      // the caller: a program that reads a header line and then asks for the
+      // rest must get the rest, not the rest minus whatever readline buffered.
+      const iface = openConsole();
+      if (ended) return pending.splice(0).join('\n');
+      await new Promise<void>((resolve) => {
+        iface.once('close', () => resolve());
+      });
+      return pending.splice(0).join('\n');
+    },
   };
 }
 
@@ -192,11 +203,33 @@ export function stdSignatures(): ReadonlyMap<string, Ty> {
   for (const name of interpreter.globals.ownNames()) {
     const value = interpreter.globals.lookup(name)?.value;
     if (value?.k === 'native' && value.signature !== undefined) {
-      built.set(name, signatureTy(value.signature));
+      const ty = parsed(value.signature);
+      if (ty !== undefined) built.set(name, ty);
     }
   }
   globalSignatures = built;
   return built;
+}
+
+/**
+ * A declared signature as a type, or undefined if it will not parse.
+ *
+ * `signatureTy` raises, which is right for the primitive: a signature that does
+ * not parse is a mistake somebody has to fix. But these maps are built on the
+ * way to running a program, so raising here would mean a typo in one signature
+ * stops every Lumen program on the machine with a diagnostic about a file the
+ * user has never seen. Skipping it leaves that one function unchecked, which is
+ * how it was before it was typed.
+ *
+ * `tests/unit/signatures.test.ts` asserts that every one of them parses, so a
+ * bad signature is a failed build rather than something that quietly rots.
+ */
+function parsed(signature: string): Ty | undefined {
+  try {
+    return signatureTy(signature);
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -211,9 +244,9 @@ export function stdMethodSignatures(): ReadonlyMap<string, Ty> {
   if (methodSignatures !== undefined) return methodSignatures;
   const built = new Map<string, Ty>();
   const add = (type: string, name: string, value: Value): void => {
-    if (value.k === 'native' && value.signature !== undefined) {
-      built.set(type + '.' + name, methodTy(signatureTy(value.signature)));
-    }
+    if (value.k !== 'native' || value.signature === undefined) return;
+    const ty = parsed(value.signature);
+    if (ty !== undefined) built.set(type + '.' + name, methodTy(ty));
   };
   for (const [type, functions] of Object.entries(methodTables())) {
     for (const [name, value] of functions) add(type, name, value);

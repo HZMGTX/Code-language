@@ -16,6 +16,8 @@ import { stdList } from './list.js';
 import { stdMap } from './map.js';
 import { stdMath } from './math.js';
 import { stdOption } from './option.js';
+import { stdPath } from './path.js';
+import { stdRegex } from './regex.js';
 import { stdResult } from './result.js';
 import { stdSet } from './set.js';
 import { stdStr } from './str.js';
@@ -43,6 +45,8 @@ export const STD_MODULES: ReadonlyMap<string, () => Map<string, Value>> = new Ma
   ['std/option', stdOption],
   ['std/result', stdResult],
   ['std/set', stdSet],
+  ['std/path', stdPath],
+  ['std/regex', stdRegex],
   ['std/time', stdTime],
   ['std/fs', stdFs],
   ['std/http', stdHttp],
@@ -75,12 +79,7 @@ export function stdModuleExports(): ReadonlyMap<string, ReadonlyMap<string, Ty>>
   for (const [moduleName, factory] of STD_MODULES) {
     const types = new Map<string, Ty>();
     for (const [name, value] of factory()) {
-      types.set(
-        name,
-        value.k === 'native' && value.signature !== undefined
-          ? signatureTy(value.signature)
-          : ANY,
-      );
+      types.set(name, typeOfExport(value));
     }
     built.set(moduleName, types);
   }
@@ -90,3 +89,21 @@ export function stdModuleExports(): ReadonlyMap<string, ReadonlyMap<string, Ty>>
 
 /** Anything the library has not described: compatible with everything. */
 const ANY: Ty = { k: 'any' };
+
+/**
+ * One export's type, and `Any` for anything undeclared or unparseable.
+ *
+ * `signatureTy` raises on a signature that will not parse, which is right for
+ * the primitive. Here it must not: this runs on the way to running a program,
+ * so a typo in one signature would stop every Lumen program with a diagnostic
+ * about a file the user has never seen. `tests/unit/signatures.test.ts`
+ * asserts that every signature parses, so it is a failed build instead.
+ */
+function typeOfExport(value: Value): Ty {
+  if (value.k !== 'native' || value.signature === undefined) return ANY;
+  try {
+    return signatureTy(value.signature);
+  } catch {
+    return ANY;
+  }
+}

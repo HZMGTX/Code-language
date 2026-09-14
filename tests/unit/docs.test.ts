@@ -50,9 +50,14 @@ describe('the specification matches the implementation', () => {
       'these prelude names exist but are not in docs/spec.md: ' + undocumented.join(', '),
     );
 
-    // The reverse direction, ignoring diagnostic codes mentioned in the prose.
+    // The reverse direction, ignoring what the prose in this section is
+    // allowed to mention besides a binding: diagnostic codes, and the names of
+    // types, which are not values and so are not in `globals`.
+    const NOT_BINDINGS = ['Num', 'Str', 'Bool', 'Nil', 'List', 'Map', 'Any', 'Fn'];
     const invented = [...documented]
-      .filter((n) => !installed.has(n) && !/^(RT|PA|LX)\d{3}$/.test(n))
+      .filter(
+        (n) => !installed.has(n) && !/^(RT|PA|LX)\d{3}$/.test(n) && !NOT_BINDINGS.includes(n),
+      )
       .sort();
     assert.deepEqual(
       invented,

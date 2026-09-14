@@ -657,7 +657,12 @@ export class Parser {
       this.skipNewlines();
     });
     this.expect('}', 'to close the import list');
-    if (!this.eat('from')) {
+    // `from` is a word here rather than a keyword, exactly like `as` above: it
+    // means something in this one position and is an ordinary name everywhere
+    // else, so `let from = ...` and `fn replace(s, from, to)` are programs a
+    // person can write. See `KEYWORDS` for why it is worth the two lines.
+    if (this.at('ident') && this.cur().text === 'from') this.advance();
+    else {
       this.fail('PA004', 'expected `from` after an import list', 'expected `from`', [
         { message: 'imports look like: import { map } from "std/list"' },
       ]);

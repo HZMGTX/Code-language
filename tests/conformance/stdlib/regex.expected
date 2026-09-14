@@ -1,0 +1,22 @@
+true
+false
+Ok(true)
+Ok(true)
+Ok(false)
+Ok(Some({text: "a=1", at: 0, groups: ["a", "1"], named: {}}))
+Ok(None)
+2
+Ok(4)
+Ok(3)
+Ok(Some(["2026", "09", "14"]))
+Ok(None)
+Ok("a#b#")
+Ok("a#b2")
+Ok("smith, john")
+Ok(["a", "b", "c"])
+a\.b\*c
+Ok(true)
+Ok(false)
+Err("`(unclosed` is not a valid pattern: Unterminated group")
+v1.2 at 0 major=1 groups=["1", "2"]
+Ok(Some([nil, "b"]))

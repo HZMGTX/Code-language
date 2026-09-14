@@ -215,6 +215,34 @@ export function preludeExtras(): Map<string, Value> {
     ),
   );
 
+  /**
+   * Everything on the input, as one string.
+   *
+   * The pipeline half of `input`. `cat access.log | lumen run report.lm` could
+   * not be written with `input` alone without a loop and an `Option` to say
+   * "read the input", which is four lines of ceremony around the commonest
+   * thing a script does with what is piped into it.
+   *
+   * `inputAll().lines()` is the list of lines, and an empty input is `""`
+   * rather than an error — nothing on the input is a normal amount of input.
+   */
+  define(
+    fn(
+      'inputAll',
+      [],
+      async (_a, c) => {
+        if (c.host.readAll === undefined) {
+          return c.panic('inputAll() is not available here', [
+            'this host has no input; inputAll() reads what is piped to the program',
+          ]);
+        }
+        return str(await c.host.readAll());
+      },
+      'Read everything on the input as one string. "" if there is nothing.',
+      '() -> Str',
+    ),
+  );
+
   return extras;
 }
 
@@ -313,6 +341,14 @@ function makeHelp(methodsOf: (type: string) => string[], preludeNames: () => str
  * Listed rather than taken wholesale: `random()` takes no number at all, and
  * `PI` and `E` are values, so neither belongs on a receiver.
  */
+/**
+ * `std/math` functions whose subject is a List rather than a Num.
+ *
+ * They belong to the random generator, which is why they live in `std/math`,
+ * and they belong to a list, which is why they are methods on one.
+ */
+const LIST_METHODS_FROM_MATH = ['shuffle', 'choice'];
+
 const NUM_METHODS = [
   'abs', 'acos', 'asin', 'atan', 'atan2', 'cbrt', 'ceil', 'clamp', 'cos', 'exp',
   'fixed', 'floor', 'gcd', 'hypot', 'lcm', 'log', 'max', 'min', 'pow', 'round',
@@ -366,6 +402,15 @@ export function methodTables(): Record<string, Map<string, Value>> {
   for (const name of NUM_METHODS) {
     const found = math.get(name);
     if (found !== undefined) numMethods.set(name, found);
+  }
+
+  // `shuffle` and `choice` live in `std/math`, beside the generator they draw
+  // from, but their subject is a List — so that is where they are methods.
+  // Without this, `[1, 2, 3].shuffle()` is `RT027` on a function that takes a
+  // list as its first argument, which is exactly what §4.7 says should work.
+  for (const name of LIST_METHODS_FROM_MATH) {
+    const found = math.get(name);
+    if (found !== undefined) listMethods.set(name, found);
   }
 
   return {

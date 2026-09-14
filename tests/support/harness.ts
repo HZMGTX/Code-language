@@ -41,6 +41,7 @@ export function makeHost(collect: (text: string) => void, stdin: readonly string
       collect(prompt);
       return queue.shift();
     },
+    readAll: async (): Promise<string> => queue.splice(0).join('\n'),
   };
 }
 

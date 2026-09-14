@@ -31,6 +31,7 @@ with the same name always shadows the prelude one.
 | `floor(n: Num) -> Num` | Round down to a whole number. |
 | `help(subject = ...)` | Describe a value, a function, or a module. Call help() alone for an overview. |
 | `input(prompt: Str = ...) -> Option` | Read one line from the console. Some(text), or None at end of input. |
+| `inputAll() -> Str` | Read everything on the input as one string. "" if there is nothing. |
 | `join(xs: List, separator: Str = ...) -> Str` | Join a list into a string with a separator. |
 | `len(value) -> Num` | How many characters, elements or entries a value has. |
 | `map(xs: List, f: fn(Any) -> Any) -> List` | Apply a function to every element, giving a new list. |
@@ -380,6 +381,69 @@ wherever it runs.
 Both are `Result`-returning throughout. An HTTP response with a non-2xx status
 is still `Ok` — the *request* succeeded; check `status` to decide what it means.
 
+### `std/path`
+
+Paths as text, with **one separator**. A path is written with `/` and read with
+either, so a Windows path pasted into a program works and a path this module
+produces looks the same everywhere. Node's own `path` changes behaviour with
+the platform, which would make the same Lumen program print different things on
+different machines — the same reason `std/time` has only UTC. A drive letter
+(`C:`) and a UNC root (`//server/share`) are understood and preserved, because
+losing one silently turns an absolute path into a relative one and a program
+that then writes a file writes it somewhere else.
+
+Nothing here touches the filesystem — `exists` lives in `std/fs`, because it
+asks the machine a question — which is what lets a program work out where things
+will go before doing any of it.
+
+`isInside(parent, child)` is the check a program serving files needs, with both
+ways of getting it wrong already handled: comparing text alone makes
+`/publicity` look like it is inside `/public`, and forgetting to normalise lets
+`/public/../etc/passwd` through.
+
+### `std/regex`
+
+A pattern is a `Str`. There is no `/.../` literal, deliberately: it would be
+ambiguous with division in a language whose newlines are significant, and every
+escape a pattern needs would then have to be understood by the lexer as well as
+by the matcher. A string keeps the whole question in one place — and `"\\d+"`
+is what other languages write inside a string anyway.
+
+**The dialect is ECMAScript**, because the host's engine is. `\d`, `\w`, `\s`,
+`\b`, groups, named groups `(?<name>…)`, alternation, greedy and lazy
+quantifiers, lookahead, lookbehind and character classes all mean what they mean
+in JavaScript, Java, Python and everything else descended from Perl.
+
+Every function that takes a pattern returns a `Result`, because a pattern comes
+from somewhere — a config file, an argument, a person — and `(` is an ordinary
+thing to type. `isValid` is the exception: asking whether something is a pattern
+cannot itself fail.
+
+A match is a map with `text`, `at`, `groups` and `named`. A group that did not
+take part is `nil` rather than missing, so the list is the same length whichever
+branch of an alternation fired.
+
+**There is no backtracking guard.** `(a+)+b` against a long run of `a`s takes
+time exponential in its length, here as in most engines. A pattern from a
+trusted source is fine; one from a stranger is a denial of service, and this is
+written down rather than left to be discovered.
+
+### Randomness
+
+`random()` and `randomInt(low, high)` draw from the host by default, so a
+program is different on every run — which is what you want, and the opposite of
+what a test wants.
+
+`seed(n)` replaces the generator with one written here, so the same seed gives
+the same sequence on every machine and every version of Node. That is what makes
+a randomised test repeatable when it fails, which is most of what randomised
+tests are for. `shuffle` uses Fisher-Yates, which is uniform; the spelling
+everybody reaches for first — `sortBy(fn(_) { random() })` — is not, because a
+comparison sort asks about the same pair more than once and gets different
+answers each time.
+
+**Not cryptographic.** `seed` is for repeatability, not for secrets.
+
 ---
 
 ## Reference
@@ -419,10 +483,17 @@ sleep(milliseconds: Num) -> Nil
 
 ```text
 append(path: Str, contents: Str) -> Result
+copy(source: Str, destination: Str) -> Result
 exists(path: Str) -> Bool
+isDir(path: Str) -> Bool
+isFile(path: Str) -> Bool
 list(path: Str) -> Result
+makeDir(path: Str) -> Result
 read(path: Str) -> Result
 remove(path: Str) -> Result
+rename(source: Str, destination: Str) -> Result
+stat(path: Str) -> Result
+walk(path: Str) -> Result
 write(path: Str, contents: Str) -> Result
 ```
 
@@ -525,6 +596,7 @@ atan(n: Num) -> Num
 atan2(y: Num, x: Num) -> Num
 cbrt(n: Num) -> Num
 ceil(n: Num) -> Num
+choice(xs: List) -> Option
 clamp(n: Num, low: Num, high: Num) -> Num
 cos(n: Num) -> Num
 exp(n: Num) -> Num
@@ -540,6 +612,8 @@ pow(base: Num, exponent: Num) -> Num
 random() -> Num
 randomInt(low: Num, high: Num) -> Num
 round(n: Num) -> Num
+seed(value: Num) -> Nil
+shuffle(xs: List) -> List
 sign(n: Num) -> Num
 sin(n: Num) -> Num
 sqrt(n: Num) -> Num
@@ -559,6 +633,38 @@ okOr(option: Option, error) -> Result
 or(option: Option, other: Option) -> Option
 toList(option: Option) -> List
 unwrapOr(option: Option, fallback)
+```
+
+### `std/path`
+
+```text
+base(path: Str) -> Str
+dir(path: Str) -> Str
+ext(path: Str) -> Str
+isAbsolute(path: Str) -> Bool
+isInside(parent: Str, child: Str) -> Bool
+join(...)
+normalize(path: Str) -> Str
+relative(base: Str, target: Str) -> Str
+resolve(base: Str, path: Str) -> Str
+split(path: Str) -> List<Str>
+stem(path: Str) -> Str
+withExt(path: Str, extension: Str) -> Str
+```
+
+### `std/regex`
+
+```text
+captures(text: Str, pattern: Str, ignoreCase: Bool = ...) -> Result
+count(text: Str, pattern: Str, ignoreCase: Bool = ...) -> Result
+escape(text: Str) -> Str
+find(text: Str, pattern: Str, ignoreCase: Bool = ...) -> Result
+findAll(text: Str, pattern: Str, ignoreCase: Bool = ...) -> Result
+isValid(pattern: Str) -> Bool
+replace(text: Str, pattern: Str, replacement: Str, ignoreCase: Bool = ...) -> Result
+replaceFirst(text: Str, pattern: Str, replacement: Str, ignoreCase: Bool = ...) -> Result
+split(text: Str, pattern: Str, ignoreCase: Bool = ...) -> Result
+test(text: Str, pattern: Str, ignoreCase: Bool = ...) -> Result
 ```
 
 ### `std/result`

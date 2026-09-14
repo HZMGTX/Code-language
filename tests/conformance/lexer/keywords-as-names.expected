@@ -7,6 +7,10 @@
 [1, 2, 3]
 [1, "x", true]
 1
+here -> there
+x -> y
+["here", "that"]
+[2, 4]
 if still works
 for still works
 true

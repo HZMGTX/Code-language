@@ -1,0 +1,42 @@
+// Randomness you can repeat.
+//
+// `seed` exists so a test over randomised input can be run again when it
+// fails, which is most of what randomised tests are for. Without it there was
+// no way to write one. The generator is written in the library rather than
+// borrowed from the host, so the same seed gives the same sequence on every
+// machine and every version of Node — which is what lets this have a golden
+// file at all.
+//
+// Not cryptographic, and nothing here claims otherwise.
+import { seed, random, randomInt, shuffle, choice } from "std/math"
+
+seed(42)
+let first = [random(), random(), random()].map(fn(n) { fixed(n, 6) })
+seed(42)
+let again = [random(), random(), random()].map(fn(n) { fixed(n, 6) })
+print(first == again)
+print(first)
+
+seed(7)
+print(range(10).map(fn(_) { randomInt(1, 6) }))
+seed(7)
+print(range(10).map(fn(_) { randomInt(1, 6) }))
+
+// A shuffled copy; the original is untouched, as everywhere else here.
+let ordered = [1, 2, 3, 4, 5]
+seed(1)
+print(shuffle(ordered))
+seed(1)
+print(ordered.shuffle())
+print(ordered)
+print(shuffle([]))
+
+seed(3)
+print(choice(["a", "b", "c"]))
+print(choice([]))
+
+// The low bits of a linear congruential generator cycle with a period of two
+// or four, which makes a coin flip alternate — a bug that looks like
+// randomness until somebody plots it. These must not alternate.
+seed(99)
+print(range(20).map(fn(_) { randomInt(0, 1) }))

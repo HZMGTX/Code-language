@@ -81,10 +81,26 @@ An identifier starts with a letter or `_` and continues with letters, digits or
 
 ```
 let var fn return if else while for in match struct enum
-import export from break continue true false nil and or not async await
+import export break continue true false nil and or not async await
 ```
 
 `async` and `await` are reserved for future explicit concurrency; see §7.4.
+
+**`from` and `as` are not reserved.** Each appears in exactly one position in
+the grammar — after the `}` of an import list, and between an imported name and
+its alias — so the parser looks for the word where it means something and
+leaves it an ordinary identifier everywhere else:
+
+```lumen
+import { map as mapped } from "std/list"
+
+let from = "/tmp/a"
+fn move(from, to) { "${from} -> ${to}" }
+```
+
+Reserving `from` bought nothing: it cannot begin a statement or an expression,
+so there is nothing for it to be ambiguous with, and `let from = ...` and
+`replace(s, from, to)` are what people write.
 
 A keyword is only a keyword where a statement or an expression could begin.
 Where nothing but a name can appear — after `.` or `?.`, as a map key, as a
@@ -850,12 +866,17 @@ always shadows the prelude one, so defining your own `sum` is safe.
 | Sequences | `map` `filter` `reduce` `sum` `sorted` `reversed` `enumerate` `zip` `any` `all` `range` `join` `split` |
 | Numbers | `abs` `round` `floor` `ceil` `fixed` `min` `max` |
 | Errors | `Ok` `Err` `Some` `None` `Result` `Option` `assert` `panic` |
-| Console | `input` |
+| Console | `input` `inputAll` |
 
 `range(n)`, `range(start, end)` and `range(start, end, step)` all work, and a
 negative step counts down. `min` and `max` accept either a list or several
-numbers. `input(prompt)` returns `Some(line)`, or `None` at end of input; on a
-host with no console it is `RT035`.
+numbers.
+
+`input(prompt)` returns `Some(line)`, or `None` at end of input, and is for a
+conversation. `inputAll()` returns everything on the input as one string, and is
+for a pipeline: `cat access.log | lumen run report.lm`. An empty input is `""`
+rather than an error — nothing on the input is a normal amount of input. On a
+host with no console, both say so rather than hanging.
 
 Lumen has a single `Num` type, so there is no `int` or `float` conversion —
 `num(text)` parses, returning a `Result`.

@@ -27,7 +27,6 @@ export type TokenKind =
   | 'enum'
   | 'import'
   | 'export'
-  | 'from'
   | 'break'
   | 'continue'
   | 'true'
@@ -118,6 +117,22 @@ export interface Comment {
  * has no inherited keys, so a Lumen identifier is only ever compared against
  * the words written below.
  */
+/**
+ * `from` and `as` are deliberately **not** here.
+ *
+ * Each appears in exactly one position in the grammar — after the `}` of an
+ * import list, and between a name and its alias inside one — so the parser can
+ * look for the word where it means something and leave it an ordinary name
+ * everywhere else. Reserving them bought nothing and cost a great deal: `let
+ * from = ...` is what anybody writes for a rename, `fn replace(s, from, to)` is
+ * how every other language spells that function, and `relative(from, to)` is
+ * the conventional signature. All three were syntax errors, and the standard
+ * library twice ended up with a parameter no Lumen program could have declared.
+ *
+ * The rest are here because each of them can begin a statement or an
+ * expression, where a name could also begin, so they genuinely have to be
+ * reserved to keep the grammar unambiguous.
+ */
 export const KEYWORDS: ReadonlyMap<string, TokenKind> = new Map<string, TokenKind>(
   Object.entries({
   let: 'let',
@@ -134,7 +149,6 @@ export const KEYWORDS: ReadonlyMap<string, TokenKind> = new Map<string, TokenKin
   enum: 'enum',
   import: 'import',
   export: 'export',
-  from: 'from',
   break: 'break',
   continue: 'continue',
   true: 'true',

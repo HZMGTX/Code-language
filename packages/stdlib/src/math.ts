@@ -1,7 +1,7 @@
 /** `std/math` — numeric helpers and constants. */
 
-import { num, str, type Value } from '@lumen-lang/core';
-import { arg, expectInt, expectNum, fn, moduleOf, withSignatures } from './support.js';
+import { NIL, list, num, str, type Value } from '@lumen-lang/core';
+import { None, Some, arg, expectInt, expectList, expectNum, fn, moduleOf, withSignatures } from './support.js';
 
 /**
  * Every function's type. `Num` throughout, which is the whole of this module.
@@ -38,7 +38,55 @@ const SIGNATURES: Readonly<Record<string, string>> = {
   fixed: '(n: Num, places: Num = 0) -> Str',
   random: '() -> Num',
   randomInt: '(low: Num, high: Num) -> Num',
+  seed: '(value: Num) -> Nil',
+  shuffle: '(xs: List) -> List',
+  choice: '(xs: List) -> Option',
 };
+
+/**
+ * The generator behind `random`, so a program can make itself reproducible.
+ *
+ * `undefined` means `Math.random`, which is what you want by default: a
+ * language whose randomness is the same on every run by default is a language
+ * where somebody ships a shuffle that always deals the same hand. Calling
+ * `seed` replaces it, and there is deliberately no way to ask what the current
+ * seed is — that would only ever be used to "restore" it, and a program that
+ * needs two independent streams needs two generators, not one it keeps
+ * winding back.
+ *
+ * Module-level rather than per-instance, because `stdMath()` is called once by
+ * the interpreter factory and the seed must outlive the call that set it.
+ */
+let generator: (() => number) | undefined;
+
+/**
+ * mulberry32: 32 bits of state, a period of 2^32, and about ten operations.
+ *
+ * Not cryptographic, and nothing here claims otherwise — `seed` exists so a
+ * test can be repeated and a demo can be the same twice, which wants
+ * determinism and speed rather than unpredictability. Anyone choosing a nonce
+ * with this deserves to be told plainly, so `docs/stdlib.md` says so too.
+ *
+ * Chosen over the obvious `(a * 1103515245 + 12345) % 2^31` because a linear
+ * congruential generator's low bits cycle with a period of two or four, which
+ * makes `randomInt(0, 1)` alternate — a bug that looks like randomness until
+ * somebody plots it.
+ */
+function mulberry32(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** A number in [0, 1), from the seeded generator or from the host. */
+function nextRandom(): number {
+  return generator === undefined ? Math.random() : generator();
+}
 
 export function stdMath(): Map<string, Value> {
   const unary = (name: string, op: (n: number) => number) =>
@@ -159,7 +207,23 @@ export function stdMath(): Map<string, Value> {
     }),
 
     /** Uniform in `[0, 1)`. Not cryptographically secure. */
-    fn('random', [], () => num(Math.random())),
+    fn('random', [], () => num(nextRandom())),
+
+    /**
+     * Make every later `random` reproducible, from this seed.
+     *
+     * Without it there was no way to write a test over randomised input that
+     * could be repeated when it failed, which is most of what randomised tests
+     * are for. Seeding with the same number gives the same sequence on every
+     * machine and every version of Node, because the generator is written here
+     * rather than borrowed from the host.
+     *
+     * Not cryptographic. It is for repeatability, not for secrets.
+     */
+    fn('seed', ['value'], (a, c) => {
+      generator = mulberry32(expectInt(arg(a, 0), c, 'seed(value)'));
+      return NIL;
+    }),
 
     /**
      * A whole number from `low` to `high`, both included.
@@ -171,7 +235,33 @@ export function stdMath(): Map<string, Value> {
       const low = expectInt(arg(a, 0), c, 'randomInt(low)');
       const high = expectInt(arg(a, 1), c, 'randomInt(high)');
       if (low > high) return c.panic('randomInt low (' + low + ') is above high (' + high + ')');
-      return num(low + Math.floor(Math.random() * (high - low + 1)));
+      return num(low + Math.floor(nextRandom() * (high - low + 1)));
+    }),
+
+    /**
+     * A shuffled copy. The original is untouched, as everywhere else here.
+     *
+     * Fisher-Yates, which is the one that is uniform. The spelling everybody
+     * reaches for first — `sortBy(fn(_) { random() })` — is not: a comparison
+     * sort asks about the same pair more than once and gets different answers,
+     * so the result is biased in a way that is invisible without counting.
+     */
+    fn('shuffle', ['xs'], (a, c) => {
+      const items = [...expectList(arg(a, 0), c, 'shuffle(xs)').items];
+      for (let i = items.length - 1; i > 0; i -= 1) {
+        const j = Math.floor(nextRandom() * (i + 1));
+        const held = items[i] as Value;
+        items[i] = items[j] as Value;
+        items[j] = held;
+      }
+      return list(items);
+    }),
+
+    /** One element, or `None` for an empty list — there is nothing to pick. */
+    fn('choice', ['xs'], (a, c) => {
+      const items = expectList(arg(a, 0), c, 'choice(xs)').items;
+      if (items.length === 0) return None;
+      return Some(items[Math.floor(nextRandom() * items.length)] as Value);
     }),
   );
 

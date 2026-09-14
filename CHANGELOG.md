@@ -7,7 +7,78 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
 
 ## [Unreleased]
 
-Nothing yet.
+### Language
+
+- **`from` and `as` are no longer keywords.** Each appears in exactly one
+  position in the grammar — after the `}` of an import list, and between a name
+  and its alias inside one — so the parser looks for the word where it means
+  something and leaves it an ordinary name everywhere else. `as` already worked
+  that way; `from` did not.
+
+  Reserving it bought nothing and cost a great deal. `let from = ...` is what
+  anybody writes for a rename, `replace(s, from, to)` is how every other
+  language spells that function, and `relative(from, to)` is the conventional
+  signature — all three were syntax errors, and the standard library twice
+  ended up with a parameter no Lumen program could have declared. It came up
+  three times in one afternoon, which is enough.
+
+  The rest of the keywords stay reserved: each can begin a statement or an
+  expression, where a name could also begin, so they genuinely keep the grammar
+  unambiguous.
+
+### Added
+
+- **`std/path`** — paths as text, with **one separator** everywhere. A path is
+  written with `/` and read with either, so a Windows path pasted into a
+  program works and a path this module produces looks the same on every
+  machine; Node's own `path` changes behaviour with the platform, which is the
+  same reason `std/time` has only UTC. Drive letters and UNC roots are
+  understood and preserved, because losing one silently turns an absolute path
+  into a relative one.
+
+  Nothing here touches the filesystem, which is what lets a program work out
+  where things will go before doing any of it. `isInside(parent, child)` is the
+  check a program serving files needs, with both ways of getting it wrong
+  already handled: `/publicity` is not inside `/public`, and `..` is resolved
+  first.
+
+- **`std/regex`** — regular expressions, with the pattern as a `Str`. There is
+  no `/.../` literal, deliberately: it would be ambiguous with division in a
+  language whose newlines are significant, and every escape would then have to
+  be understood by the lexer as well as by the matcher.
+
+  The dialect is ECMAScript and says so. Every function that takes a pattern
+  returns a `Result`, because a pattern comes from somewhere and `(` is an
+  ordinary thing for a person to type. There is no backtracking guard, and that
+  is written down rather than left to be discovered.
+
+- **Randomness you can repeat.** `seed(n)` replaces the generator with one
+  written in the library, so the same seed gives the same sequence on every
+  machine and every version of Node — which is what makes a randomised test
+  repeatable when it fails, and there was no way to write one before.
+  `shuffle` and `choice` come with it, and `shuffle` is Fisher-Yates: the
+  spelling everybody reaches for first, `sortBy(fn(_) { random() })`, is not
+  uniform, because a comparison sort asks about the same pair more than once
+  and gets different answers.
+
+  Not cryptographic, and it says so.
+
+- **`inputAll()`** — everything on the input as one string. The pipeline half of
+  `input()`: `cat access.log | lumen run report.lm` could not be written with
+  `input` alone without a loop and an `Option` to say "read the input".
+
+- **`std/fs` gained `stat`, `isDir`, `isFile`, `copy`, `rename`, `makeDir` and
+  `walk`.** `stat` reports a modification time as a Lumen instant, so
+  `stat(p).modified.iso()` needs no conversion — Node reports a `Date`, and
+  mixing the two units is how a program compares a timestamp against a duration
+  and gets a plausible wrong answer. `walk` does not follow symbolic links: a
+  tree containing a link to its own parent is not unusual, and walking it
+  forever is not a useful answer.
+
+- **`examples/rename.lm`** — renaming a folder full of files, safely. It plans
+  every move before making any, refuses to overwrite, refuses to leave the
+  folder it was pointed at, and can be run twice with nothing happening the
+  second time. The dangerous parts of that job are all in what it does not do.
 
 ## [0.2.0] — 2026-09-14
 

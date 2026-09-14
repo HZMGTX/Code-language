@@ -26,6 +26,22 @@ print([c.for, c.in, c.while])
 // And in a struct pattern.
 print(match c { Config { for: n, in: _, while: _ } => n })
 
+// `from` and `as` are not keywords at all, only words the parser looks for in
+// the one position each of them means something. `let from = ...` is what
+// anybody writes for a rename, and `replace(s, from, to)` is how every other
+// language spells that function; reserving them made both a syntax error and
+// twice left the standard library with a parameter no program could declare.
+let from = "here"
+var as = "that"
+fn move(from, to) { "${from} -> ${to}" }
+print(move(from, "there"))
+print(move(from: "x", to: "y"))
+print([from, as])
+
+// And the position where each still means what it means.
+import { map as mapped } from "std/list"
+print(mapped([1, 2], fn(n) { n * 2 }))
+
 // The keywords are still keywords where they matter.
 if true { print("if still works") }
 for i in [1] { print("for still works") }
