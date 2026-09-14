@@ -1,0 +1,12 @@
+// A number JSON cannot write is refused, not quietly turned into `null`.
+//
+// `JSON.stringify` writes `null` for Infinity and NaN without a word, and
+// `null` is the worst possible substitute: it is how JSON spells *absent*, so
+// an overflowed total does not merely lose its magnitude — it comes back
+// looking like a field nobody filled in, and every check for a missing value
+// now says yes. The spec says overflow to Infinity is an ordinary value
+// (§ RT046 is about NaN), so this is a value with no JSON form, exactly like a
+// function or a cycle — and this module already refuses both of those.
+import { stringify } from "std/json"
+let sales = { region: "north", total: 1e308 * 10 }
+print(stringify(sales))

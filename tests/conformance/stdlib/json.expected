@@ -5,6 +5,6 @@
 }
 Ok({a: 1})
 Ok([1, 2, 3])
-Err("invalid JSON")
+Err("invalid JSON at line 1, column 1: `not` is not a value JSON knows — a key or a word has to be in double quotes")
 {"x":1,"y":2}
 n is 7

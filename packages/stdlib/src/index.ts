@@ -38,6 +38,7 @@ export { setServeMode } from './web.js';
 export { setKeyForTesting } from './set.js';
 export { STD_MODULES, STD_MODULE_NAMES, stdModuleExports } from './modules.js';
 export { unmatchedSignaturesForTesting } from './support.js';
+export { locateJsonErrorForTesting } from './json.js';
 
 /**
  * A `Host` backed by the Node process: stdout, stderr, env, the clock, and the

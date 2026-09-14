@@ -167,13 +167,38 @@ version shadows the prelude's; either works on the right type.
 
 ### `std/json`
 
-`parse` returns `Result`. Its error message is Lumen's own wording rather than
-the host engine's, deliberately: V8 changes its JSON error text between Node
-releases, and a Lumen program's output must not depend on which Node happens to
-be running it.
+`parse` returns `Result`, and its error says **where**:
+
+```text
+invalid JSON at line 3, column 29: a trailing comma: JSON has no comma before `]`
+invalid JSON at line 1, column 2: the key `name` needs double quotes around it
+invalid JSON at line 1, column 1: `tru` is not a value JSON knows — did you mean `true`?
+```
+
+Both the wording and the position are Lumen's own. The wording, because V8
+rewrites its JSON error text between Node releases and a Lumen program's output
+must not depend on which Node happens to be running it. The position, because
+the alternative was the four words "invalid JSON", which is not something
+anybody can act on about a file somebody else exported — and every other
+diagnostic in this language says where.
+
+That means a second scan of the text, beside the host's parser, and it runs
+**only** after the host has already refused the document. So it can never affect
+a document that parses, and the worst a bug in it could do is produce a vaguer
+message. A test checks the two against each other over 200,000 generated
+documents: the locator finds a problem exactly when `JSON.parse` refuses the
+text.
 
 `stringify` renders structs as objects and enums as their variant name (or
 `{variant, values}` when they carry a payload).
+
+**A number JSON cannot write is refused.** `Infinity` and `NaN` are ordinary
+Lumen values — the spec says overflow to `Infinity` is not an error — and JSON
+has no way to spell either. `JSON.stringify` writes `null` for both without a
+word, which is the worst possible substitute: `null` is how JSON spells
+*absent*, so an overflowed total does not merely lose its magnitude, it comes
+back looking like a field nobody filled in. It is a panic naming the path, like
+a cycle and like a function.
 
 A value that contains itself cannot be written as JSON at all — there is no
 syntax for "the value we are already inside" — so `stringify` refuses and names
@@ -374,9 +399,10 @@ no sentence yet keeps the code rather than hiding it behind something vague.
 `std/http` names the request that failed, since "fetch failed" on its own says
 nothing when several are in flight.
 
-This is the same reason `std/json` reports `invalid JSON` rather than passing
-through V8's parser message: a Lumen program should print the same thing
-wherever it runs.
+This is the same reason `std/json` writes its own `invalid JSON at line 3,
+column 29: ...` rather than passing through V8's parser message: a Lumen program
+should print the same thing wherever it runs. Refusing the host's *wording* is
+not a reason to refuse to say where, so the position is worked out here.
 
 Both are `Result`-returning throughout. An HTTP response with a non-2xx status
 is still `Ok` — the *request* succeeded; check `status` to decide what it means.

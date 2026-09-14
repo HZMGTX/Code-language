@@ -130,6 +130,48 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
     answered `["a", "b"]`, which looks like an answer and was an accident of
     which branch ran first. Refused now, with the reason.
 
+- **`std/json` says where the document goes wrong.** Every failure there is —
+  an empty file, a trailing comma on line 300, an unquoted key, a string that
+  never closes — answered with the same four words, "invalid JSON". That is
+  unactionable about a file somebody else exported, and out of keeping with a
+  language whose every other diagnostic carries a position, a caret and a "did
+  you mean".
+
+  ```text
+  invalid JSON at line 3, column 29: a trailing comma: JSON has no comma before `]`
+  invalid JSON at line 1, column 2: the key `name` needs double quotes around it
+  invalid JSON at line 1, column 1: `tru` is not a value JSON knows — did you mean `true`?
+  ```
+
+  The original reason for saying nothing was sound and is kept: V8 rewords its
+  JSON errors between Node releases, so `JSON.parse("{")` is "Unexpected end of
+  JSON input" on one and "Expected property name or '}' in JSON at position 1"
+  on another, and a Lumen program's output must not depend on which Node is
+  installed. The wrong step was concluding that the *position* had to go too.
+  It is worked out here instead, by a second scan of the text.
+
+  That scan runs **only** after the host's parser has already refused the
+  document, which is what makes a hand-written one safe: it cannot affect a
+  document that parses, and the worst a bug in it can do is produce a vaguer
+  message. Writing a parser good enough to *accept* every valid document —
+  surrogate pairs, `__proto__` keys, the exact rounding of every number — is a
+  much harder thing than writing one good enough to find where an invalid one
+  first goes wrong, and the host already does the first perfectly well. A test
+  pins the two together over 200,000 generated documents: the locator finds a
+  problem exactly when `JSON.parse` refuses the text. An unclosed bracket is
+  reported where it *opened*, not at the end of the file, because the `{` is
+  the thing you have to go and look at.
+
+- **`stringify` refused to write `null` for a number JSON cannot hold.**
+  `Infinity` and `NaN` are ordinary Lumen values — the spec says overflow to
+  `Infinity` is not `RT046` — and `JSON.stringify` writes `null` for both
+  without a word. `null` is the worst possible substitute, because it is how
+  JSON spells *absent*: an overflowed total did not merely lose its magnitude,
+  it came back looking like a field nobody had filled in, and every check for a
+  missing value then said yes. It is a panic naming the path now — `it is at
+  $.total` — which is what this module already did for a function and for a
+  cycle. A number with no JSON form is the same kind of thing.
+
 - **Five more bugs, from turning the same adversarial probe on `std/process`
   and the language server.** The pattern that found the last three found these:
   use the thing the way a program would, then ask what it says when the answer
