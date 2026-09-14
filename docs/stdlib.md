@@ -214,6 +214,19 @@ unlike `Option` both of its arms carry something the reader has to tell apart.
 The cost is that `Some(nil)` and `None` both become `null`, which is JSON's
 limit rather than a choice: there is no second null to map the other one to.
 
+**A character is a code point.** `len`, `slice`, `chars`, `reverse`, `indexOf`,
+`padStart`, `padEnd` and `center` all count the same thing, which is the only
+property that makes them usable together: `slice(s, indexOf(s, ":"))` has to cut
+where `indexOf` pointed, and `padEnd(s, 28)` has to produce something `len`
+calls 28 or a table column is short by one for every row whose text has an emoji
+in it. JavaScript counts UTF-16 units, where an emoji is two; every function
+here that takes or gives a position or a width converts.
+
+It is not a grapheme cluster, and does not claim to be: `reverse` of an `e`
+followed by a combining acute still moves the accent, and there is no
+dependency-free way to do better. Code points are where the line is drawn, and
+everything here draws it in the same place.
+
 ### `std/web`
 
 A handler is any function from a request to a response.

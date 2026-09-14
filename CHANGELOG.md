@@ -130,6 +130,32 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
     answered `["a", "b"]`, which looks like an answer and was an accident of
     which branch ran first. Refused now, with the reason.
 
+- **Half of `std/str` counted characters and half counted UTF-16 units.**
+  `len`, `slice`, `chars` and `reverse` counted code points; `indexOf`,
+  `padStart`, `padEnd` and `center` inherited JavaScript's counting, where an
+  emoji is two. Two functions that disagree about what a position is are worse
+  than either convention, because the whole point of them is being used
+  together:
+
+  ```lumen
+  let line = "🎉name: value"
+  let at = indexOf(line, ":")     // said 6; the colon is the sixth code point
+  slice(line, 0, at)              // "🎉name:" — the half before it, with it
+  slice(line, at + 1)             // " value" — a character late
+  ```
+
+  Both halves came back wrong, silently, for any text with an emoji in it —
+  which is most text people type. And `padEnd(name, 28)` produced 27 characters
+  by `len`'s count whenever `name` had one, so a table column was short by one
+  for exactly the rows nobody tests with.
+
+  All eight count code points now, and a fixture pins the property rather than
+  the examples: `len(padStart(s, n, f)) == n` for every case, and
+  `slice(s, 0, indexOf(s, sep))` is the half before the separator. Grapheme
+  clusters are still not claimed — `reverse` of an `e` and a combining acute
+  moves the accent, and there is no dependency-free way to do better — but the
+  line is now drawn in the same place by everything in the module.
+
 - **`parseIso` moved a date that does not exist instead of refusing it.**
   `parseIso("2024-02-30")` answered March 1st, and `parseIso("2023-02-29")`
   answered March 1st too — so a date read out of somebody's exported file

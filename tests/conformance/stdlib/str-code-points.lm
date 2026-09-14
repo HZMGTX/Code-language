@@ -1,0 +1,40 @@
+// Every position and every width in `std/str` is a code point.
+//
+// That is not a detail — it is the property that makes the functions usable
+// together. `slice(s, indexOf(s, ":"))` has to cut where `indexOf` pointed, and
+// `padEnd(s, 8)` has to make something `len` calls 8, or a table column is
+// short by one for every row whose text has an emoji in it.
+//
+// JavaScript counts UTF-16 units, where an emoji is two, and three of these
+// functions used to inherit that while the rest did not.
+import { indexOf, slice, len, padStart, padEnd, center, chars, reverse, repeat } from "std/str"
+
+// The idiom: find it, cut there.
+let line = "🎉name: value"
+let at = indexOf(line, ":")
+print("${at} ${len(line)}")
+print("[${slice(line, 0, at)}] [${slice(line, at + 1)}]")
+print("${chars(line).len()}")
+
+// Not found is -1, and the start is 0, in either counting.
+print("${indexOf("abc", "z")} ${indexOf("abc", "a")} ${indexOf("🎉abc", "🎉")}")
+
+// Padding to a width means that width, measured the way `len` measures.
+for s in ["a", "ab", "é", "🎉", "🎉🎉", "🎉🎉🎉🎉🎉🎉"] {
+  let l = padStart(s, 5, ".")
+  let r = padEnd(s, 5, ".")
+  let m = center(s, 5, ".")
+  print("${len(l)} ${len(r)} ${len(m)}  [${l}] [${r}] [${m}]")
+}
+
+// A fill of more than one character is repeated and cut, as JavaScript does.
+print("[${padStart("ab", 6, "xy")}] [${padEnd("ab", 6, "xy")}] [${center("ab", 7, "xy")}]")
+
+// An empty fill cannot pad, and says nothing rather than looping forever.
+print("[${padStart("ab", 6, "")}] [${padEnd("ab", 6, "")}]")
+
+// Already wide enough, and wider than asked for: unchanged either way.
+print("[${padStart("abcdef", 3, ".")}] [${center("abcdef", 3, ".")}]")
+
+// And the rest of the module, which already counted code points.
+print("${len("🎉🎉")} [${reverse("a🎉b")}] [${repeat("🎉", 3)}] [${slice("a🎉b", 1, 2)}]")

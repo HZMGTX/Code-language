@@ -1,4 +1,22 @@
-/** `std/str` — string operations. The string is always the first argument. */
+/**
+ * `std/str` — string operations. The string is always the first argument.
+ *
+ * **A character is a code point.** `len`, `slice`, `chars`, `reverse`,
+ * `indexOf` and the three padding functions all count the same thing, which is
+ * the only property that makes them usable together: `slice(s, indexOf(s, ":"))`
+ * has to cut where `indexOf` pointed, and `padEnd(s, 28)` has to produce
+ * something `len` calls 28 so a column lines up.
+ *
+ * JavaScript counts UTF-16 units instead, where an emoji is two and `"héllo"`
+ * may be five or six depending on how it was typed. Every function here that
+ * takes or gives a position or a width converts, because a module half of whose
+ * functions count one thing and half the other is worse than either.
+ *
+ * What this does *not* claim to be is a grapheme cluster — `reverse` of an `e`
+ * followed by a combining acute still moves the accent, and there is no
+ * dependency-free way to do better. Code points are where the line is drawn,
+ * and it is drawn in the same place by everything here.
+ */
 
 import { bool, list, num, str, type Value } from '@lumen-lang/core';
 import {
@@ -22,6 +40,44 @@ import {
  * past what the implementation actually accepts, since a signature that is
  * tighter than the code rejects a program that would have run.
  */
+/**
+ * Where `needle` starts in `haystack`, in code points, or `-1`.
+ *
+ * The host answers in UTF-16 units, and every position in this module is a code
+ * point. Converting costs one pass over the prefix, which is nothing beside
+ * handing back an index that means something different from the one `slice`
+ * wants.
+ */
+function codePointIndexOf(haystack: string, needle: string): number {
+  const at = haystack.indexOf(needle);
+  // `-1` is not found and `0` is the same number in both counts.
+  if (at <= 0) return at;
+  return [...haystack.slice(0, at)].length;
+}
+
+/**
+ * `s` padded to `width` code points, on one side or the other.
+ *
+ * Not `String.prototype.padStart`, which counts UTF-16 units: it pads `"🎉"` to
+ * a width of 5 with three characters, because an emoji is two units — and
+ * `len("🎉")` is 1, so the result was four characters long by this module's own
+ * count. A table column built with `padEnd` came out short by one for every row
+ * whose text had an emoji in it, which is a thing that is invisible until a
+ * name does.
+ *
+ * A `fill` of more than one character is repeated and cut, which is what
+ * JavaScript does and what a reader expects: `padStart("ab", 6, "xy")` is
+ * `"xyxyab"` rather than `"xyxyxyab"`.
+ */
+function padded(s: string, width: number, fill: string, side: 'start' | 'end'): string {
+  const length = [...s].length;
+  const units = [...fill];
+  if (units.length === 0 || length >= width) return s;
+  let made = '';
+  for (let i = 0; i < width - length; i += 1) made += units[i % units.length];
+  return side === 'start' ? made + s : s + made;
+}
+
 const SIGNATURES: Readonly<Record<string, string>> = {
   upper: '(s: Str) -> Str',
   lower: '(s: Str) -> Str',
@@ -110,8 +166,23 @@ export function stdStr(): Map<string, Value> {
       return str(chars.slice(start, end).join(''));
     }),
 
+    /**
+     * Where `needle` starts, counted in code points, or `-1`.
+     *
+     * The same units `slice` takes, which is the entire point: `slice(s, 0,
+     * indexOf(s, ":"))` is the commonest thing anybody does with this, and
+     * JavaScript's `indexOf` counts UTF-16 units. On `"🎉name: value"` it says
+     * 6 where the colon is the sixth code point — so the left half came back
+     * *including* the colon and the right half started a character late, both
+     * silently, for any text with an emoji in it.
+     */
     fn('indexOf', ['s', 'needle'], (a, c) =>
-      num(expectStr(arg(a, 0), c, 'indexOf(s)').indexOf(expectStr(arg(a, 1), c, 'indexOf needle'))),
+      num(
+        codePointIndexOf(
+          expectStr(arg(a, 0), c, 'indexOf(s)'),
+          expectStr(arg(a, 1), c, 'indexOf needle'),
+        ),
+      ),
     ),
 
     fn('repeat', ['s', 'count'], (a, c) => {
@@ -122,18 +193,22 @@ export function stdStr(): Map<string, Value> {
 
     fn('padStart', ['s', 'width', { name: 'fill', defaultValue: str(' ') }], (a, c) =>
       str(
-        expectStr(arg(a, 0), c, 'padStart(s)').padStart(
+        padded(
+          expectStr(arg(a, 0), c, 'padStart(s)'),
           expectInt(arg(a, 1), c, 'padStart width'),
           expectStr(arg(a, 2), c, 'padStart fill'),
+          'start',
         ),
       ),
     ),
 
     fn('padEnd', ['s', 'width', { name: 'fill', defaultValue: str(' ') }], (a, c) =>
       str(
-        expectStr(arg(a, 0), c, 'padEnd(s)').padEnd(
+        padded(
+          expectStr(arg(a, 0), c, 'padEnd(s)'),
           expectInt(arg(a, 1), c, 'padEnd width'),
           expectStr(arg(a, 2), c, 'padEnd fill'),
+          'end',
         ),
       ),
     ),
@@ -215,10 +290,12 @@ export function stdStr(): Map<string, Value> {
       const width = expectInt(arg(a, 1), c, 'center width');
       const pad = expectStr(arg(a, 2), c, 'center pad');
       if (pad === '') return c.panic('center needs a non-empty pad');
-      if (s.length >= width) return str(s);
-      const total = width - s.length;
-      const left = Math.floor(total / 2);
-      return str(s.padStart(s.length + left, pad).padEnd(width, pad));
+      const length = [...s].length;
+      if (length >= width) return str(s);
+      // Left first, so an odd remainder goes on the right — which is where a
+      // reader expects the extra one, and matches `"x".center(4)`.
+      const left = Math.floor((width - length) / 2);
+      return str(padded(padded(s, length + left, pad, 'start'), width, pad, 'end'));
     }),
 
     /** The text with a prefix removed, if it is there. */
