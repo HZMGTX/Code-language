@@ -129,12 +129,24 @@ const SIGNATURES: Readonly<Record<string, string>> = {
   format: '(instant: Num, template: Str = "") -> Str',
   describe: '(milliseconds: Num) -> Str',
   offsetMinutes: '(instant: Num) -> Num',
+  now: '() -> Num',
 };
 
 export function stdTime(): Map<string, Value> {
   return withSignatures(
     withDocs(
     moduleOf(
+      /**
+       * This instant, in milliseconds since the epoch.
+       *
+       * The same function `std/core` exports, deliberately in both places.
+       * Every other function here takes an instant, and the obvious way to get
+       * one is the current time — so `iso(now())` needing an import from a
+       * second module was a surprise every reader had exactly once. It is one
+       * native either way, so the two cannot disagree.
+       */
+      fn('now', [], (_a, c) => num(c.host.now())),
+
       /** `2026-09-13T12:34:56.789Z` — the one format every other system reads. */
       fn('iso', ['instant'], (a, c) => str(isoOf(instant(arg(a, 0), c, 'iso(instant)')))),
 
@@ -417,6 +429,7 @@ export function stdTime(): Map<string, Value> {
       format: 'An instant as text, replacing YYYY MM DD hh mm ss SSS in a template.',
       describe: 'A length of time written for a person: "2h 3m".',
       offsetMinutes: 'This machine’s offset from UTC in minutes at that instant.',
+      now: 'This instant, in milliseconds since the epoch. Also in std/core.',
       },
     ),
     SIGNATURES,

@@ -45,6 +45,28 @@ print(test("axb", escape("a.b")))
 // A pattern that does not compile is an answer, not a crash.
 print(test("x", "(unclosed"))
 
+// `multiline` and `dotAll`, which are most of what a regular expression is for
+// over plain string work. Without the first, `^` matches only the very start of
+// the text, so a pattern written to find something at the beginning of each
+// line finds it at most once — which is how this module shipped, and what
+// writing a program that needed it turned up.
+let lines = "alpha
+beta
+gamma"
+print(test(lines, "^beta$"))
+print(test(lines, "^beta$", multiline: true))
+print(count(lines, "^\\w+", multiline: true))
+print(replace(lines, "^", "> ", multiline: true))
+print(test("a\nb", "a.b"))
+print(test("a\nb", "a.b", dotAll: true))
+print(test("ALPHA", "^alpha$", ignoreCase: true, multiline: true))
+
+// `(?m)` is not the way to ask: JavaScript has no inline modifier group, so a
+// pattern written that way is a pattern that does not compile. The named
+// options are the way, and the error says so rather than silently matching
+// nothing.
+print(test(lines, "(?m)^beta$"))
+
 // Named groups, and the whole shape read out.
 match find("v1.2.3", "v(?<major>\\d+)\\.(?<minor>\\d+)") {
   Ok(Some(m)) => print("${m.text} at ${m.at} major=${m.named.getOr("major", "?")} groups=${m.groups}"),

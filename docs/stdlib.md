@@ -423,6 +423,24 @@ A match is a map with `text`, `at`, `groups` and `named`. A group that did not
 take part is `nil` rather than missing, so the list is the same length whichever
 branch of an alternation fired.
 
+Three named options rather than a flags string, because `multiline: true` says
+what it does and `"gm"` is a thing to look up — and because `help()` then lists
+them:
+
+| Option | What it changes |
+|---|---|
+| `ignoreCase` | `a` matches `A` |
+| `multiline` | `^` and `$` match at every line, not only the ends of the text |
+| `dotAll` | `.` matches a newline too |
+
+`(?m)` is **not** the way to ask for the second: JavaScript has no inline
+modifier group, so a pattern written that way does not compile — and gets an
+`Err` saying so rather than quietly matching nothing.
+
+There is no `unicode` option. It would reject patterns that work in every other
+tool — a bare `\d` inside a class, a lone `{` — and a valid pattern being
+refused here is a worse surprise than `.` matching half an astral character.
+
 **There is no backtracking guard.** `(a+)+b` against a long run of `a`s takes
 time exponential in its length, here as in most engines. A pattern from a
 trusted source is fine; one from a stranger is a denial of service, and this is
@@ -693,16 +711,16 @@ which(command: Str) -> Option
 ### `std/regex`
 
 ```text
-captures(text: Str, pattern: Str, ignoreCase: Bool = ...) -> Result
-count(text: Str, pattern: Str, ignoreCase: Bool = ...) -> Result
+captures(text: Str, pattern: Str, ignoreCase: Bool = ..., multiline: Bool = ..., dotAll: Bool = ...) -> Result
+count(text: Str, pattern: Str, ignoreCase: Bool = ..., multiline: Bool = ..., dotAll: Bool = ...) -> Result
 escape(text: Str) -> Str
-find(text: Str, pattern: Str, ignoreCase: Bool = ...) -> Result
-findAll(text: Str, pattern: Str, ignoreCase: Bool = ...) -> Result
+find(text: Str, pattern: Str, ignoreCase: Bool = ..., multiline: Bool = ..., dotAll: Bool = ...) -> Result
+findAll(text: Str, pattern: Str, ignoreCase: Bool = ..., multiline: Bool = ..., dotAll: Bool = ...) -> Result
 isValid(pattern: Str) -> Bool
-replace(text: Str, pattern: Str, replacement: Str, ignoreCase: Bool = ...) -> Result
-replaceFirst(text: Str, pattern: Str, replacement: Str, ignoreCase: Bool = ...) -> Result
-split(text: Str, pattern: Str, ignoreCase: Bool = ...) -> Result
-test(text: Str, pattern: Str, ignoreCase: Bool = ...) -> Result
+replace(text: Str, pattern: Str, replacement: Str, ignoreCase: Bool = ..., multiline: Bool = ..., dotAll: Bool = ...) -> Result
+replaceFirst(text: Str, pattern: Str, replacement: Str, ignoreCase: Bool = ..., multiline: Bool = ..., dotAll: Bool = ...) -> Result
+split(text: Str, pattern: Str, ignoreCase: Bool = ..., multiline: Bool = ..., dotAll: Bool = ...) -> Result
+test(text: Str, pattern: Str, ignoreCase: Bool = ..., multiline: Bool = ..., dotAll: Bool = ...) -> Result
 ```
 
 ### `std/result`
@@ -782,6 +800,7 @@ fromParts(year: Num, month: Num = ..., day: Num = ..., hour: Num = ..., minute: 
 iso(instant: Num) -> Str
 monthName(instant: Num) -> Str
 monthNames() -> List<Str>
+now() -> Num
 offsetMinutes(instant: Num) -> Num
 parseIso(text: Str) -> Result
 parts(instant: Num) -> Map

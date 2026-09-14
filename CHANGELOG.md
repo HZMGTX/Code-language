@@ -75,6 +75,22 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   tree containing a link to its own parent is not unusual, and walking it
   forever is not a useful answer.
 
+- **`std/regex` gained `multiline` and `dotAll`**, which are most of what a
+  regular expression is for over plain string work. Without the first, `^`
+  matches only the very start of the text, so a pattern written to find
+  something at the beginning of each line finds it at most once — and there was
+  no way to ask for anything else. `(?m)` is not the way: JavaScript has no
+  inline modifier group, so a pattern written that way does not compile.
+
+  Found by writing a program that needed it, which is the only way this kind of
+  gap gets found.
+
+- **`std/time` exports `now`**, which until now lived only in `std/core`. Every
+  other function in that module takes an instant, and the obvious way to get one
+  is the current time, so `iso(now())` needing a second import was a surprise
+  every reader had exactly once. It is one native in both places, so the two
+  cannot disagree.
+
 - **`std/process`** — running another program, with **no shell**. A command is
   a name and a list of arguments, never one string for `/bin/sh` to take apart:
   with a shell, every call has to decide how to quote whatever it interpolates,

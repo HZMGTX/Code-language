@@ -63,11 +63,42 @@ function compile(pattern: string, flags: string): RegExp | string {
   }
 }
 
-/** What the `ignoreCase` argument means, in one place. */
-function flagsFor(ignoreCase: Value, global: boolean): string {
-  const insensitive = ignoreCase.k === 'bool' ? ignoreCase.v : false;
-  return (global ? 'g' : '') + (insensitive ? 'i' : '');
+/**
+ * The three options, as the letters the engine wants.
+ *
+ * Named booleans rather than a flags string, because `multiline: true` says
+ * what it does and `"gm"` is a thing to look up — and because `help()` then
+ * lists them. They are what a regular expression is *for*, over plain string
+ * work: without `multiline`, `^` matches only the very start of the text, so a
+ * pattern written to find something at the beginning of each line finds it at
+ * most once. That was the state this module shipped in, and it was found by
+ * writing a program that needed it.
+ *
+ * There is no `unicode`. It would reject patterns that work in every other
+ * tool — a bare `\d` inside a class, a lone `{` — and the surprise of a valid
+ * pattern being refused here is worse than the surprise of `.` matching half
+ * an astral character.
+ */
+function flagsFor(options: readonly Value[], global: boolean): string {
+  const on = (value: Value | undefined): boolean => value?.k === 'bool' && value.v;
+  return (
+    (global ? 'g' : '') +
+    (on(options[0]) ? 'i' : '') +
+    (on(options[1]) ? 'm' : '') +
+    (on(options[2]) ? 's' : '')
+  );
 }
+
+/** The three optional parameters every pattern-taking function carries. */
+const OPTIONS = [
+  { name: 'ignoreCase', defaultValue: bool(false) },
+  { name: 'multiline', defaultValue: bool(false) },
+  { name: 'dotAll', defaultValue: bool(false) },
+] as const;
+
+/** Where those three start, for a function with `n` parameters before them. */
+const optionsFrom = (args: readonly Value[], at: number): readonly Value[] =>
+  [args[at], args[at + 1], args[at + 2]].map((v) => v ?? bool(false));
 
 /**
  * One match, as a Lumen value.
@@ -111,15 +142,15 @@ function allMatches(re: RegExp, text: string): RegExpExecArray[] {
 
 const SIGNATURES: Readonly<Record<string, string>> = {
   isValid: '(pattern: Str) -> Bool',
-  test: '(text: Str, pattern: Str, ignoreCase: Bool = false) -> Result',
-  find: '(text: Str, pattern: Str, ignoreCase: Bool = false) -> Result',
-  findAll: '(text: Str, pattern: Str, ignoreCase: Bool = false) -> Result',
-  replace: '(text: Str, pattern: Str, replacement: Str, ignoreCase: Bool = false) -> Result',
-  replaceFirst: '(text: Str, pattern: Str, replacement: Str, ignoreCase: Bool = false) -> Result',
-  split: '(text: Str, pattern: Str, ignoreCase: Bool = false) -> Result',
-  captures: '(text: Str, pattern: Str, ignoreCase: Bool = false) -> Result',
+  test: '(text: Str, pattern: Str, ignoreCase: Bool = false, multiline: Bool = false, dotAll: Bool = false) -> Result',
+  find: '(text: Str, pattern: Str, ignoreCase: Bool = false, multiline: Bool = false, dotAll: Bool = false) -> Result',
+  findAll: '(text: Str, pattern: Str, ignoreCase: Bool = false, multiline: Bool = false, dotAll: Bool = false) -> Result',
+  replace: '(text: Str, pattern: Str, replacement: Str, ignoreCase: Bool = false, multiline: Bool = false, dotAll: Bool = false) -> Result',
+  replaceFirst: '(text: Str, pattern: Str, replacement: Str, ignoreCase: Bool = false, multiline: Bool = false, dotAll: Bool = false) -> Result',
+  split: '(text: Str, pattern: Str, ignoreCase: Bool = false, multiline: Bool = false, dotAll: Bool = false) -> Result',
+  captures: '(text: Str, pattern: Str, ignoreCase: Bool = false, multiline: Bool = false, dotAll: Bool = false) -> Result',
   escape: '(text: Str) -> Str',
-  count: '(text: Str, pattern: Str, ignoreCase: Bool = false) -> Result',
+  count: '(text: Str, pattern: Str, ignoreCase: Bool = false, multiline: Bool = false, dotAll: Bool = false) -> Result',
 };
 
 export function stdRegex(): Map<string, Value> {
@@ -147,19 +178,19 @@ export function stdRegex(): Map<string, Value> {
           bool(typeof compile(expectStr(arg(a, 0), c, 'isValid(pattern)'), '') !== 'string'),
         ),
 
-        fn('test', ['text', 'pattern', { name: 'ignoreCase', defaultValue: bool(false) }], (a, c) =>
+        fn('test', ['text', 'pattern', ...OPTIONS], (a, c) =>
           withPattern(
             expectStr(arg(a, 1), c, 'test(pattern)'),
-            flagsFor(arg(a, 2), false),
+            flagsFor(optionsFrom(a, 2), false),
             (re) => bool(re.test(expectStr(arg(a, 0), c, 'test(text)'))),
           ),
         ),
 
         /** The first match, as `Some(match)`, or `None`. */
-        fn('find', ['text', 'pattern', { name: 'ignoreCase', defaultValue: bool(false) }], (a, c) =>
+        fn('find', ['text', 'pattern', ...OPTIONS], (a, c) =>
           withPattern(
             expectStr(arg(a, 1), c, 'find(pattern)'),
-            flagsFor(arg(a, 2), false),
+            flagsFor(optionsFrom(a, 2), false),
             (re) => {
               const found = re.exec(expectStr(arg(a, 0), c, 'find(text)'));
               return found === null ? None : Some(matchValue(found));
@@ -168,19 +199,19 @@ export function stdRegex(): Map<string, Value> {
         ),
 
         /** Every match, as a list — empty when there are none. */
-        fn('findAll', ['text', 'pattern', { name: 'ignoreCase', defaultValue: bool(false) }], (a, c) =>
+        fn('findAll', ['text', 'pattern', ...OPTIONS], (a, c) =>
           withPattern(
             expectStr(arg(a, 1), c, 'findAll(pattern)'),
-            flagsFor(arg(a, 2), true),
+            flagsFor(optionsFrom(a, 2), true),
             (re) => list(allMatches(re, expectStr(arg(a, 0), c, 'findAll(text)')).map(matchValue)),
           ),
         ),
 
         /** How many times a pattern matches. */
-        fn('count', ['text', 'pattern', { name: 'ignoreCase', defaultValue: bool(false) }], (a, c) =>
+        fn('count', ['text', 'pattern', ...OPTIONS], (a, c) =>
           withPattern(
             expectStr(arg(a, 1), c, 'count(pattern)'),
-            flagsFor(arg(a, 2), true),
+            flagsFor(optionsFrom(a, 2), true),
             (re) => num(allMatches(re, expectStr(arg(a, 0), c, 'count(text)')).length),
           ),
         ),
@@ -193,10 +224,10 @@ export function stdRegex(): Map<string, Value> {
          * reads as the question being asked, where reaching into a match map
          * for `groups` does not.
          */
-        fn('captures', ['text', 'pattern', { name: 'ignoreCase', defaultValue: bool(false) }], (a, c) =>
+        fn('captures', ['text', 'pattern', ...OPTIONS], (a, c) =>
           withPattern(
             expectStr(arg(a, 1), c, 'captures(pattern)'),
-            flagsFor(arg(a, 2), false),
+            flagsFor(optionsFrom(a, 2), false),
             (re) => {
               const found = re.exec(expectStr(arg(a, 0), c, 'captures(text)'));
               if (found === null) return None;
@@ -215,11 +246,11 @@ export function stdRegex(): Map<string, Value> {
          */
         fn(
           'replace',
-          ['text', 'pattern', 'replacement', { name: 'ignoreCase', defaultValue: bool(false) }],
+          ['text', 'pattern', 'replacement', ...OPTIONS],
           (a, c) =>
             withPattern(
               expectStr(arg(a, 1), c, 'replace(pattern)'),
-              flagsFor(arg(a, 3), true),
+              flagsFor(optionsFrom(a, 3), true),
               (re) =>
                 str(
                   expectStr(arg(a, 0), c, 'replace(text)').replace(
@@ -233,11 +264,11 @@ export function stdRegex(): Map<string, Value> {
         /** Replace only the first match. */
         fn(
           'replaceFirst',
-          ['text', 'pattern', 'replacement', { name: 'ignoreCase', defaultValue: bool(false) }],
+          ['text', 'pattern', 'replacement', ...OPTIONS],
           (a, c) =>
             withPattern(
               expectStr(arg(a, 1), c, 'replaceFirst(pattern)'),
-              flagsFor(arg(a, 3), false),
+              flagsFor(optionsFrom(a, 3), false),
               (re) =>
                 str(
                   expectStr(arg(a, 0), c, 'replaceFirst(text)').replace(
@@ -249,10 +280,10 @@ export function stdRegex(): Map<string, Value> {
         ),
 
         /** Split on a pattern, the way `std/str.split` splits on fixed text. */
-        fn('split', ['text', 'pattern', { name: 'ignoreCase', defaultValue: bool(false) }], (a, c) =>
+        fn('split', ['text', 'pattern', ...OPTIONS], (a, c) =>
           withPattern(
             expectStr(arg(a, 1), c, 'split(pattern)'),
-            flagsFor(arg(a, 2), false),
+            flagsFor(optionsFrom(a, 2), false),
             (re) =>
               list(
                 expectStr(arg(a, 0), c, 'split(text)')
