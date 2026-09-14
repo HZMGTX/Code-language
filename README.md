@@ -77,7 +77,18 @@ better choice if you already have Node and would rather use it.
 `npm run dist` builds both.
 
 **3. From source**, if you are working on Lumen itself — that is the quick start
-below.
+below. A checkout carries a `lumen` launcher for each platform, so once it is
+built there is a command to type:
+
+```bash
+npm install && npm run build
+
+./lumen run examples/hello.lm     # macOS, Linux
+.\lumen.cmd run examples\hello.lm  # Windows
+```
+
+Both run the same CLI out of the tree they sit in, so they work from any
+directory.
 
 ## Quick start
 
@@ -86,12 +97,21 @@ Working on the language, rather than running programs with it:
 ```bash
 npm install
 npm run build
-
-npm run lumen -- run examples/hello.lm
-npm run lumen -- repl
 ```
 
-To get a real `lumen` command on your PATH:
+Then, from the checkout:
+
+| | |
+|---|---|
+| macOS, Linux | `./lumen run examples/hello.lm` |
+| Windows (PowerShell or cmd) | `.\lumen.cmd run examples\hello.lm` |
+| any platform, via npm | `npm run lumen -- run examples/hello.lm` |
+
+`./lumen repl` starts the REPL the same way. All three run the same CLI; the
+npm form is there because it needs nothing to be executable and works
+identically everywhere.
+
+To get a real `lumen` command on your PATH, with no `./`:
 
 ```bash
 npm link --workspace @lumen-lang/cli

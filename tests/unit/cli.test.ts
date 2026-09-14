@@ -8,7 +8,7 @@
  */
 
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -281,5 +281,98 @@ describe('the lumen command', () => {
   it('exits non-zero when the program has an error', async () => {
     const { code } = await run(['run', fileURLToPath(new URL('../../../package.json', import.meta.url))]);
     assert.notEqual(code, 0);
+  });
+});
+
+/**
+ * The `lumen` launcher a checkout ships.
+ *
+ * There was none. `lumen run x.lm` appears throughout the documentation and
+ * existed nowhere in the repository, so `./lumen run app.lm` — the first thing
+ * anyone tries after cloning — failed with "not recognized", and on Windows
+ * there was nothing else to reach for short of `npm run lumen --`.
+ *
+ * Only the shell script can be executed here. The Windows one is checked for
+ * the things that would silently break it instead: it has to be found by the
+ * same name, point at the same file, and pass its arguments through.
+ */
+describe('the lumen launcher', () => {
+  const ROOT = fileURLToPath(new URL('../../..', import.meta.url));
+  const CLI_RELATIVE = 'packages/cli/dist/index.js';
+
+  const launcher = async (
+    args: readonly string[],
+    cwd: string,
+  ): Promise<{ code: number; out: string }> =>
+    await new Promise((resolve, reject) => {
+      const child = spawn(path.join(ROOT, 'lumen'), args, {
+        cwd,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...process.env, NO_COLOR: '1' },
+      });
+      let out = '';
+      child.stdout.on('data', (c: Buffer) => (out += c.toString('utf8')));
+      child.stderr.on('data', (c: Buffer) => (out += c.toString('utf8')));
+      child.on('error', reject);
+      child.on('exit', (code) => resolve({ code: code ?? 0, out }));
+    });
+
+  it('runs a program', async () => {
+    const { code, out } = await launcher(['run', HELLO], ROOT);
+    assert.equal(code, 0);
+    assert.match(out, /Hello from Lumen!/);
+  });
+
+  it('works from a directory that is not the checkout', async () => {
+    // The reason it resolves its own location rather than trusting `.`: a
+    // launcher that only works when you are standing in the repository is a
+    // launcher that fails the first time somebody uses it for real.
+    const { code, out } = await launcher(['run', HELLO], os.tmpdir());
+    assert.equal(code, 0);
+    assert.match(out, /Hello from Lumen!/);
+  });
+
+  it('passes the program its own arguments', async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'lumen-launch-'));
+    try {
+      const file = path.join(dir, 'a.lm');
+      writeFileSync(file, 'import { args } from "std/core"\nprint(args())\n', 'utf8');
+      const { code, out } = await launcher([file, 'one', 'two'], ROOT);
+      assert.equal(code, 0);
+      assert.equal(out.trim(), '["one", "two"]');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('reports the exit status of a failing program', async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'lumen-launch-'));
+    try {
+      const file = path.join(dir, 'a.lm');
+      writeFileSync(file, 'print(cuont)\n', 'utf8');
+      const { code, out } = await launcher(['run', file], ROOT);
+      assert.equal(code, 1);
+      assert.match(out, /RS001/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('ships a Windows launcher that points at the same CLI', () => {
+    const windows = readFileSync(path.join(ROOT, 'lumen.cmd'), 'utf8');
+    // Written with backslashes, but naming the same file the shell script does.
+    assert.ok(
+      windows.includes(CLI_RELATIVE.replace(/\//g, '\\')),
+      'lumen.cmd does not run ' + CLI_RELATIVE,
+    );
+    assert.ok(windows.includes('%~dp0'), 'lumen.cmd does not resolve its own directory');
+    assert.ok(windows.includes('%*'), 'lumen.cmd does not pass its arguments through');
+    assert.ok(
+      windows.includes('exit /b %ERRORLEVEL%'),
+      'lumen.cmd does not report the exit status',
+    );
+
+    const shell = readFileSync(path.join(ROOT, 'lumen'), 'utf8');
+    assert.ok(shell.includes(CLI_RELATIVE), 'lumen does not run ' + CLI_RELATIVE);
   });
 });
