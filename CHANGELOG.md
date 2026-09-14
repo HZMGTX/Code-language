@@ -130,6 +130,33 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
     answered `["a", "b"]`, which looks like an answer and was an accident of
     which branch ran first. Refused now, with the reason.
 
+- **`parseIso` moved a date that does not exist instead of refusing it.**
+  `parseIso("2024-02-30")` answered March 1st, and `parseIso("2023-02-29")`
+  answered March 1st too — so a date read out of somebody's exported file
+  shifted by a day and nothing said so. The host is the source of it and is
+  incoherent about it: it rejects month 0, month 13, day 0, day 32, minute 60
+  and second 60 on its own, and then accepts February 30th. If rolling over
+  were the intent, month 13 would roll over into next January. It is an `Err`
+  now, with the century rule applied — `1900-02-29` is refused, `2000-02-29` is
+  not — and `24:00` is left alone, because ISO 8601 really does mean the end of
+  that day by it. The module already overrode the host where it read an unzoned
+  time as local; this is the same override for the same reason.
+
+- **Four signatures declared a default the function does not have**, and the
+  check that would have caught them did not exist. `std/time.time` said
+  `seconds: Bool = false` and defaults to `true`, so the reference said
+  `time(t)` gives `12:34` when it gives `12:34:56`. `std/math.log` said
+  `base = 0` — a value the function itself rejects — and defaults to `e`.
+  `std/math.fixed` said `places = 0` and defaults to `2`. `std/time.format`
+  said `template = ""` and defaults to `"YYYY-MM-DD hh:mm:ss"`.
+
+  The existing check compared names, order and *which* parameters were
+  optional, and stopped there; the generated reference renders every default as
+  `...`, so nothing anybody read would have shown the disagreement either. The
+  test now parses each signature as the real declaration it is and compares the
+  default expressions with the implementation's, which is what found all four —
+  the first one by hand, and the other three in the three runs after it.
+
 - **`std/json` says where the document goes wrong.** Every failure there is —
   an empty file, a trailing comma on line 300, an unquoted key, a string that
   never closes — answered with the same four words, "invalid JSON". That is

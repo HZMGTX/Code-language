@@ -407,6 +407,14 @@ not a reason to refuse to say where, so the position is worked out here.
 Both are `Result`-returning throughout. An HTTP response with a non-2xx status
 is still `Ok` — the *request* succeeded; check `status` to decide what it means.
 
+`std/time.parseIso` overrides the host for the same reason. Node validates a
+month and rejects `2024-13-01`, and then accepts `2024-02-30` and answers March
+1st — so a date read out of somebody's file moves by a day and nothing says so.
+That is not a policy, it is an inconsistency: if rolling over were the intent,
+month 13 would roll over into next January too. A day that does not exist in
+the month it names is an `Err`, and the century rule is applied, so
+`1900-02-29` is refused and `2000-02-29` is not.
+
 ### `std/path`
 
 Paths as text, with **one separator**. A path is written with `/` and read with

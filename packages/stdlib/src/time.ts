@@ -107,6 +107,30 @@ function isoOf(d: Date): string {
 }
 
 /**
+ * Whether a date's day number does not exist in the month it names.
+ *
+ * Only the calendar day, because that is the only thing the host gets wrong:
+ * it rejects month 0, month 13, day 0, day 32, minute 60 and second 60 on its
+ * own, and then accepts February 30th. `24:00` is left alone, since ISO 8601
+ * really does mean the end of that day by it.
+ *
+ * Text the pattern does not match is left to the host, which is the safe
+ * direction: this can only ever *reject* something, and only something whose
+ * year, month and day it has read for itself.
+ */
+function impossibleDay(text: string): boolean {
+  const parts = /^[+-]?(\d{4,6})-(\d{2})-(\d{2})(?:[T ]|$)/.exec(text);
+  if (parts === null) return false;
+  const year = Number(parts[1]);
+  const month = Number(parts[2]);
+  const day = Number(parts[3]);
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const lengths = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  const limit = lengths[month - 1];
+  return limit !== undefined && day > limit;
+}
+
+/**
  * An instant is a `Num` — milliseconds since the epoch, UTC throughout — which
  * is why so many of these take and give one. `parts` and `fromParts` are the
  * two that cross between that and a calendar.
@@ -114,7 +138,7 @@ function isoOf(d: Date): string {
 const SIGNATURES: Readonly<Record<string, string>> = {
   iso: '(instant: Num) -> Str',
   date: '(instant: Num) -> Str',
-  time: '(instant: Num, seconds: Bool = false) -> Str',
+  time: '(instant: Num, seconds: Bool = true) -> Str',
   parts: '(instant: Num) -> Map',
   fromParts:
     '(year: Num, month: Num = 1, day: Num = 1, hour: Num = 0, minute: Num = 0, second: Num = 0, millisecond: Num = 0) -> Num',
@@ -126,7 +150,7 @@ const SIGNATURES: Readonly<Record<string, string>> = {
   monthName: '(instant: Num) -> Str',
   weekdayNames: '() -> List<Str>',
   monthNames: '() -> List<Str>',
-  format: '(instant: Num, template: Str = "") -> Str',
+  format: '(instant: Num, template: Str = "YYYY-MM-DD hh:mm:ss") -> Str',
   describe: '(milliseconds: Num) -> Str',
   offsetMinutes: '(instant: Num) -> Num',
   now: '() -> Num',
@@ -254,6 +278,18 @@ export function stdTime(): Map<string, Value> {
         const spaced = text.includes(' ') && !text.includes('T') ? text.replace(' ', 'T') : text;
         const hasTime = spaced.includes('T');
         const at = Date.parse(hasTime && !zoned ? spaced + 'Z' : spaced);
+        if (!Number.isNaN(at) && impossibleDay(spaced)) {
+          // The host validates a month and rejects `2024-13-01`, and then
+          // accepts `2024-02-30` and quietly answers March 1st — so a date read
+          // out of somebody's file moves by a day and nothing says so. That is
+          // not a policy, it is an inconsistency: if rolling over were the
+          // intent, month 13 would roll over into next January too. Refusing it
+          // here is the same override as the one below, where the host reads an
+          // unzoned time as local and this module will not.
+          return Err(
+            str('cannot read a time from "' + text + '": that day does not exist in that month'),
+          );
+        }
         if (Number.isNaN(at)) {
           return Err(
             str(

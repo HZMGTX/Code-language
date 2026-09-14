@@ -16,13 +16,39 @@
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
 
-import { parse, signatureTy, type NativeValue, type ParamTy, type Value } from '@lumen-lang/core';
+import { parse, signatureTy, type NativeValue, type Param, type ParamTy, type Value } from '@lumen-lang/core';
 import {
   STD_MODULES,
   stdMethodSignatures,
   stdSignatures,
   unmatchedSignaturesForTesting,
 } from '@lumen-lang/stdlib';
+
+/**
+ * A default value as a signature would spell it.
+ *
+ * Only the shapes a default actually takes — a literal, an empty list, an empty
+ * map. Anything else has no agreed spelling, and a check that guessed one would
+ * be asserting its own guess.
+ */
+function showDefault(value: Value): string {
+  switch (value.k) {
+    case 'nil':
+      return 'nil';
+    case 'bool':
+      return value.v ? 'true' : 'false';
+    case 'num':
+      return String(value.v);
+    case 'str':
+      return JSON.stringify(value.v);
+    case 'list':
+      return value.items.length === 0 ? '[]' : '<list>';
+    case 'map':
+      return value.entries.size === 0 ? '{}' : '<map>';
+    default:
+      return '<' + value.k + '>';
+  }
+}
 
 /** Every native in the library, with the path it is reached by. */
 function everyNative(): { where: string; value: NativeValue }[] {
@@ -97,6 +123,48 @@ describe('standard library signatures', () => {
         value.params.map((p) => p.defaultValue !== undefined),
         where + ' disagrees with its signature about which parameters are optional',
       );
+    }
+  });
+
+  /**
+   * And about what those left-out parameters then are.
+   *
+   * The check above says a parameter is optional in both places; this one says
+   * they mean the same thing by it. `std/time.time` declared `seconds: Bool =
+   * false` and defaulted to `true`, so the generated reference told everybody
+   * that `time(t)` gives `12:34` when it gives `12:34:56` — a signature that
+   * parsed, named the right parameters, and was still wrong.
+   *
+   * The defaults are compared as the source text a reader sees, because that is
+   * what is wrong when they disagree: the signature is documentation, and
+   * documentation that says `false` where the code says `true` is the bug
+   * whether or not the two are the same shape inside.
+   */
+  it('agrees about what a left-out parameter defaults to', () => {
+    for (const { where, value } of natives) {
+      if (value.signature === undefined) continue;
+      // The signature is parsed as a real declaration, which is what puts the
+      // default expressions in reach: they are ordinary Lumen expressions.
+      // Exactly how `signatureTy` reads one, so the two cannot disagree about
+      // what a signature is. Stripping the return type first would be wrong
+      // anyway: `f: fn(Any) -> Any` has an arrow inside a parameter.
+      const source = 'fn __signature' + value.signature + ' {}';
+      const module = parse(source, '<signature>');
+      const declaration = module.stmts[0];
+      if (declaration === undefined || declaration.kind !== 'FnDecl') {
+        assert.fail(where + ' did not parse as a declaration: ' + value.signature);
+      }
+      declaration.params.forEach((param: Param, i: number) => {
+        const given = value.params[i]?.defaultValue;
+        if (param.defaultValue === undefined || given === undefined) return; // the check above
+        const written = source.slice(param.defaultValue.span.start.offset, param.defaultValue.span.end.offset);
+        assert.equal(
+          written,
+          showDefault(given),
+          where + ' declares `' + (value.params[i]?.name ?? '?') + ' = ' + written +
+            '` but defaults to `' + showDefault(given) + '`',
+        );
+      });
     }
   });
 
