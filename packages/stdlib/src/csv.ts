@@ -21,6 +21,10 @@
  * later column is wrong by one, drop the extras and the data is gone. `records`
  * says which row and stops; `rows` hands back the grid for a caller who knows
  * what their file is doing.
+ *
+ * A blank line is not a ragged row. `records` skips it — it is no data rather
+ * than misaligned data — while `rows` keeps it, because `rows` is the grid with
+ * no judgement applied at all.
  */
 
 import { list, map, str, type Value } from '@lumen-lang/core';
@@ -162,6 +166,10 @@ export function stdCsv(): Map<string, Value> {
          * guess: padding it makes every later column wrong by one, and dropping
          * the extras throws data away. A caller who knows better can use `rows`.
          *
+         * A completely blank line is the one exception, and is skipped: it is
+         * no data rather than misaligned data, real files are full of them, and
+         * it cannot be mistaken for anything else.
+         *
          * A duplicate column name is an `Err` too — one of the two would
          * silently win, and which one is not something a reader could predict.
          */
@@ -182,6 +190,13 @@ export function stdCsv(): Map<string, Value> {
 
           const out: Value[] = [];
           for (const [i, row] of parsed.slice(1).entries()) {
+            // A completely empty line is no data, not misaligned data. Real
+            // files have them — a trailing one, a blank between sections — and
+            // rejecting them as ragged rows is a rule that is right on paper
+            // and wrong on every file anybody actually has. It cannot be
+            // confused with data: a genuine one-field row in a four-column file
+            // is still short, and still reported.
+            if (row.length === 1 && row[0] === '') continue;
             if (row.length !== header.length) {
               const fields = (n: number): string => String(n) + (n === 1 ? ' field' : ' fields');
               return Err(

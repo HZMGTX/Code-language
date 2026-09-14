@@ -42,6 +42,17 @@ print(rows("\"a\r\nb\"").unwrapOr([]))
 // A header with no rows under it is no records, not an error.
 print(records("a,b\n"))
 
+// A blank line is no data rather than misaligned data, so `records` skips it —
+// real files are full of them, and rejecting them as ragged rows is a rule that
+// is right on paper and wrong on every file anybody has. It cannot be mistaken
+// for anything else: a genuine one-field row in a two-column file is still
+// short, and still reported.
+print(records("a,b\n1,2\n\n3,4\n"))
+print(records("a,b\n1,2\n5\n"))
+
+// `rows` keeps it, because `rows` is the grid with no judgement applied at all.
+print(rows("a,b\n1,2\n\n3,4\n"))
+
 // Writing quotes only what has to be quoted.
 print(write([["plain", "has,comma"], ["has\"quote", "has\nnewline"]]))
 

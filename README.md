@@ -28,7 +28,7 @@ in [ROADMAP.md](ROADMAP.md); the largest item is that type checking is **gradual
 and shallow**: annotations are enforced where you write them, and a program that
 writes none is never type-checked at all.
 
-- **972 tests**, 138 conformance fixtures, 21 example programs, 19 standard
+- **976 tests**, 138 conformance fixtures, 22 example programs, 19 standard
   modules. `npm run ci` runs all fifteen checks locally, which is how they are
   verified today — GitHub Actions is configured for Node 20/22/24 on Linux, macOS
   and Windows but has never been able to start a run on this repository, so no
@@ -286,6 +286,7 @@ examples/<name>.lm` runs any of them.
 | `adventure.lm` | `input()`, a world in a `Map`, and a game that plays itself |
 | `inventory.lm` | JSON in, report out — parse, group, total, write, read back |
 | `rename.lm` | Renaming a folder safely: plan, refuse, then act |
+| `report.lm` | A messy CSV in, a CSV and an HTML page out |
 | `sudoku.lm` | Backtracking search, and a solution that checks itself |
 | `website.lm` | A real site: routing, HTML, JSON, 404s (`lumen serve`) |
 | `guestbook.lm` | A form, escaping, and one file that is both site and script |
