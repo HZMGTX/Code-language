@@ -17,7 +17,12 @@ import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
 
 import { parse, signatureTy, type NativeValue, type ParamTy, type Value } from '@lumen-lang/core';
-import { STD_MODULES, stdMethodSignatures, stdSignatures } from '@lumen-lang/stdlib';
+import {
+  STD_MODULES,
+  stdMethodSignatures,
+  stdSignatures,
+  unmatchedSignaturesForTesting,
+} from '@lumen-lang/stdlib';
 
 /** Every native in the library, with the path it is reached by. */
 function everyNative(): { where: string; value: NativeValue }[] {
@@ -103,6 +108,14 @@ describe('standard library signatures', () => {
    * than leaving it alone. This is here so the work cannot silently stall, and
    * so removing a signature is a decision somebody has to make on purpose.
    */
+  it('has no signature naming a function that does not exist', () => {
+    // A mistyped key in a signature table costs nothing visible: the function
+    // simply stays `Any`, and the only symptom is a coverage number one lower
+    // than it should be. `std/path` had exactly one — an entry for `join`,
+    // which is variadic and therefore cannot carry a signature at all.
+    assert.deepEqual([...unmatchedSignaturesForTesting()], []);
+  });
+
   it('types most of the library', () => {
     const typed = natives.filter((n) => n.value.signature !== undefined).length;
     assert.ok(

@@ -229,7 +229,8 @@ const VERSION = distinct[0] ?? '(unknown)';
  *
  * Not a demand that all of it does — `map(xs, f)` returns a list of whatever
  * `f` gives back, and `Ty` has no type variables, so forcing a signature onto
- * it would be worse than leaving it alone; a variadic cannot have one at all.
+ * it would be worse than leaving it alone. A variadic cannot have one at all
+ * and is counted in neither half.
  * This is here so the work cannot silently stall, and so that removing one is a
  * decision somebody makes rather than a thing that happens.
  *
@@ -241,6 +242,11 @@ let typed = 0;
 for (const factory of STD_MODULES.values()) {
   for (const value of factory().values()) {
     if (value.k !== 'native') continue;
+    // A variadic is left out of both halves rather than counted as a failure:
+    // no fixed parameter list describes "any number of parts", so there is
+    // nothing here that anybody could fix, and a ratio that can never reach
+    // one is a ratio nobody will trust.
+    if (value.variadic === true) continue;
     natives += 1;
     if (value.signature !== undefined) typed += 1;
   }

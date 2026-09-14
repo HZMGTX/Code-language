@@ -121,7 +121,15 @@ export function withSignatures(
 ): Map<string, Value> {
   for (const [name, signature] of Object.entries(signatures)) {
     const value = module.get(name);
-    if (value === undefined || value.k !== 'native') continue;
+    if (value === undefined || value.k !== 'native') {
+      // A name in the table that no function answers to. Almost always a typo
+      // or a rename that missed one side — and its effect is to silently leave
+      // that function unchecked, which is the kind of failure nothing notices.
+      // Recorded rather than raised, because this runs on the way to running a
+      // program; `tests/unit/signatures.test.ts` asserts the list is empty.
+      unmatchedSignatures.push(name);
+      continue;
+    }
     // A variadic takes any number of arguments, which a fixed parameter list
     // cannot describe — and the checker's arity rule would then be wrong about
     // it in the one direction that rejects working programs.
@@ -129,6 +137,20 @@ export function withSignatures(
     module.set(name, { ...value, signature });
   }
   return module;
+}
+
+/** Names given a signature that no function in their module answers to. */
+const unmatchedSignatures: string[] = [];
+
+/**
+ * For the tests only: signature-table keys that matched nothing.
+ *
+ * A mistyped key costs nothing visible — the function simply stays `Any` — so
+ * without this the only symptom is a coverage number one lower than it should
+ * be, which nobody would connect to the cause.
+ */
+export function unmatchedSignaturesForTesting(): readonly string[] {
+  return unmatchedSignatures;
 }
 
 export const Ok = (v: Value): Value => enumValue('Result', 'Ok', [v]);

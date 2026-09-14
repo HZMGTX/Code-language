@@ -105,8 +105,13 @@ function extOf(raw: string): string {
   return at <= 0 ? '' : base.slice(at);
 }
 
-export const SIGNATURES: Readonly<Record<string, string>> = {
-  join: '(..parts: Str) -> Str',
+/**
+ * No entry for `join`: it is variadic, and a variadic declares no signature —
+ * a fixed parameter list cannot describe "any number of parts", and the
+ * checker's argument-count rule would then be wrong about it in the one
+ * direction that rejects working programs. See `withSignatures`.
+ */
+const SIGNATURES: Readonly<Record<string, string>> = {
   normalize: '(path: Str) -> Str',
   dir: '(path: Str) -> Str',
   base: '(path: Str) -> Str',
