@@ -18,8 +18,6 @@
 // Times are UTC throughout — see `std/time`, which has only UTC on purpose.
 
 import { parseIso, iso, date, format, plus, startOfDay, describe, parts } from "std/time"
-import { splitOnce, words } from "std/str"
-import { groupBy, partition, maxBy, minimum, maximum } from "std/list"
 import { of } from "std/set"
 
 struct Entry {

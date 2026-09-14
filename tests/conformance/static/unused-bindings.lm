@@ -1,0 +1,51 @@
+// The first thing in the language to produce a **warning** rather than an
+// error.
+//
+// A binding nothing ever reads is either dead code or a typo somewhere else,
+// and neither stops the program running — so reporting it as an error would
+// mean rejecting programs that work, which this pass does not do. The program
+// below runs, and its output follows the warnings.
+//
+// The rule is deliberately narrow, because a check that is merely advisory has
+// to be worth reading. Only `let`, `var` and `import`: a parameter is often
+// unused on purpose, a function may be the point of the file, and a pattern
+// binding already has `_` for the parts nobody wants.
+import { parse, stringify } from "std/json"
+
+let neverRead = 3
+var written = 0
+written = 5
+
+// Reading counts, and a compound assignment reads: `total += n` is
+// `total = total + n`, so a binding only ever touched that way is not unused.
+var total = 0
+for n in [1, 2, 3] { total += n }
+print(total)
+
+// A leading `_` is how every other language spells "I know, and I meant it".
+let _ignored = 9
+let _ = 10
+
+// A parameter is not reported: a handler that ignores its request and a
+// callback that only wants the index are both ordinary.
+fn takesButIgnores(unusedParam) { 1 }
+print(takesButIgnores(0))
+
+// Neither is a function, a struct or an enum, even unexported: at worst it is
+// dead code somebody is in the middle of writing, and reporting it would fire
+// constantly while you work.
+fn neverCalled() { 2 }
+struct NeverBuilt { x: Num }
+enum NeverMatched { A, B }
+
+// What the module exports is never unused: its whole point is to be read from
+// a file this pass cannot see.
+export let shared = 11
+
+// A name declared below is still used by a function written above it, which is
+// the case that makes a naive implementation report it.
+fn readsLater() { declaredBelow }
+let declaredBelow = 7
+print(readsLater())
+
+print(parse("1"))

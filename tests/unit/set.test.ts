@@ -128,11 +128,22 @@ describe('std/set — the key agrees with ==', () => {
 });
 
 describe('std/set — behaviour', () => {
+  // Only the names the body actually uses. Importing the whole module for every
+  // one-line test would produce a wall of `RS011` warnings, and those warnings
+  // land in the captured output — so a test asserting on that output would be
+  // asserting on its own untidiness.
+  const EXPORTS = [
+    'of', 'has', 'add', 'remove', 'union', 'intersection', 'difference',
+    'symmetricDifference', 'isSubset', 'isSuperset', 'isDisjoint', 'equals',
+    'size', 'isSet', 'duplicates',
+  ];
+
   const run = async (body: string): Promise<string> => {
+    const used = EXPORTS.filter((name) =>
+      new RegExp('\\b' + name + '\\s*\\(').test(body),
+    );
     const source =
-      'import { of, has, add, remove, union, intersection, difference,\n' +
-      '         symmetricDifference, isSubset, isSuperset, isDisjoint, equals,\n' +
-      '         size, isSet, duplicates } from "std/set"\n' +
+      (used.length === 0 ? '' : 'import { ' + used.join(', ') + ' } from "std/set"\n') +
       body +
       '\n';
     const result = await runSource(source, 'set.lm');

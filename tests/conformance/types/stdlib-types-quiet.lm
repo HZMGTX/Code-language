@@ -6,7 +6,6 @@
 // here runs.
 import { parts, plus, iso } from "std/time"
 import { of, union } from "std/set"
-import { getOr } from "std/map"
 
 print([3, 1, 2].sorted().map(fn(n) { n * 2 }).sum())
 print("a,b".split(",").join("-"))

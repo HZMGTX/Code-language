@@ -25,7 +25,14 @@ async function out(source: string): Promise<string> {
   return result.output.trimEnd();
 }
 
-const IMPORT = 'import { run, which, isWindows } from "std/process"\n';
+/**
+ * Each snippet imports exactly what it uses.
+ *
+ * Not tidiness: `RS011` warns about an import nothing reads, the harness puts
+ * warnings into the captured output, and a test asserting on that output would
+ * then be asserting on its own untidiness.
+ */
+const IMPORT = 'import { run } from "std/process"\n';
 
 describe('std/process', () => {
   it('runs a program and reports what it said', async () => {
@@ -116,7 +123,7 @@ describe('std/process', () => {
 
   it('finds a program on PATH, and answers None when there is none', async () => {
     const text = await out(
-      IMPORT +
+      'import { which, isWindows } from "std/process"\n' +
         'print(which("sh").isSome())\n' +
         'print(which("definitely-not-a-program-xyz"))\n' +
         'print(isWindows())',

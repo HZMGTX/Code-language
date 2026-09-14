@@ -9,6 +9,31 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
 
 ### Language
 
+- **`RS011`: a binding that is never read — the first warning.** Nothing in the
+  language had ever produced one: every check either rejected a program or said
+  nothing, and `Severity` had carried an unreachable `'warning'` arm since v0.1.
+
+  A binding nothing reads is dead code or a typo somewhere else, and neither
+  stops the program running — so rejecting it would mean rejecting programs
+  that work. `checkModule` now draws that line directly: it raises on errors
+  and *returns* warnings, so `lumen check` prints them and still exits zero. A
+  build that fails over an unused binding is a build people learn to pass with
+  `--no-verify`.
+
+  The rule is narrow on purpose, because a check that is merely advisory has to
+  be worth reading. Only `let`, `var` and `import`: a parameter is often unused
+  deliberately, a function may be the point of the file, and a pattern binding
+  already has `_`. Never for a name starting with `_`, and never for anything
+  the module exports.
+
+  Writing does not count as reading, but a compound assignment does — `total +=
+  n` reads `total`. That distinction was a false positive when first written,
+  found by running the check over this repository.
+
+  It found 23 real ones there, all imports used only as methods. A method comes
+  from its type's table and never from scope, so `xs.groupBy(f)` works with no
+  import at all and those imports really were dead. They are gone.
+
 - **`from` and `as` are no longer keywords.** Each appears in exactly one
   position in the grammar — after the `}` of an import list, and between a name
   and its alias inside one — so the parser looks for the word where it means

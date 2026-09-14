@@ -838,6 +838,7 @@ wrong and Lumen guesses what you meant:
 ```lumen
 struct Book { title: Str, pages: Num }
 let b = Book { titel: "Dune", pages: 412 }
+print(b)
 ```
 
 ```
@@ -850,9 +851,9 @@ error[RT013]: `Book` has no field `titel`
   = note: did you mean `title`?
 ```
 
-The `Str` and `Num` above say what you intend each field to hold. Today they are
-documentation — Lumen does not yet check them — and the roadmap says so plainly
-rather than implying otherwise.
+The `Str` and `Num` above say what each field holds, and Lumen checks them
+before the program runs: `Book { title: 1, pages: 412 }` is `TY004`, not a
+surprise later on.
 
 An **enum** is the other half: a value that is exactly one of a fixed set of
 possibilities.

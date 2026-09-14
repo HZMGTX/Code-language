@@ -25,8 +25,7 @@
 import { write, walk, rename, remove, isFile } from "std/fs"
 import { join, base, dir, ext, stem, isInside, normalize } from "std/path"
 import { replace, captures } from "std/regex"
-import { of, has } from "std/set"
-import { groupBy } from "std/list"
+import { of } from "std/set"
 
 // A rename, decided but not yet done.
 struct Move {

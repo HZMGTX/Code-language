@@ -17,6 +17,7 @@
  *   RS008  `main()` written out in a module that already has it called
  *   RS009  an import of a name a known module does not export
  *   RS010  an import from a module that does not exist
+ *   RS011  a binding that is never read — a **warning**, not an error
  *
  * The guiding rule is **no false positives**. A check that rejects a valid
  * program is worse than one that misses an invalid one, so anything the
@@ -37,7 +38,7 @@ import type {
   Pattern,
   Stmt,
 } from './ast.js';
-import { type Diagnostic, type Note, type Span, LumenError } from './diagnostics.js';
+import { type Diagnostic, type Note, type Severity, type Span, LumenError } from './diagnostics.js';
 import { checkTypes, type CheckOptions, type Ty } from './types.js';
 import { suggest } from './values.js';
 
@@ -46,10 +47,25 @@ interface Binding {
   readonly span: Span;
   /** What introduced it, for the "already declared" message. */
   readonly kind: string;
+  /**
+   * True for a declaration the module exports, which is never unused: its
+   * whole point is to be read from another file this pass cannot see.
+   */
+  readonly exported?: boolean;
 }
 
 class Scope {
   private readonly names = new Map<string, Binding>();
+  /**
+   * Names something in this scope has actually read.
+   *
+   * By name rather than by binding, because one scope holds at most one
+   * binding per name — `declare` overwrites, and that overwrite is what `RS004`
+   * reports. Shadowing happens in a *different* Scope object, so this stays
+   * exact where an identity-based version would have to cope with the
+   * fabricated bindings `lookupDeferred` hands back.
+   */
+  readonly used = new Set<string>();
   /**
    * Everything this scope will declare, known before its statements are walked.
    *
@@ -104,6 +120,30 @@ class Scope {
       scope = scope.parent;
     }
     return undefined;
+  }
+
+  /**
+   * Record that `name` was read, in whichever scope owns it.
+   *
+   * `future` counts as owning it: a function body may legitimately read a name
+   * the enclosing scope declares further down, and marking the scope that will
+   * declare it is what keeps `fn greet() { name }` from reporting `name` as
+   * never used.
+   */
+  markUsed(name: string): void {
+    let scope: Scope | undefined = this;
+    while (scope !== undefined) {
+      if (scope.names.has(name) || scope.future.has(name)) {
+        scope.used.add(name);
+        return;
+      }
+      scope = scope.parent;
+    }
+  }
+
+  /** Everything declared here, for the never-used check when the scope ends. */
+  declarations(): readonly [string, Binding][] {
+    return [...this.names];
   }
 
   visible(): string[] {
@@ -194,6 +234,8 @@ class Resolver {
   private readonly closedPrefixes: readonly string[];
   /** Where to send every name-to-declaration link, when anybody wants them. */
   private readonly reference: ResolveOptions['reference'];
+  /** True while walking a declaration the module exports. */
+  private exporting = false;
   private scope: Scope;
   /** Greater than zero while walking a function body, whose execution is deferred. */
   private deferred = 0;
@@ -224,9 +266,10 @@ class Resolver {
     span: Span,
     label?: string,
     notes?: readonly string[],
+    severity: Severity = 'error',
   ): void {
     this.diagnostics.push({
-      severity: 'error',
+      severity,
       code,
       message,
       span,
@@ -240,7 +283,60 @@ class Resolver {
   }
 
   private popScope(): void {
+    this.checkUnused(this.scope);
     this.scope = this.scope.parent ?? this.scope;
+  }
+
+  /**
+   * Bindings this scope declared and nothing ever read.
+   *
+   * The first thing in the language to produce a **warning** rather than an
+   * error. A binding that is never read is either dead code or a typo
+   * somewhere else, and neither stops the program running — so reporting it as
+   * an error would mean rejecting programs that work, which this pass does not
+   * do. A check that is merely advisory has to be worth reading, though, which
+   * is why the rule below is as narrow as it is.
+   *
+   * Only `let`, `var` and `import`:
+   *
+   *   - **A parameter** is often unused on purpose — a handler that ignores its
+   *     request, a callback that only wants the index — and there is no way to
+   *     tell that from a mistake.
+   *   - **A function, struct or enum** may be the point of the file, and a
+   *     non-exported one is at worst dead code somebody is in the middle of
+   *     writing. Reported, this would fire constantly while you work.
+   *   - **A pattern binding** already has `_` for the parts nobody wants, and
+   *     `match` arms name things for readability as much as for use.
+   *
+   * And never for `_`, which is the conventional throwaway, nor for anything
+   * the module exports, whose whole purpose is to be read from a file this pass
+   * cannot see.
+   *
+   * Writing to a `var` does not count as reading it. `var x = 0` followed only
+   * by `x = 1` is a value nobody ever looks at, which is exactly the thing
+   * worth saying.
+   */
+  private checkUnused(scope: Scope): void {
+    for (const [name, binding] of scope.declarations()) {
+      // `_` is the throwaway, and a leading `_` is how every other language
+      // spells "I know, and I meant it". The fixtures in this repository had
+      // already reached for `_a` and `_b` by instinct before the check existed,
+      // which is as good evidence as there is that the convention is the right
+      // one to honour.
+      if (name.startsWith('_') || binding.exported === true) continue;
+      if (binding.kind !== 'let' && binding.kind !== 'var' && binding.kind !== 'import') continue;
+      if (scope.used.has(name)) continue;
+      this.report(
+        'RS011',
+        '`' + name + '` is never used',
+        binding.span,
+        'never read',
+        binding.kind === 'import'
+          ? ['remove it from the import, or use it', 'a method needs no import: `xs.groupBy(f)` works without one']
+          : ['remove it, or start its name with `_` if it is deliberately unused'],
+        'warning',
+      );
+    }
   }
 
   /**
@@ -267,13 +363,19 @@ class Resolver {
         );
       }
     }
-    this.scope.declare(name, { mutable, span, kind });
+    this.scope.declare(name, {
+      mutable,
+      span,
+      kind,
+      ...(this.exporting ? { exported: true } : {}),
+    });
   }
 
   private use(name: string, span: Span): void {
     const found =
       this.deferred > 0 ? this.scope.lookupDeferred(name) : this.scope.lookup(name);
     if (found !== undefined) {
+      this.scope.markUsed(name);
       // Where this name was declared, for whoever asked. The resolver has
       // always known it and always thrown it away the moment it had finished
       // checking, so an editor's "go to definition" had to work it out again —
@@ -303,7 +405,15 @@ class Resolver {
     this.hoist(module.stmts);
     for (const stmt of module.stmts) this.stmt(stmt);
     this.checkMainCall(module);
-    return this.diagnostics;
+    // The module's own scope is never popped, so its unused bindings are
+    // checked here instead. The root scope above it holds the prelude, which is
+    // not this module's business.
+    this.checkUnused(this.scope);
+    // In source order. Most are reported as the walk reaches them and so come
+    // out sorted already, but a scope's unused bindings are only known when it
+    // ends — so without this a warning about line 3 appears after an error
+    // about line 30, and the list stops reading down the file.
+    return [...this.diagnostics].sort((a, b) => a.span.start.offset - b.span.start.offset);
   }
 
   /**
@@ -504,9 +614,15 @@ class Resolver {
         }
         return;
 
-      case 'ExportDecl':
+      case 'ExportDecl': {
+        // What a module exports is never unused: its whole purpose is to be
+        // read from a file this pass cannot see.
+        const wasExporting = this.exporting;
+        this.exporting = true;
         this.stmt(stmt.declaration);
+        this.exporting = wasExporting;
         return;
+      }
     }
   }
 
@@ -645,7 +761,7 @@ class Resolver {
         return;
 
       case 'AssignExpr':
-        this.assign(expr.target, expr.value);
+        this.assign(expr.op, expr.target, expr.value);
         return;
 
       case 'LambdaExpr':
@@ -681,8 +797,13 @@ class Resolver {
     }
   }
 
-  private assign(target: Expr, value: Expr): void {
+  private assign(op: string, target: Expr, value: Expr): void {
     this.expr(value);
+    // `t += i` is `t = t + i`: it reads the target as well as writing it, so a
+    // binding only ever touched that way is not unused. A plain `=` does not
+    // read, which is what makes `var x = 0` followed only by `x = 1` a value
+    // nobody looks at — and worth saying so.
+    if (op !== '=' && target.kind === 'Ident') this.scope.markUsed(target.name);
     this.assignTo(target);
   }
 
@@ -892,14 +1013,28 @@ export function resolve(module: Module, options: ResolveOptions): readonly Diagn
  * Scope errors come first deliberately. A program with an undefined name will
  * also produce confusing type errors about it, and reporting the cause rather
  * than its consequences is the more useful half.
+ *
+ * Returns the **warnings**, and raises on errors. That asymmetry is what a
+ * warning is: something worth saying that must not stop a program which works.
  */
-export function checkModule(module: Module, source: string, options: ResolveOptions): void {
+export function checkModule(
+  module: Module,
+  source: string,
+  options: ResolveOptions,
+): readonly Diagnostic[] {
   const scopeProblems = resolve(module, options);
-  if (scopeProblems.length > 0) {
-    throw new LumenError(scopeProblems, module.file, source);
+  const errors = scopeProblems.filter((d) => d.severity === 'error');
+  if (errors.length > 0) {
+    // Only the errors. A warning alongside them is noise: fix what stops the
+    // program, then look at what merely bothers it.
+    throw new LumenError(errors, module.file, source);
   }
   const typeProblems = checkTypes(module, options);
   if (typeProblems.length > 0) {
     throw new LumenError(typeProblems, module.file, source);
   }
+  // Warnings are returned rather than raised, which is the whole difference
+  // between the two: a warning must never stop a program that works. A caller
+  // that ignores them behaves exactly as it did before they existed.
+  return scopeProblems.filter((d) => d.severity !== 'error');
 }

@@ -2,3 +2,5 @@
 // is still just a module that does not exist.
 
 import { x } from "constructor"
+
+print(x)

@@ -22,13 +22,14 @@ export interface Span {
 /**
  * How loud a diagnostic is.
  *
- * Only `'error'` is ever produced today: every static check in this language
- * either rejects a program or says nothing, because a check that is merely
- * advisory trains people to ignore the output. `'warning'` exists for the
- * unused-binding check the roadmap wants, which is the first thing that should
- * be reported without failing the build, and the renderer already knows to draw
- * it yellow — see the `renders a warning` test, which is what keeps that branch
- * honest until something emits one.
+ * An error rejects the program; a warning does not, and `checkModule` draws
+ * exactly that line — it raises on errors and *returns* warnings, so a caller
+ * that ignores them behaves as it did before any existed.
+ *
+ * `RS011`, a binding nothing ever reads, is the only warning so far and was the
+ * first. Everything else either rejects a program or says nothing, because a
+ * check that is merely advisory trains people to ignore the output — which is
+ * why the unused-binding rule is as narrow as it is.
  */
 export type Severity = 'error' | 'warning';
 

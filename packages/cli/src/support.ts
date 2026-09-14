@@ -3,7 +3,7 @@
 import { promises as fsp } from 'node:fs';
 import * as path from 'node:path';
 
-import { Interpreter, LumenError } from '@lumen-lang/core';
+import { Interpreter, LumenError, formatDiagnostic, type Diagnostic } from '@lumen-lang/core';
 import { createInterpreter } from '@lumen-lang/stdlib';
 
 export const VERSION = '0.2.0';
@@ -46,6 +46,26 @@ export function newInterpreter(): Interpreter {
  * `lumen check` and fails `lumen run`.
  */
 export { checkOptions } from '@lumen-lang/stdlib';
+
+/**
+ * Show warnings, and say nothing when there are none.
+ *
+ * Written once because four commands check a file, and a warning a command
+ * swallows is a warning nobody ever acts on. They go to stderr so that piping
+ * a program's output somewhere still gets the program's output — a warning is
+ * about the source, not part of what the program produced.
+ */
+export function reportWarnings(
+  warnings: readonly Diagnostic[],
+  file: string,
+  source: string,
+): void {
+  if (warnings.length === 0) return;
+  const color = useColor();
+  for (const warning of warnings) {
+    process.stderr.write(formatDiagnostic(warning, source, file, color) + '\n\n');
+  }
+}
 
 /**
  * Every file under `target` whose name ends with `suffix`, sorted.

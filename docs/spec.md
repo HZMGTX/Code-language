@@ -735,6 +735,7 @@ program uses can be resolved without running it.
 | `RS008` | `main()` called at the top level of a module that defines `main` |
 | `RS009` | An `import` names something a known module does not export |
 | `RS010` | An `import` names a module that does not exist |
+| `RS011` | A binding is never read — a **warning**, not an error |
 
 The value is that a mistake is reported whether or not execution reaches it: a
 typo on a branch that never runs is still a typo.
@@ -772,6 +773,37 @@ valid program:
   `./helper` unread would be a guess — so an import from one is trusted, and
   `RT002` and `RT042` answer at run time instead. An implementation decides
   which namespaces it knows the whole of; `std/` is always one of them.
+
+### Warnings
+
+`RS011` is the first diagnostic that does **not** reject a program. A binding
+nothing ever reads is either dead code or a typo somewhere else, and neither
+stops the program running — so reporting it as an error would mean rejecting
+programs that work, which these passes do not do. `lumen check` prints it and
+still exits zero.
+
+The rule is deliberately narrow, because a check that is merely advisory has to
+be worth reading. Only `let`, `var` and `import` are reported:
+
+- **A parameter** is often unused on purpose — a handler that ignores its
+  request, a callback that only wants the index — and there is no way to tell
+  that from a mistake.
+- **A function, struct or enum** may be the point of the file, and an
+  unexported one is at worst dead code somebody is in the middle of writing.
+  Reported, it would fire constantly while you work.
+- **A pattern binding** already has `_` for the parts nobody wants.
+
+Never for a name starting with `_`, which is how to say it is deliberate, and
+never for anything the module exports, whose whole purpose is to be read from a
+file this pass cannot see.
+
+Writing does not count as reading, but a compound assignment does: `var x = 0`
+followed only by `x = 1` is a value nobody looks at, while `total += n` reads
+`total` and so is a use.
+
+An import used only as a method is reported, and that is not a mistake in the
+check: a method comes from its type's table, never from scope, so
+`xs.groupBy(f)` works with no import at all and the import really is dead.
 
 `_` may be re-declared freely; it is the conventional throwaway name. Shadowing
 an outer binding in an inner scope is not an error, and never will be.

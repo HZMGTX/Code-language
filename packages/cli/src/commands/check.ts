@@ -11,7 +11,7 @@
 import { promises as fsp } from 'node:fs';
 import * as path from 'node:path';
 
-import { LumenError, checkModule, parse } from '@lumen-lang/core';
+import { LumenError, checkModule, formatDiagnostic, parse } from '@lumen-lang/core';
 
 import { checkOptions, collectFiles, displayPath, newInterpreter, useColor } from '../support.js';
 
@@ -30,12 +30,17 @@ export async function checkFiles(target: string): Promise<void> {
 
   let clean = 0;
   let withProblems = 0;
+  let warned = 0;
   for (const file of files) {
     const relative = displayPath(file);
     const source = await fsp.readFile(file, 'utf8');
     try {
-      checkModule(parse(source, file), source, options);
+      const warnings = checkModule(parse(source, file), source, options);
       clean += 1;
+      warned += warnings.length;
+      for (const warning of warnings) {
+        process.stdout.write(formatDiagnostic(warning, source, file, color) + '\n\n');
+      }
     } catch (error) {
       withProblems += 1;
       process.stdout.write(
@@ -43,13 +48,19 @@ export async function checkFiles(target: string): Promise<void> {
       );
       continue;
     }
-    if (files.length === 1) process.stdout.write('ok   ' + relative + '\n');
+    if (files.length === 1 && warned === 0) process.stdout.write('ok   ' + relative + '\n');
   }
 
+  // A warning never fails the check. That is the whole difference between a
+  // warning and an error: `lumen check` is what a pre-commit hook and a CI step
+  // run, and a build that fails over an unused binding is a build people learn
+  // to pass with `--no-verify`.
+  const counted =
+    warned === 0 ? '' : ', ' + String(warned) + (warned === 1 ? ' warning' : ' warnings');
   const summary =
     withProblems === 0
-      ? String(clean) + (clean === 1 ? ' file checked, no problems' : ' files checked, no problems')
-      : String(withProblems) + ' of ' + String(files.length) + ' files have problems';
+      ? String(clean) + (clean === 1 ? ' file checked, no problems' : ' files checked, no problems') + counted
+      : String(withProblems) + ' of ' + String(files.length) + ' files have problems' + counted;
   process.stdout.write(summary + '\n');
   process.exit(withProblems === 0 ? 0 : 1);
 }

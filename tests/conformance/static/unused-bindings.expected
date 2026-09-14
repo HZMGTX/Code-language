@@ -1,0 +1,29 @@
+warning[RS011]: `stringify` is never used
+  --> unused-bindings.lm:13:17
+   |
+13 | import { parse, stringify } from "std/json"
+   |                 ^^^^^^^^^ never read
+   |
+   = note: remove it from the import, or use it
+   = note: a method needs no import: `xs.groupBy(f)` works without one
+
+warning[RS011]: `neverRead` is never used
+  --> unused-bindings.lm:15:5
+   |
+15 | let neverRead = 3
+   |     ^^^^^^^^^ never read
+   |
+   = note: remove it, or start its name with `_` if it is deliberately unused
+
+warning[RS011]: `written` is never used
+  --> unused-bindings.lm:16:5
+   |
+16 | var written = 0
+   |     ^^^^^^^ never read
+   |
+   = note: remove it, or start its name with `_` if it is deliberately unused
+
+6
+1
+7
+Ok(1)

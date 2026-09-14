@@ -6,3 +6,5 @@
 // no-false-positives rule — and the interpreter catches it instead. That is the
 // layer the specification promises is always there, and this is what pins it.
 import { nope } from "./helpers/greet"
+
+print(nope)
