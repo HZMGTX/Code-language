@@ -50,7 +50,8 @@ import {
  * correctly is longer than the loop and nobody can read it.
  */
 function parseRows(text: string, delimiter: string): string[][] | string {
-  if (delimiter.length !== 1) return 'the delimiter must be one character, got `' + delimiter + '`';
+  const wrong = badDelimiter(delimiter);
+  if (wrong !== undefined) return wrong;
 
   const rows: string[][] = [];
   let row: string[] = [];
@@ -120,6 +121,25 @@ function parseRows(text: string, delimiter: string): string[][] | string {
   // and a non-empty field distinguish.
   if (started || field !== '' || row.length > 0) endRow();
   return rows;
+}
+
+/**
+ * Why a delimiter cannot be used, or undefined when it can.
+ *
+ * A quote, a carriage return and a newline already mean something here, and a
+ * delimiter that is one of them does not fail — it quietly does something else.
+ * `rows("a\"b", delimiter: "\"")` gave `["a", "b"]`, which looks like an
+ * answer and is an accident of which branch ran first.
+ */
+function badDelimiter(delimiter: string): string | undefined {
+  if (delimiter.length !== 1) {
+    return 'the delimiter must be one character, got `' + delimiter + '`';
+  }
+  if (delimiter === '"') return 'the delimiter cannot be a quote: quotes already delimit fields';
+  if (delimiter === '\n' || delimiter === '\r') {
+    return 'the delimiter cannot be a line break: line breaks already end rows';
+  }
+  return undefined;
 }
 
 /** One field as it must be written: quoted only when it has to be. */
@@ -222,9 +242,8 @@ export function stdCsv(): Map<string, Value> {
         fn('write', ['rows', { name: 'delimiter', defaultValue: str(',') }], (a, c) => {
           const given = expectList(arg(a, 0), c, 'write(rows)');
           const delimiter = expectStr(arg(a, 1), c, 'write(delimiter)');
-          if (delimiter.length !== 1) {
-            return Err(str('the delimiter must be one character, got `' + delimiter + '`'));
-          }
+          const wrong = badDelimiter(delimiter);
+          if (wrong !== undefined) return Err(str(wrong));
           const lines: string[] = [];
           for (const [i, row] of given.items.entries()) {
             const fields = expectList(row, c, 'write row ' + String(i + 1));
@@ -266,9 +285,8 @@ export function stdCsv(): Map<string, Value> {
             const given = expectList(arg(a, 0), c, 'writeRecords(records)');
             const wanted = expectList(arg(a, 1), c, 'writeRecords(columns)');
             const delimiter = expectStr(arg(a, 2), c, 'writeRecords(delimiter)');
-            if (delimiter.length !== 1) {
-              return Err(str('the delimiter must be one character, got `' + delimiter + '`'));
-            }
+            const wrong = badDelimiter(delimiter);
+            if (wrong !== undefined) return Err(str(wrong));
 
             let columns = wanted.items.map((name, i) =>
               expectStr(name, c, 'writeRecords column ' + String(i + 1)),

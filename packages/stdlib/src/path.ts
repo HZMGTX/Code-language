@@ -101,8 +101,26 @@ function baseOf(raw: string): string {
  */
 function extOf(raw: string): string {
   const base = baseOf(raw);
+  // `.` and `..` are directory references, not files whose name is empty and
+  // whose extension is a dot. Without this, `ext("..")` was `"."` and
+  // `stem("..")` was `"."` — a path walking upwards would lose half of itself
+  // to a function that was only supposed to look at it.
+  if (/^\.+$/.test(base)) return '';
   const at = base.lastIndexOf('.');
   return at <= 0 ? '' : base.slice(at);
+}
+
+/** A path as its root and its segments, for comparing one against another. */
+function partsOf(raw: string): { root: string; absolute: boolean; segments: string[] } {
+  const { prefix, rest, absolute } = rootOf(normalise(raw));
+  // `.` is dropped as well as the empties. `normalise` already removes every
+  // interior `.`, so the only one that can survive is a path that is *entirely*
+  // `.` — which is here, and is zero segments rather than one named `.`.
+  return {
+    root: prefix,
+    absolute,
+    segments: rest.split('/').filter((segment) => segment !== '' && segment !== '.'),
+  };
 }
 
 /**
@@ -264,11 +282,27 @@ export function stdPath(): Map<string, Value> {
          * here so that nobody has to remember them at the call site.
          */
         fn('isInside', ['parent', 'child'], (a, c) => {
-          const parent = normalise(expectStr(arg(a, 0), c, 'isInside(parent)'));
-          const child = normalise(expectStr(arg(a, 1), c, 'isInside(child)'));
-          if (child === parent) return bool(true);
-          const boundary = parent.endsWith('/') ? parent : parent + '/';
-          return bool(child.startsWith(boundary));
+          const parent = partsOf(expectStr(arg(a, 0), c, 'isInside(parent)'));
+          const child = partsOf(expectStr(arg(a, 1), c, 'isInside(child)'));
+
+          // Compared segment by segment rather than as text. A prefix test is
+          // the obvious way and is wrong twice: `/publicity` starts with
+          // `/public`, and — the one that took writing a probe to find —
+          // `isInside(".", "a")` was false, because `"a"` does not start with
+          // `"./"`. A program checking that a relative path stays under the
+          // working directory would have been told no every time.
+          if (parent.root !== child.root || parent.absolute !== child.absolute) return bool(false);
+
+          // A relative path that climbs out is not inside, whatever its
+          // segments look like afterwards: `..` cannot be matched against a
+          // parent's name, because it is not a name.
+          if (child.segments[0] === '..') return bool(false);
+
+          if (child.segments.length < parent.segments.length) return bool(false);
+          for (const [i, segment] of parent.segments.entries()) {
+            if (child.segments[i] !== segment) return bool(false);
+          }
+          return bool(true);
         }),
       ),
       {

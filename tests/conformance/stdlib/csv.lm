@@ -53,6 +53,23 @@ print(records("a,b\n1,2\n5\n"))
 // `rows` keeps it, because `rows` is the grid with no judgement applied at all.
 print(rows("a,b\n1,2\n\n3,4\n"))
 
+// A quote that is not at the start of a field is data; a quoted field followed
+// by more text keeps both, which is what every other reader does with a file
+// that should not exist.
+print(rows("a\"b,c"))
+print(rows("\"a\"b,c"))
+print(rows("\"\"\"\""))
+print(rows(","))
+
+// A delimiter that already means something here is refused rather than quietly
+// doing something else. `rows("a\"b", delimiter: "\"")` used to answer
+// `["a", "b"]`, which looks like an answer and was an accident of which branch
+// ran first.
+print(rows("a\"b", delimiter: "\""))
+print(rows("a", delimiter: "\n"))
+print(rows("a", delimiter: ";;"))
+print(write([["a"]], delimiter: "\""))
+
 // Writing quotes only what has to be quoted.
 print(write([["plain", "has,comma"], ["has\"quote", "has\nnewline"]]))
 

@@ -54,12 +54,29 @@ print(relative("/a/b", "/a/b/c"))
 // destination itself rather than a lie.
 print(relative("a/b", "/a/b"))
 
-// The check a program serving files needs, with both ways of getting it wrong
-// handled: `/publicity` is not inside `/public`, and `..` is resolved first.
+// The check a program serving files needs. It compares segment by segment
+// rather than as text, because a prefix test is wrong in three ways and each
+// of them has a line here: `/publicity` starts with `/public`; `..` has to be
+// resolved first; and `a` is inside `.` although `"a"` does not start with
+// `"./"` — which is the one that took an adversarial probe to find, and which
+// broke every program checking that a relative path stays under the working
+// directory.
 print(isInside("/public", "/public/a.txt"))
 print(isInside("/public", "/public"))
 print(isInside("/public", "/publicity/a.txt"))
 print(isInside("/public", "/public/../etc/passwd"))
+print([isInside(".", "a"), isInside(".", "a/b"), isInside("a/b", "a/b/c")])
+
+// A relative path that climbs out is not inside, whatever follows the `..`.
+print([isInside(".", ".."), isInside(".", "../x"), isInside("a/b", "a/c")])
+
+// Nothing relative is inside anything absolute, or under a different root.
+print([isInside("/a", "a"), isInside("a", "/a"), isInside("C:/x", "/x")])
+
+// `.` and `..` are directory references, not files whose extension is a dot.
+// `ext("..")` used to be `"."` and `stem("..")` used to be `"."`, so a path
+// walking upwards lost half of itself to a function that only looked at it.
+print([ext("."), ext(".."), ext("..."), stem("."), stem(".."), stem("...")])
 
 // A Windows path read on any machine. Losing a drive letter would silently
 // turn an absolute path into a relative one.

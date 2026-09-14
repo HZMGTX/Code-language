@@ -113,6 +113,23 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   and `md5` are present and documented as broken, because real work needs them
   and omitting them only makes people write them worse.
 
+- **Three bugs found by probing the new modules adversarially**, none of them
+  visible from reading the code:
+
+  - `isInside(".", "a")` was **false**. The check compared paths as text, and
+    `"a"` does not start with `"./"` — so every program asking whether a
+    relative path stays under the working directory was told no. It compares
+    segment by segment now, which also handles the two cases it already got
+    right (`/publicity` is not inside `/public`; `..` is resolved first).
+  - `ext("..")` was `"."` and `stem("..")` was `"."`. `.` and `..` are
+    directory references, not files whose name is empty and whose extension is
+    a dot, so a path walking upwards lost half of itself to a function that was
+    only supposed to look at it.
+  - A CSV delimiter that already means something — a quote, a line break —
+    was accepted and quietly did something else. `rows("a\"b", delimiter: "\"")`
+    answered `["a", "b"]`, which looks like an answer and was an accident of
+    which branch ran first. Refused now, with the reason.
+
 - **`std/csv`** — comma-separated values, as they actually arrive. Quoted
   fields containing the delimiter, a newline or a doubled quote; `\r\n` and
   `\n` mixed in one file; a delimiter that is not a comma. Reading and writing
