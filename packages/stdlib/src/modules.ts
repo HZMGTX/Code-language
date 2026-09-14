@@ -9,6 +9,7 @@ import { signatureTy, type Ty, type Value } from '@lumen-lang/core';
 
 import { stdAi } from './ai.js';
 import { stdCore } from './core.js';
+import { stdCrypto } from './crypto.js';
 import { stdCsv } from './csv.js';
 import { stdFs } from './fs.js';
 import { stdHttp } from './http.js';
@@ -45,6 +46,7 @@ export const STD_MODULES: ReadonlyMap<string, () => Map<string, Value>> = new Ma
   ['std/math', stdMath],
   ['std/json', stdJson],
   ['std/csv', stdCsv],
+  ['std/crypto', stdCrypto],
   ['std/option', stdOption],
   ['std/result', stdResult],
   ['std/set', stdSet],

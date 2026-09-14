@@ -527,6 +527,18 @@ now() -> Num
 sleep(milliseconds: Num) -> Nil
 ```
 
+### `std/crypto`
+
+```text
+equals(a: Str, b: Str) -> Bool
+hmacSha256(key: Str, text: Str) -> Str
+md5(text: Str) -> Str
+sha1(text: Str) -> Str
+sha256(text: Str) -> Str
+sha512(text: Str) -> Str
+token(bytes: Num = ...) -> Str
+```
+
 ### `std/csv`
 
 ```text

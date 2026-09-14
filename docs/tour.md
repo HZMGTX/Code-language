@@ -302,7 +302,7 @@ import { helper } from "./helper.lm"
 export fn publicThing() { 1 }
 ```
 
-Eighteen standard modules ship with the language:
+Nineteen standard modules ship with the language:
 
 | | |
 |---|---|
@@ -310,7 +310,7 @@ Eighteen standard modules ship with the language:
 | Collections | `std/list`, `std/map`, `std/set` |
 | Numbers and time | `std/math`, `std/time` |
 | Values | `std/option`, `std/result`, `std/core` |
-| The machine | `std/fs`, `std/path`, `std/process` |
+| The machine | `std/fs`, `std/path`, `std/process`, `std/crypto` |
 | The network | `std/http`, `std/web`, `std/ai` |
 
 See [stdlib.md](stdlib.md) for every function in them.

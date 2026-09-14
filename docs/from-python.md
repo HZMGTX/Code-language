@@ -517,6 +517,7 @@ method. `import` is by name, always — there is no `import module` form and no
 | `sys.stdin.read()` | `inputAll()` — in the prelude, no import |
 | `input()` | `input()` — returns `Some(line)` or `None` |
 | `sys.exit(n)` | `exit(n)` from `std/core` |
+| `hashlib` / `hmac` / `secrets` | `std/crypto` — `sha256`, `hmacSha256`, `token`, `equals` |
 | `collections.Counter` | `xs.groupBy(f)` and `mapValues(len)` |
 | `set` | `std/set` — sets are lists with no repeats; there is no set type |
 | `itertools` | `std/list` — `windows`, `chunk`, `zip`, `scan`, `flatMap` |
@@ -553,7 +554,7 @@ places where you will miss Python, with no consolation offered:
   `.filter().map()` plus `fromEntries` is more machinery than Python needs.
 - **Arbitrary-precision integers.** See above.
 - **The ecosystem.** PyPI holds hundreds of thousands of packages. Lumen has
-  eighteen standard modules and no package manager at all. For anything outside
+  nineteen standard modules and no package manager at all. For anything outside
   what ships in the box, Python is not in competition with Lumen; it has already
   won.
 

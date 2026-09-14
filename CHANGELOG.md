@@ -69,6 +69,25 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   check found `std/result` on its first run: its functions were well covered as
   methods, and the import path had never been run at all.
 
+- **`std/crypto`** — hashing, HMAC, secure random, constant-time comparison.
+  Four things, because a program that serves anything needs all four and gets
+  at least one of them wrong by hand: an ETag, a content-addressed cache key, a
+  webhook signature to verify, a session token to issue. Every digest in the
+  fixture is a published test vector, so it checks the implementation against
+  the standard rather than against itself.
+
+  `token()` comes from the operating system, never from `std/math.random`, and
+  is not affected by `seed` — that generator exists so a test can be repeated,
+  which is the exact opposite of what a session id needs. `equals()` compares
+  without leaking how much matched, because `==` on strings stops at the first
+  differing character and that recovers a signature one character at a time.
+
+  No encryption, no key exchange, no password hashing, and the reason is
+  written down: each needs choices that change with the year, and a standard
+  library making them silently is wrong in 2031 for everybody at once. `sha1`
+  and `md5` are present and documented as broken, because real work needs them
+  and omitting them only makes people write them worse.
+
 - **`std/csv`** — comma-separated values, as they actually arrive. Quoted
   fields containing the delimiter, a newline or a doubled quote; `\r\n` and
   `\n` mixed in one file; a delimiter that is not a comma. Reading and writing

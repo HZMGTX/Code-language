@@ -128,9 +128,10 @@ created two throwaway Maps per iteration.
 
 ## The standard library
 
-Eighteen modules. What was missing at the end of v0.2, and has since been
-added: `std/path`, `std/regex`, `std/process`, `std/csv`, seeded randomness,
-`inputAll`, and `stat`/`copy`/`rename`/`makeDir`/`walk` in `std/fs`.
+Nineteen modules. What was missing at the end of v0.2, and has since been
+added: `std/path`, `std/regex`, `std/process`, `std/csv`, `std/crypto`, seeded
+randomness, `inputAll`, and `stat`/`copy`/`rename`/`makeDir`/`walk` in
+`std/fs`.
 
 What is still missing, in rough order of how often it is wanted:
 
@@ -143,11 +144,14 @@ What is still missing, in rough order of how often it is wanted:
 - **Binary data.** Everything is text: `std/fs.read` decodes as UTF-8, and
   there is no byte-array type for anything that is not.
 - **Structured formats besides JSON and CSV.** No TOML, no YAML.
-- **A hashing or checksum function.** `std/set` has one internally and does not
-  export it, because what it computes is an implementation detail.
 
 Each is a module rather than a language change, which is the point: none of
 them needs the language to grow.
+
+Deliberately not planned for `std/crypto`: encryption, key exchange and
+password hashing. Each needs choices — a mode, a padding, a work factor, a salt
+policy — that change with the year and with the threat, and a standard library
+that makes them silently is wrong in 2031 for everybody at once.
 
 ## v0.5 — Depth
 
