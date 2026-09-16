@@ -61,6 +61,30 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   program's output, which is also the better fixture: it shows the warning *and*
   that the statement really did nothing.
 
+- **The language server could have been published, and nothing would have said
+  a word.** `check-private.mjs` guards the closed-source decision by requiring
+  `"private": true` in every manifest — from a list of four, written out by
+  hand. `packages/lsp` was added to the repository and not to the list, so for
+  the whole of v0.2 it sat outside the one check that exists to stop an
+  accidental publish. Removing its `"private"` passed, reporting cheerfully that
+  *"all 4 manifests are marked private"*.
+
+  The manifests are found rather than listed now, so a package added tomorrow is
+  covered the day it exists. A list of things that exist goes stale exactly as
+  fast as a count of them, which this repository has now learned three times.
+
+- **"Zero runtime dependencies" is checked.** It is the claim the project makes
+  most loudly — the README, `docs/philosophy.md`, and the whole reason the
+  language server was written against raw JSON-RPC rather than
+  `vscode-languageclient` — and it was kept entirely by hand. A package may
+  depend on its workspace siblings and nothing else, and `core` may not even do
+  that: `docs/philosophy.md` names *"the core reaching for a host API directly"*
+  as something that would falsify the project's claims, so `core` importing
+  anything at all, `node:fs` included, now fails the build.
+
+  All three failures were checked by causing them: a manifest losing its
+  `private`, a real dependency appearing, and `core` reaching for the host.
+
 - **`std/web.formAll`, because a repeated field lost all but the last.**
   `?tag=a&tag=b&tag=c` reached a handler as `{tag: "c"}` — and a checkbox group
   and a `<select multiple>` are exactly that shape, and are ordinary HTML. Three
