@@ -59,7 +59,7 @@ print("x".padStart(3, "0"))              // 00x
 | `xs.append(4)` | `xs.push(4)` |
 | `xs.pop()` | `xs.pop()` — gives `Some(v)` or `None` |
 | `3 in xs` | `xs.contains(3)` |
-| `xs.index(3)` | `xs.indexOf(3)` |
+| `xs.index(3)` | `xs.indexOf(3)` — gives `Some(i)` or `None`, never `-1` |
 | `xs + ys` | `xs + ys` |
 | `sorted(xs)` | `xs.sorted()` |
 | `sorted(xs, key=len)` | `xs.sortBy(fn(x) { len(x) })` |

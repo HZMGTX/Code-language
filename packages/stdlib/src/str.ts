@@ -21,7 +21,9 @@
 import { bool, list, num, str, type Value } from '@lumen-lang/core';
 import {
   Err,
+  None,
   Ok,
+  Some,
   arg,
   expectInt,
   expectStr,
@@ -100,7 +102,7 @@ const SIGNATURES: Readonly<Record<string, string>> = {
   // `end` defaults to nil and means "to the end", so it genuinely accepts
   // either a Num or nil — narrowing it to Num would reject a program that runs.
   slice: '(s: Str, start: Num, end: Any = nil) -> Str',
-  indexOf: '(s: Str, needle: Str) -> Num',
+  indexOf: '(s: Str, needle: Str) -> Option',
   count: '(s: Str, needle: Str) -> Num',
   len: '(s: Str) -> Num',
   repeat: '(s: Str, count: Num) -> Str',
@@ -176,14 +178,25 @@ export function stdStr(): Map<string, Value> {
      * *including* the colon and the right half started a character late, both
      * silently, for any text with an emoji in it.
      */
-    fn('indexOf', ['s', 'needle'], (a, c) =>
-      num(
-        codePointIndexOf(
-          expectStr(arg(a, 0), c, 'indexOf(s)'),
-          expectStr(arg(a, 1), c, 'indexOf needle'),
-        ),
-      ),
-    ),
+    /**
+     * Where the needle starts, as `Some(i)`, or `None`.
+     *
+     * An `Option` rather than `-1`, because `-1` is a **position** here: §4
+     * says `xs[i]` counts from the end when `i` is negative, so
+     * `xs[xs.indexOf(missing)]` answered with the last element and
+     * `slice(s, 0, indexOf(s, sep))` quietly dropped the final character of a
+     * line that had no separator. Two different questions, one confident
+     * answer. Every other function in the library that can fail to find
+     * something already answers `Option` — `find`, `first`, `at`, `get` — and
+     * `docs/stdlib.md` states it as a rule.
+     */
+    fn('indexOf', ['s', 'needle'], (a, c) => {
+      const at = codePointIndexOf(
+        expectStr(arg(a, 0), c, 'indexOf(s)'),
+        expectStr(arg(a, 1), c, 'indexOf needle'),
+      );
+      return at === -1 ? None : Some(num(at));
+    }),
 
     fn('repeat', ['s', 'count'], (a, c) => {
       const count = expectInt(arg(a, 1), c, 'repeat count');
@@ -331,7 +344,7 @@ export function stdStr(): Map<string, Value> {
       endsWith: 'True if the string ends with this suffix.',
       replace: 'Replace every occurrence of one piece of text with another.',
       slice: 'The characters from start up to (not including) end.',
-      indexOf: 'Where the needle first appears, or -1 if it never does.',
+      indexOf: 'Where the needle first appears, as Some(i), or None.',
       repeat: 'The string repeated a number of times.',
       padStart: 'Pad on the left until the string reaches a width.',
       padEnd: 'Pad on the right until the string reaches a width.',

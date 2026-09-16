@@ -11,12 +11,16 @@ import { indexOf, slice, len, padStart, padEnd, center, chars, reverse, repeat }
 
 // The idiom: find it, cut there.
 let line = "🎉name: value"
-let at = indexOf(line, ":")
-print("${at} ${len(line)}")
-print("[${slice(line, 0, at)}] [${slice(line, at + 1)}]")
+match indexOf(line, ":") {
+  Some(at) => {
+    print("${at} ${len(line)}")
+    print("[${slice(line, 0, at)}] [${slice(line, at + 1)}]")
+  }
+  None => print("no colon")
+}
 print("${chars(line).len()}")
 
-// Not found is -1, and the start is 0, in either counting.
+// Not found is None, and the start is Some(0), in either counting.
 print("${indexOf("abc", "z")} ${indexOf("abc", "a")} ${indexOf("🎉abc", "🎉")}")
 
 // Padding to a width means that width, measured the way `len` measures.

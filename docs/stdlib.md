@@ -736,7 +736,7 @@ first(xs: List) -> Option
 flatMap(xs: List, f: fn(Any) -> Any) -> List
 flatten(xs: List) -> List
 groupBy(xs: List, key: fn(Any) -> Any) -> Map
-indexOf(xs: List, value) -> Num
+indexOf(xs: List, value) -> Option
 insert(xs: List, index: Num, value) -> List
 intersperse(xs: List, value) -> List
 isEmpty(xs: List) -> Bool
@@ -923,7 +923,7 @@ chars(s: Str) -> List<Str>
 contains(s: Str, needle: Str) -> Bool
 count(s: Str, needle: Str) -> Num
 endsWith(s: Str, suffix: Str) -> Bool
-indexOf(s: Str, needle: Str) -> Num
+indexOf(s: Str, needle: Str) -> Option
 isEmpty(s: Str) -> Bool
 len(s: Str) -> Num
 lines(s: Str) -> List<Str>

@@ -34,6 +34,35 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   from its type's table and never from scope, so `xs.groupBy(f)` works with no
   import at all and those imports really were dead. They are gone.
 
+- **`indexOf` answers `Option`, because `-1` is a position.** It used to answer
+  `-1` when it found nothing, which is what C, Java, JavaScript and Python's
+  `str.find` all do — and what none of them has is §4's rule that `xs[i]` counts
+  from the end when `i` is negative. Put the two together:
+
+  ```text
+  let xs = ["alpha", "beta", "gamma"]
+  xs[xs.indexOf("gamma")]   → "gamma"
+  xs[xs.indexOf("delta")]   → "gamma"     ← not in the list at all
+  ```
+
+  Two different questions, one confident answer, no error and nothing to
+  unwrap. The same `-1` walked into `slice`, so `slice(line, 0, indexOf(line,
+  ":"))` — the half of a line before its separator — came back as the whole
+  line minus its final character when there was no separator, and the other
+  half came back as the whole line.
+
+  `docs/stdlib.md` has stated the rule since v0.1: *"fallible operations return
+  a `Result`; absence returns an `Option`"*. `find`, `first`, `last`, `at`,
+  `get`, `pop`, `minimum`, `maximum` and `choice` all answer `Option` for
+  absence. `indexOf` — both of them, in `std/str` and `std/list` — was the one
+  exception, and a sweep of the whole library for sentinel returns finds no
+  others.
+
+  It was found by `TY009`, added an hour earlier, refusing a probe that assumed
+  `indexOf` answered an `Option` like everything else. The third time in one
+  sitting that a wrong guess about a return type turned out to be the
+  interesting part.
+
 - **The library's failure policy is a test now, and it turned out to hold.**
   `docs/stdlib.md` has always said *"fallible operations return a `Result` …
   neither ever raises for an ordinary failure"*, which is the whole of Lumen's

@@ -79,7 +79,7 @@ const SIGNATURES: Readonly<Record<string, string>> = {
   drop: '(xs: List, n: Num) -> List',
   reverse: '(xs: List) -> List',
   contains: '(xs: List, value: Any) -> Bool',
-  indexOf: '(xs: List, value: Any) -> Num',
+  indexOf: '(xs: List, value: Any) -> Option',
   unique: '(xs: List) -> List',
   flatten: '(xs: List) -> List',
   join: '(xs: List, separator: Str = "") -> Str',
@@ -246,10 +246,21 @@ export function stdList(): Map<string, Value> {
       return bool(xs.items.some((item) => valuesEqual(item, needle)));
     }),
 
+    /**
+     * Where the value sits, as `Some(i)`, or `None`.
+     *
+     * An `Option` rather than `-1`, because `-1` is a **position** here: §4
+     * says `xs[i]` counts from the end when `i` is negative, so
+     * `xs[xs.indexOf(missing)]` answered with the last element — a lookup that
+     * found nothing, giving back a value that looks like a find. `find`,
+     * `first`, `last` and `at` have always answered `Option`; this one was the
+     * exception.
+     */
     fn('indexOf', ['xs', 'value'], (a, c) => {
       const xs = expectList(arg(a, 0), c, 'indexOf(xs)');
       const needle = arg(a, 1);
-      return num(xs.items.findIndex((item) => valuesEqual(item, needle)));
+      const at = xs.items.findIndex((item) => valuesEqual(item, needle));
+      return at === -1 ? None : Some(num(at));
     }),
 
     fn('unique', ['xs'], (a, c) => {
@@ -531,7 +542,7 @@ export function stdList(): Map<string, Value> {
       drop: 'Everything after the first n elements.',
       reverse: 'A reversed copy. The original is untouched.',
       contains: 'True if the value appears in the list.',
-      indexOf: 'Where a value first appears, or -1 if it never does.',
+      indexOf: 'Where a value first appears, as Some(i), or None.',
       unique: 'A copy with duplicates removed, keeping the first of each.',
       flatten: 'Merge one level of nested lists.',
       join: 'Join the elements into a string with a separator.',

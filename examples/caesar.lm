@@ -21,11 +21,13 @@ fn rotate(letters, at, by) {
 
 fn shiftChar(ch, by) {
   let letters = if capitals.contains(ch) { capitals } else { alphabet }
-  // indexOf gives -1 for anything its subject does not hold, so spaces and
-  // punctuation fall straight through untouched. That is what keeps the
+  // `indexOf` answers `None` for anything its subject does not hold, so spaces
+  // and punctuation fall straight through untouched. That is what keeps the
   // ciphertext readable as text, and what makes it breakable further down.
-  let at = letters.indexOf(ch)
-  if at < 0 { ch } else { rotate(letters, at, by) }
+  match letters.indexOf(ch) {
+    Some(at) => rotate(letters, at, by)
+    None     => ch
+  }
 }
 
 // One function both ways: decoding is a shift by the rest of the circle. Keys
