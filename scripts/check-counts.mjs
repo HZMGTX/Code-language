@@ -308,6 +308,51 @@ for (const document of ['stdlib.md', 'tour.md']) {
   }
 }
 
+// ------------------------------------------- the spec's method tables are real
+
+// §4.7 names which types have a method table and which functions are on every
+// value. Both lists are prose, and prose about a data structure is the kind of
+// thing that is true when it is written and quietly stops being so — the tour
+// said "twelve modules" six modules after that was wrong.
+//
+// It matters more than a count here, because `x.f()` working is the difference
+// between the three spellings of a call being one expression and being two that
+// work and one that does not.
+{
+  const { stdMethodSignatures } = await import(
+    new URL('../packages/stdlib/dist/index.js', import.meta.url).href
+  );
+  const spec = readFileSync(path.join(ROOT, 'docs', 'spec.md'), 'utf8');
+
+  const types = new Set();
+  const universal = new Set();
+  for (const key of stdMethodSignatures().keys()) {
+    const type = key.slice(0, key.indexOf('.'));
+    if (type === '*') universal.add(key.slice(key.indexOf('.') + 1));
+    else types.add(type);
+  }
+
+  // The six names §4.7 gives for the types that have a table.
+  const claimedTypes = spec.match(/\*\*Per type\*\*: ([^\n]+)/u)?.[1] ?? '';
+  for (const type of types) {
+    if (!claimedTypes.includes('`' + type + '`')) {
+      problems.push(type + ' has a method table that docs/spec.md §4.7 does not name');
+    }
+  }
+
+  const claimedUniversal = spec.match(/\*\*On every value\*\*: ([^—]+)/u)?.[1] ?? '';
+  for (const name of universal) {
+    if (!claimedUniversal.includes('`' + name + '`')) {
+      problems.push(name + ' is a method on every value that docs/spec.md §4.7 does not name');
+    }
+  }
+  for (const name of [...claimedUniversal.matchAll(/`([a-zA-Z]+)`/gu)].map((m) => m[1])) {
+    if (!universal.has(name)) {
+      problems.push('docs/spec.md §4.7 says `' + name + '` is on every value, and it is not');
+    }
+  }
+}
+
 // ---------------------------------------------------------------- the answer
 
 if (FIX && fixed !== readme) {

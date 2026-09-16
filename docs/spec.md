@@ -426,11 +426,17 @@ method can therefore never change what an existing lookup returns.
 ### 4.7 Method calls
 
 `x.f(a)` calls `f(x, a)`. Every standard-library function takes its subject
-first, so these three are the same expression:
+first, so for a function whose subject's type has a method table these three are
+one expression:
 
 ```text
 x.f(a)        f(x, a)        x |> f(a)
 ```
+
+Which types have one is set out below, and it is six of them rather than all.
+`f(x, a)` and `x |> f(a)` always work — they are the same call written two
+ways — while `x.f(a)` needs `f` to be on the table for whatever `x` is.
+`"abc".sha256()` is therefore `RT027`, and `sha256("abc")` is how it is spelled.
 
 A method is an ordinary function with its first parameter already supplied. That
 first parameter disappears from the signature, so arity checking, defaults and

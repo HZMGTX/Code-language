@@ -61,6 +61,33 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   program's output, which is also the better fixture: it shows the warning *and*
   that the statement really did nothing.
 
+- **The spec said three spellings of a call are one expression, and for 95
+  functions they are two.** §4.7 opened with *"Every standard-library function
+  takes its subject first, so these three are the same expression"* and then
+  showed `x.f(a)`, `f(x, a)` and `x |> f(a)`. Six paragraphs later it says
+  correctly that method tables come from six modules — but a reader who stops at
+  the table has been told something that is not so:
+
+  ```text
+  sha256("abc")        → ba7816bf…
+  "abc" |> sha256()    → ba7816bf…
+  "abc".sha256()       → RT027: Str has no method `sha256`
+  ```
+
+  The run-time message is already the best of the three, listing every method
+  `Str` does have. It was only the promise that was wrong, and it says now which
+  types have a table and that the other two spellings always work.
+
+  §4.7's two lists — the six types with a table, and the five functions on every
+  value — are **checked against the real tables** now. Prose about a data
+  structure is exactly what goes quietly stale, and this one decides whether a
+  call has three spellings or two.
+
+  Found by sweeping the conventions `docs/stdlib.md` states, one at a time,
+  against the whole library. The other two came out clean: every function in a
+  module about a type takes that type first, bar three constructors and the two
+  randomness-over-lists functions, which take *their* subject first.
+
 - **Four commands accepted an option they do not have.** `run` and `serve` have
   refused one since somebody typed `lumen run --colour app.lm` and was told the
   *file* `--colour` could not be read. `check`, `test`, `repl`, `lsp` and `fmt`
