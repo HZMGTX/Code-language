@@ -149,8 +149,27 @@ export class Parser {
      * however many sub-parsers it takes to read it.
      */
     depth = 0,
+    /**
+     * What this parser is reading, for the "found the end of …" half of a
+     * message.
+     *
+     * Each `${…}` is parsed by its own `Parser` over the fragment's source, so
+     * its `eof` is the end of the *fragment* — and a parse error inside one
+     * said "expected an expression, found end of file" pointing at line 2 of a
+     * ten-line file. Every other position in the diagnostic was right, which
+     * made the one wrong word harder to disbelieve.
+     */
+    private readonly reading: 'file' | 'interpolation' = 'file',
   ) {
     this.depth = depth;
+  }
+
+  /** `describeToken`, with this parser's idea of where its input ends. */
+  private found(tok: Token): string {
+    if (tok.kind === 'eof' && this.reading === 'interpolation') {
+      return 'the end of the interpolation';
+    }
+    return describeToken(tok);
   }
 
   // ------------------------------------------------------------- navigation
@@ -191,7 +210,7 @@ export class Parser {
     const where = context === undefined ? '' : ' ' + context;
     return this.fail(
       'PA001',
-      'expected ' + describe(kind) + where + ', found ' + describeToken(this.cur()),
+      'expected ' + describe(kind) + where + ', found ' + this.found(this.cur()),
       'expected ' + describe(kind),
     );
   }
@@ -356,7 +375,7 @@ export class Parser {
       if (!this.at('eof')) {
         this.fail(
           'PA002',
-          'unexpected ' + describeToken(this.cur()) + ' after expression',
+          'unexpected ' + this.found(this.cur()) + ' after expression',
           'not part of the expression',
         );
       }
@@ -403,11 +422,22 @@ export class Parser {
       return;
     }
     if (this.atAny('}', 'eof')) return;
+    // A `:` here almost always means a map literal was written where a `{`
+    // opened a block. `1 => { a: 1 }` reads as an arm whose body is a block
+    // containing the statement `a`, and then the `:` has nowhere to go — so the
+    // standing advice, "expected a line break or `;` here", is advice that
+    // cannot be followed: no line break makes that a map. Parentheses do.
+    const looksLikeAMap = this.at(':');
     this.fail(
       'PA003',
-      'unexpected ' + describeToken(this.cur()) + ' after statement',
+      'unexpected ' + this.found(this.cur()) + ' after statement',
       'expected a line break or `;` here',
-      [{ message: 'statements in Lumen end at the end of the line; semicolons are optional' }],
+      looksLikeAMap
+        ? [
+            { message: 'a `{` after `=>`, or at the start of a statement, opens a block' },
+            { message: 'for a map literal there, put it in parentheses: `({ a: 1 })`' },
+          ]
+        : [{ message: 'statements in Lumen end at the end of the line; semicolons are optional' }],
     );
   }
 
@@ -925,7 +955,7 @@ export class Parser {
 
     return this.fail(
       'PA007',
-      'expected a pattern, found ' + describeToken(this.cur()),
+      'expected a pattern, found ' + this.found(this.cur()),
       'not a pattern',
       [{ message: 'patterns are `_`, a name, a literal, `Name(..)`, `Name { .. }`, or `[..]`' }],
     );
@@ -1424,7 +1454,13 @@ export class Parser {
             this.skipNewlines();
           });
           this.expect('}', 'to close a struct literal');
-          return { kind: 'StructLit', name: tok.text, fields, span: this.spanFrom(tok) };
+          return {
+            kind: 'StructLit',
+            name: tok.text,
+            nameSpan: tok.span,
+            fields,
+            span: this.spanFrom(tok),
+          };
         }
         return { kind: 'Ident', name: tok.text, span: tok.span };
       }
@@ -1432,7 +1468,7 @@ export class Parser {
       default:
         return this.fail(
           'PA010',
-          'expected an expression, found ' + describeToken(tok),
+          'expected an expression, found ' + this.found(tok),
           'not an expression',
         );
     }
@@ -1460,7 +1496,7 @@ export class Parser {
         } else {
           this.fail(
             'PA011',
-            'expected a map key, found ' + describeToken(this.cur()),
+            'expected a map key, found ' + this.found(this.cur()),
             'not a key',
             [{ message: 'keys are names, strings, or `[expr]` for a computed key' }],
           );
@@ -1579,7 +1615,7 @@ export class Parser {
         const subTokens = lex(part.source, this.file, part.span.start);
         // The depth is passed on, so `"${"${…}"}"` shares one budget with the
         // file it is in rather than starting again from zero.
-        const sub = new Parser(subTokens, this.file, this.source, this.depth + 1);
+        const sub = new Parser(subTokens, this.file, this.source, this.depth + 1, 'interpolation');
         parts.push({ kind: 'expr', expr: sub.parseExpressionEntry() });
       } catch (err) {
         if (err instanceof LumenError) {

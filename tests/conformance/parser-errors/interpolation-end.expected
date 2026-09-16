@@ -1,0 +1,6 @@
+error[PA010]: expected an expression, found the end of the interpolation
+ --> interpolation-end.lm:9:22
+  |
+9 | print("hello ${name +} there")
+  |                      ^ not an expression
+  |

@@ -1,0 +1,23 @@
+// Every radix literal that is valid, and the ways one may legally be followed.
+print(0b101)
+print(0B101)
+print(0o17)
+print(0O17)
+print(0xff)
+print(0xFF)
+print(0X1f)
+print(0b1_0_1)
+print(0xff_ff)
+
+// Followed by an operator, a method, a keyword — none of which touches it.
+print(0xff + 1)
+print(0b101 * 2)
+print(0x1f.str())
+print(0b101 and true)
+print([0b1, 0o2, 0x3])
+
+// And the decimal forms, which take a different path entirely.
+print(255)
+print(1_000)
+print(1.5)
+print(1e3)

@@ -130,6 +130,33 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
     answered `["a", "b"]`, which looks like an answer and was an accident of
     which branch ran first. Refused now, with the reason.
 
+- **Four diagnostics that named the wrong thing.**
+
+  - **A digit the radix does not admit ended the literal silently.**
+    `print(0b1012)` said ``expected `)` to close this call, found `2` `` — so
+    the reader goes looking for a missing bracket, and the `2` is the mistake.
+    `0xfg` did the same with a letter. Nothing legal can touch the end of a
+    radix literal (an operator or a `.` needs no space but is neither a letter
+    nor a digit, and `0b101 and true` has one), so an adjacent alphanumeric is
+    reported with what the radix does admit.
+  - **A parse error inside `${…}` said "found end of file" in the middle of the
+    file.** Each interpolation is parsed by its own sub-parser over the
+    fragment's source, so its end of input *is* the end of the fragment. Every
+    other position in the diagnostic was right, which made the one wrong word
+    harder to disbelieve. It says "found the end of the interpolation" now.
+  - **`{` after `=>` gave advice that cannot be followed.** `1 => { a: 1 }`
+    reads as an arm whose body is a block containing the statement `a`, and then
+    the `:` has nowhere to go — and the message said "expected a line break or
+    `;` here", which no line break can satisfy, because the writer wanted a map.
+    Two notes now say that a `{` there opens a block and that parentheses are
+    how to write a map literal in that position.
+  - **`RS001` underlined a whole struct literal.** An undefined
+    `Point { x: 1, y: 2, label: "origin" }` had the entire literal underlined,
+    fields and all, when the only thing not defined is `Point` — and the fields
+    are usually the longer half. Every declaration in this language already
+    carries the span of its own name for exactly this reason; a struct literal
+    now does too.
+
 - **The formatter pushed a comment out of the statement it annotated.**
 
   ```lumen

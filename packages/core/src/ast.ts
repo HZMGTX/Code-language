@@ -207,6 +207,13 @@ export interface FieldInit extends NodeBase {
 export interface StructLit extends NodeBase {
   readonly kind: 'StructLit';
   readonly name: string;
+  /**
+   * Where the type name itself is; see `LetDecl.nameSpan`.
+   *
+   * `RS001` for an undefined `Point { x: 1, y: 2 }` underlined the whole
+   * literal, fields and all, when the only thing not defined is `Point`.
+   */
+  readonly nameSpan: Span;
   readonly fields: readonly FieldInit[];
 }
 

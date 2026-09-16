@@ -756,7 +756,10 @@ class Resolver {
         return;
 
       case 'StructLit':
-        this.use(expr.name, expr.span);
+        // The name, not the whole literal: underlining `Point { x: 1, y: 2 }`
+        // for an undefined `Point` points at everything except the part that is
+        // wrong, and the fields are usually the longer half.
+        this.use(expr.name, expr.nameSpan);
         for (const field of expr.fields) this.expr(field.value);
         return;
 

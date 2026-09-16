@@ -30,15 +30,25 @@ const isIdentStart = (c: string): boolean =>
   (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c === '_';
 const isIdentPart = (c: string): boolean => isIdentStart(c) || isDigit(c);
 
+/** `a binary`, `an octal` or `a hexadecimal`, for a message about a digit. */
+function radixName(radix: number): string {
+  if (radix === 2) return 'a binary';
+  if (radix === 8) return 'an octal';
+  return 'a hexadecimal';
+}
+
 /** The letter after `0` in `0x1f`, `0b1010`, `0o17`, and what it admits. */
-const RADIX_PREFIXES: ReadonlyMap<string, { radix: number; test: (c: string) => boolean }> =
+const RADIX_PREFIXES: ReadonlyMap<
+  string,
+  { radix: number; test: (c: string) => boolean; admits: string }
+> =
   new Map([
-    ['x', { radix: 16, test: isHex }],
-    ['X', { radix: 16, test: isHex }],
-    ['b', { radix: 2, test: (c: string) => c === '0' || c === '1' }],
-    ['B', { radix: 2, test: (c: string) => c === '0' || c === '1' }],
-    ['o', { radix: 8, test: (c: string) => c >= '0' && c <= '7' }],
-    ['O', { radix: 8, test: (c: string) => c >= '0' && c <= '7' }],
+    ['x', { radix: 16, test: isHex, admits: '0-9, a-f and A-F' }],
+    ['X', { radix: 16, test: isHex, admits: '0-9, a-f and A-F' }],
+    ['b', { radix: 2, test: (c: string) => c === '0' || c === '1', admits: '0 and 1' }],
+    ['B', { radix: 2, test: (c: string) => c === '0' || c === '1', admits: '0 and 1' }],
+    ['o', { radix: 8, test: (c: string) => c >= '0' && c <= '7', admits: '0 to 7' }],
+    ['O', { radix: 8, test: (c: string) => c >= '0' && c <= '7', admits: '0 to 7' }],
   ]);
 
 export class Lexer {
@@ -105,13 +115,20 @@ export class Lexer {
     return false;
   }
 
-  private error(code: string, message: string, from: Pos, label?: string): void {
+  private error(
+    code: string,
+    message: string,
+    from: Pos,
+    label?: string,
+    notes?: readonly string[],
+  ): void {
     this.diagnostics.push({
       severity: 'error',
       code,
       message,
       span: span(from, this.here()),
       ...(label === undefined ? {} : { label }),
+      ...(notes === undefined ? {} : { notes: notes.map((message) => ({ message })) }),
     });
   }
 
@@ -285,6 +302,32 @@ export class Lexer {
           this.error('LX005', 'number literal `' + text + '` has no digits', start, 'expected digits here');
           this.push('number', text, start, { num: 0 });
           return;
+        }
+        // A digit the radix does not admit ends the literal silently, and the
+        // parser then complains about whatever is left over: `print(0b1012)`
+        // said "expected `)` to close this call, found `2`", which sends the
+        // reader looking for a missing bracket. The `2` is the mistake, and a
+        // digit immediately after a complete radix literal is never anything
+        // else — there is no operator between them and no way to mean it.
+        // Any letter or digit touching the end of the literal, not only one that
+        // looks like a digit: `0xfg` gave "expected `)` to close this call,
+        // found `g`" for the same reason `0b1012` blamed the bracket. Nothing
+        // legal can be adjacent — an operator or a `.` needs no space but is
+        // neither, and `0b101 and true` has one.
+        const stray = this.peek();
+        if (/[0-9A-Za-z]/.test(stray)) {
+          const at = this.here();
+          this.advance();
+          this.error(
+            'LX005',
+            '`' + stray + '` is not ' + radixName(spec.radix) + ' digit',
+            at,
+            'not valid here',
+            [
+              '`' + text + '` is ' + radixName(spec.radix) + ' literal, so it admits ' +
+                spec.admits,
+            ],
+          );
         }
         this.push('number', text, start, { num: Number.parseInt(digits, spec.radix) });
         return;

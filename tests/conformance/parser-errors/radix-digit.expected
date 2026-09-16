@@ -1,0 +1,7 @@
+error[LX005]: `2` is not a binary digit
+  --> radix-digit.lm:11:12
+   |
+11 | print(0b1012)
+   |            ^ not valid here
+   |
+   = note: `0b101` is a binary literal, so it admits 0 and 1
