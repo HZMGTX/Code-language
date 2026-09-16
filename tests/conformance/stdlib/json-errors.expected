@@ -19,6 +19,9 @@ invalid JSON at line 1, column 2: `\x` is not an escape JSON knows
 invalid JSON at line 1, column 2: `\u` needs four hex digits after it
 invalid JSON at line 1, column 9: the document ended here, and then there was `{`
 invalid JSON at line 3, column 29: a trailing comma: JSON has no comma before `]`
+invalid JSON at line 1, column 6: a trailing comma: JSON has no comma before `]`
+invalid JSON at line 1, column 7: a trailing comma: JSON has no comma before `]`
+invalid JSON at line 1, column 10: a trailing comma: JSON has no comma before `}`
 ok {a: 2}
 ok []
 ok {a: [1, 2]}

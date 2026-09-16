@@ -399,15 +399,16 @@ function invalidJson(text: string): string {
   // The two disagreeing is possible in principle — they are different code —
   // and the honest answer to that is the old one rather than a guess.
   if (wrong === undefined) return 'invalid JSON';
-  let line = 1;
-  let col = 1;
-  for (let k = 0; k < wrong.at && k < text.length; k += 1) {
-    if (text[k] === '\n') {
-      line += 1;
-      col = 1;
-    } else col += 1;
-  }
-  return 'invalid JSON at line ' + String(line) + ', column ' + String(col) + ': ' + wrong.message;
+  const before = text.slice(0, wrong.at);
+  // The column is counted in **code points**, because that is what a character
+  // is everywhere else here — `std/str.len` and `slice`, and the `at` a regex
+  // match reports. Counting the host's UTF-16 units instead put the column one
+  // past the mark for every emoji earlier on the line, which is the same
+  // off-by-one three other functions had and is no better for being in a
+  // message rather than in a return value.
+  const line = before.split('\n').length;
+  const column = [...before.slice(before.lastIndexOf('\n') + 1)].length + 1;
+  return 'invalid JSON at line ' + String(line) + ', column ' + String(column) + ': ' + wrong.message;
 }
 
 /**

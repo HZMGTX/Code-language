@@ -58,6 +58,14 @@ let config = "{
 }"
 print(why(config))
 
+// The column is a code point, like every other position in Lumen. `["🎉",]`
+// has its `]` as the sixth character; counting the host's UTF-16 units said
+// seven, which is the same off-by-one three other functions had and is no
+// better for being in a message than in a return value.
+print(why("[\"🎉\",]"))
+print(why("[\"ab\",]"))
+print(why("{\"🎉\": 1, }"))
+
 // And what still parses. A duplicate key is not an error: JSON allows it and
 // every parser takes the last, so refusing it would reject real documents.
 print(why("{\"a\": 1, \"a\": 2}"))

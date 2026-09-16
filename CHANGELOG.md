@@ -130,6 +130,19 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
     answered `["a", "b"]`, which looks like an answer and was an accident of
     which branch ran first. Refused now, with the reason.
 
+- **And a fifth, in the JSON locator added above.** The column it reports was
+  counted in the host's UTF-16 units, so `["🎉",]` said column 7 where the `]`
+  is the sixth character. Found by asking the same question of every function
+  that hands back a position, which is what the previous four should have
+  prompted immediately. Counting the *rest* of the library that way also turned
+  up the one place the units genuinely differ on purpose, now written down in
+  `ROADMAP.md`: a span's `col` is UTF-16 because that is what LSP means by a
+  character, which is why the language server needs no conversion — and the
+  terminal caret inherits it, so it is right for ASCII, right by coincidence
+  for an emoji, and a cell out after a combining mark or a CJK character.
+  Placing it properly means the East Asian Width table, which is a dependency
+  this project will not take.
+
 - **A regex match could not be found at the position it reported.** `std/regex`
   handed back the engine's UTF-16 offset while every position in Lumen is a code
   point, so `at` pointed one place past the match for every astral character
