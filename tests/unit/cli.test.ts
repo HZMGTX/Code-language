@@ -115,6 +115,31 @@ describe('program arguments', () => {
     }
   });
 
+  it('refuses an option no command has, whichever command it is', async () => {
+    // `run` and `serve` have rejected one since somebody typed
+    // `lumen run --colour app.lm` and was told the *file* `--colour` could not
+    // be read. Four commands never got the same treatment, and two of them made
+    // the identical mistake in a different shape:
+    //
+    //     lumen check --colour   →   no `.lm` files found under ./--colour
+    //
+    // A path is where those commands put anything that is not an option, so a
+    // mistyped flag became a directory nobody meant. `repl` and `lsp` ignored
+    // whatever they were handed, which is the quieter version of the same.
+    for (const command of ['check', 'test', 'repl', 'lsp', 'fmt']) {
+      const { code, out } = await run([command, '--bogus']);
+      assert.equal(code, 2, command + ' accepted an unknown option: ' + out);
+      assert.match(out, new RegExp('unknown option `--bogus` for `' + command + '`', 'u'), out);
+    }
+  });
+
+  it('still accepts the options that do exist', async () => {
+    // The other half, and the reason the check takes an allow-list rather than
+    // refusing every flag: `fmt --check` is a real option and has to survive.
+    const { code } = await run(['fmt', '--check']);
+    assert.equal(code, 0);
+  });
+
   it('passes flag-shaped arguments through to the program', async () => {
     // The CLI rejects unknown options of its own, so these have to be
     // recognised as the program's rather than its.

@@ -55,6 +55,28 @@ const COMMANDS = [
 ] as const;
 
 /**
+ * Refuse an option a command does not have.
+ *
+ * `fileArg` below has done this for `run` and `serve` since the day somebody
+ * typed `lumen run --colour app.lm` and was told the file `--colour` could not
+ * be read. Four commands never got the same treatment, and two of them made
+ * exactly that mistake in a different shape:
+ *
+ *     lumen check --colour   →   no `.lm` files found under ./--colour
+ *
+ * A path is where these commands put anything that is not an option, so a
+ * mistyped flag became a directory nobody meant. `repl` and `lsp` took no
+ * arguments at all and silently ignored whatever they were given, which is the
+ * quieter version of the same thing.
+ */
+function rejectOptions(command: string, rest: readonly string[], allowed: readonly string[] = []): void {
+  for (const arg of rest) {
+    if (!arg.startsWith('-') || allowed.includes(arg)) continue;
+    usageError('unknown option `' + arg + '` for `' + command + '`');
+  }
+}
+
+/**
  * The file argument for a command, rejecting options.
  *
  * Without this, `lumen run --colour app.lm` took `--colour` for the filename
@@ -86,10 +108,12 @@ async function main(argv: readonly string[]): Promise<void> {
 
   switch (first) {
     case 'repl':
+      rejectOptions('repl', rest);
       await startRepl();
       return;
 
     case 'lsp':
+      rejectOptions('lsp', rest);
       await startLanguageServer();
       return;
 
@@ -107,21 +131,23 @@ async function main(argv: readonly string[]): Promise<void> {
     }
 
     case 'check':
+      rejectOptions('check', rest);
       await checkFiles(rest[0] ?? '.');
       return;
 
     case 'fmt': {
       // `--check` may come before or after the path: both orders are things
       // people type, and rejecting one of them teaches nothing.
-      const flags = rest.filter((a) => a.startsWith('-'));
-      for (const flag of flags) {
-        if (flag !== '--check') usageError('unknown option `' + flag + '` for `fmt`');
-      }
-      await formatFiles(rest.find((a) => !a.startsWith('-')) ?? '.', flags.includes('--check'));
+      rejectOptions('fmt', rest, ['--check']);
+      await formatFiles(
+        rest.find((a) => !a.startsWith('-')) ?? '.',
+        rest.includes('--check'),
+      );
       return;
     }
 
     case 'test':
+      rejectOptions('test', rest);
       await runTests(rest[0] ?? '.');
       return;
 

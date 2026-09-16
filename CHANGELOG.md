@@ -61,6 +61,26 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   program's output, which is also the better fixture: it shows the warning *and*
   that the statement really did nothing.
 
+- **Four commands accepted an option they do not have.** `run` and `serve` have
+  refused one since somebody typed `lumen run --colour app.lm` and was told the
+  *file* `--colour` could not be read. `check`, `test`, `repl`, `lsp` and `fmt`
+  never got the same treatment, and two of them made the identical mistake in a
+  different shape:
+
+  ```text
+  lumen check --colour   →   no `.lm` files found under ./--colour
+  ```
+
+  A path is where those commands put anything that is not an option, so a
+  mistyped flag became a directory nobody meant — the exact reading the older
+  check was written to prevent. `repl` and `lsp` took no arguments at all and
+  silently ignored whatever they were handed, which is the quieter version of
+  the same thing.
+
+  All of them share one check now, with an allow-list so `fmt --check` survives,
+  and everything after a filename still belongs to the program rather than to
+  the CLI.
+
 - **A golden file cannot record a program that did not run.** The companion to
   the fix above, and the one that needs no maintenance: `npm run test:update`
   writes down whatever happens, so a regression that stops programs running gets
