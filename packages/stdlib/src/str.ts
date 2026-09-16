@@ -18,13 +18,14 @@
  * and it is drawn in the same place by everything here.
  */
 
-import { bool, list, num, str, type Value } from '@lumen-lang/core';
+import { bool, type CallCtx, list, num, str, type Value } from '@lumen-lang/core';
 import {
   Err,
   None,
   Ok,
   Some,
   arg,
+  codePointCount,
   expectInt,
   expectStr,
   fn,
@@ -54,7 +55,7 @@ function codePointIndexOf(haystack: string, needle: string): number {
   const at = haystack.indexOf(needle);
   // `-1` is not found and `0` is the same number in both counts.
   if (at <= 0) return at;
-  return [...haystack.slice(0, at)].length;
+  return codePointCount(haystack.slice(0, at));
 }
 
 /**
@@ -71,10 +72,43 @@ function codePointIndexOf(haystack: string, needle: string): number {
  * JavaScript does and what a reader expects: `padStart("ab", 6, "xy")` is
  * `"xyxyab"` rather than `"xyxyxyab"`.
  */
-function padded(s: string, width: number, fill: string, side: 'start' | 'end'): string {
-  const length = [...s].length;
+/**
+ * The longest string the host will hold, which is what these have to refuse.
+ *
+ * `range()` has turned an out-of-memory into an `RT035` since v0.1 — *"to turn
+ * OOM into an error"* — and the four functions that build a string of a length
+ * the caller chose had no equivalent. `repeat("x", 600000000)` printed
+ * `lumen: internal error` with V8's own `RangeError: Invalid string length` and
+ * a JavaScript stack trace under it, and `padStart("x", 600000000)` did not get
+ * that far: it aborted the process on out-of-memory with no diagnostic at all.
+ *
+ * The number is V8's own, `2**29 - 24` on a 64-bit host, so nothing that would
+ * work is refused. A host with a smaller limit raises its own `RangeError`
+ * instead, which `tooLong` catches and answers in the same words — the guard is
+ * a better message, not the only one.
+ */
+const MAX_STRING = 2 ** 29 - 24;
+
+/** The sentence both paths give, so the host's limit and ours read alike. */
+function tooLong(what: string, wanted: number, ctx: CallCtx): never {
+  return ctx.panic(what + ' of ' + wanted + ' characters is too large', [
+    'the longest string is ' + MAX_STRING + ' characters',
+  ]);
+}
+
+function padded(
+  s: string,
+  width: number,
+  fill: string,
+  side: 'start' | 'end',
+  ctx: CallCtx,
+): string {
+  const length = codePointCount(s);
   const units = [...fill];
   if (units.length === 0 || length >= width) return s;
+  // Before building it, not after: the failure this prevents is the process
+  // running out of memory, which leaves nothing to report the problem with.
+  if (width > MAX_STRING) tooLong('padding to a width', width, ctx);
   let made = '';
   for (let i = 0; i < width - length; i += 1) made += units[i % units.length];
   return side === 'start' ? made + s : s + made;
@@ -201,7 +235,9 @@ export function stdStr(): Map<string, Value> {
     fn('repeat', ['s', 'count'], (a, c) => {
       const count = expectInt(arg(a, 1), c, 'repeat count');
       if (count < 0) c.panic('repeat count must not be negative, got ' + count);
-      return str(expectStr(arg(a, 0), c, 'repeat(s)').repeat(count));
+      const subject = expectStr(arg(a, 0), c, 'repeat(s)');
+      if (subject.length * count > MAX_STRING) tooLong('a string', subject.length * count, c);
+      return str(subject.repeat(count));
     }),
 
     fn('padStart', ['s', 'width', { name: 'fill', defaultValue: str(' ') }], (a, c) =>
@@ -211,6 +247,7 @@ export function stdStr(): Map<string, Value> {
           expectInt(arg(a, 1), c, 'padStart width'),
           expectStr(arg(a, 2), c, 'padStart fill'),
           'start',
+          c,
         ),
       ),
     ),
@@ -222,13 +259,14 @@ export function stdStr(): Map<string, Value> {
           expectInt(arg(a, 1), c, 'padEnd width'),
           expectStr(arg(a, 2), c, 'padEnd fill'),
           'end',
+          c,
         ),
       ),
     ),
 
     fn('reverse', ['s'], (a, c) => str([...expectStr(arg(a, 0), c, 'reverse(s)')].reverse().join(''))),
 
-    fn('len', ['s'], (a, c) => num([...expectStr(arg(a, 0), c, 'len(s)')].length)),
+    fn('len', ['s'], (a, c) => num(codePointCount(expectStr(arg(a, 0), c, 'len(s)')))),
 
     fn('isEmpty', ['s'], (a, c) => bool(expectStr(arg(a, 0), c, 'isEmpty(s)').length === 0)),
 
@@ -303,12 +341,17 @@ export function stdStr(): Map<string, Value> {
       const width = expectInt(arg(a, 1), c, 'center width');
       const pad = expectStr(arg(a, 2), c, 'center pad');
       if (pad === '') return c.panic('center needs a non-empty pad');
-      const length = [...s].length;
+      const length = codePointCount(s);
       if (length >= width) return str(s);
+      // The whole width, before either half is built. `padded` guards its own
+      // width, and `center` calls it twice — so the inner call, at half the
+      // total, passed that guard and ran out of memory before the outer one was
+      // ever reached.
+      if (width > MAX_STRING) tooLong('centring to a width', width, c);
       // Left first, so an odd remainder goes on the right — which is where a
       // reader expects the extra one, and matches `"x".center(4)`.
       const left = Math.floor((width - length) / 2);
-      return str(padded(padded(s, length + left, pad, 'start'), width, pad, 'end'));
+      return str(padded(padded(s, length + left, pad, 'start', c), width, pad, 'end', c));
     }),
 
     /** The text with a prefix removed, if it is there. */

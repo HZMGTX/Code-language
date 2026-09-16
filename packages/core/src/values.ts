@@ -526,6 +526,21 @@ export class Env {
 }
 
 /**
+ * How many code points a string holds, without building a list of them.
+ *
+ * `[...s].length` was the obvious spelling and allocates an array as long as
+ * the string, so counting one the host had just made without trouble ran out of
+ * memory. Iterating a string yields its code points one at a time, so this is
+ * the same answer in constant space. `std/str` has the same helper for the same
+ * reason; `core` cannot import it, which is the rule this package is built on.
+ */
+export function codePointCount(text: string): number {
+  let n = 0;
+  for (const _ of text) n += 1;
+  return n;
+}
+
+/**
  * Everything the interpreter needs from the outside world. `core` never imports
  * a host API directly; the CLI supplies this, which is what keeps the language
  * portable to a browser later.

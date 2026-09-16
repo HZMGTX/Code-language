@@ -94,6 +94,20 @@ export function arg(args: readonly Value[], i: number): Value {
   return args[i] ?? NIL;
 }
 
+/**
+ * How many code points a string holds, without building a list of them.
+ *
+ * `[...s].length` was the obvious spelling and allocates an array as long as
+ * the string: `repeat("x", 536870000).len()` ran out of memory counting a
+ * string the host had just made without trouble. Iterating a string yields its
+ * code points one at a time, so this is the same answer in constant space.
+ */
+export function codePointCount(text: string): number {
+  let n = 0;
+  for (const _ of text) n += 1;
+  return n;
+}
+
 export function expectStr(value: Value, ctx: CallCtx, what: string): string {
   if (value.k !== 'str') ctx.panic(what + ' must be a Str, got ' + typeName(value));
   return value.v;

@@ -61,6 +61,38 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   program's output, which is also the better fixture: it shows the warning *and*
   that the statement really did nothing.
 
+- **A string too large to hold is a diagnostic now, not a crash.** `range()` has
+  turned an out-of-memory into an `RT035` since v0.1 — its comment says *"to
+  turn OOM into an error"* — and the four functions that build a string of a
+  length the caller chose had no equivalent:
+
+  ```text
+  repeat("x", 600000000)      → lumen: internal error
+                                RangeError: Invalid string length
+                                    at String.repeat (<anonymous>)      ← V8's, with a JS stack
+  padStart("x", 600000000)    → <--- Last few GCs --->                  ← the process, aborted
+  ```
+
+  The second is the worse one: there is nothing left to report a problem with
+  once the heap is gone. The limit used is the host's own number, so nothing
+  that would work is refused — 536,870,888 characters is accepted and one more
+  is not.
+
+  `center` needed a guard of its own. It pads twice, and the inner call at half
+  the width passed `padded`'s check and ran out of memory before the outer one
+  was ever reached.
+
+- **Counting a long string no longer builds a list of its characters.**
+  `[...s].length` is the obvious way to count code points and allocates an array
+  as long as the string, so `repeat("x", 536870000).len()` ran out of memory
+  counting one the host had just made without trouble. Iterating yields code
+  points one at a time, which is the same answer in constant space — and the
+  `strings` benchmark is unchanged, measured interleaved.
+
+  Five places counted that way, in `std/str`, `std/regex` and the interpreter's
+  own `len`. The last needed the helper written twice, since `core` imports
+  nothing.
+
 - **The spec said three spellings of a call are one expression, and for 95
   functions they are two.** §4.7 opened with *"Every standard-library function
   takes its subject first, so these three are the same expression"* and then

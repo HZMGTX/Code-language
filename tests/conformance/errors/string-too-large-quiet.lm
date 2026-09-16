@@ -1,0 +1,22 @@
+// The sizes anybody actually asks for, unaffected.
+//
+// The companion to `string-too-large.lm`. A guard against an out-of-memory is
+// worth nothing if it refuses a program that works, and the limit is the host's
+// own number for exactly that reason.
+import { repeat, padStart, padEnd, center, len } from "std/str"
+
+print(repeat("-", 20))
+print(repeat("ab", 3))
+print(repeat("x", 0))
+print(padStart("7", 3, "0"))
+print(padEnd("7", 3, "0"))
+print(center("x", 5, "-"))
+print(center("ab", 7, "."))
+
+// A megabyte is an ordinary thing to build and is nowhere near the limit.
+print(len(repeat("x", 1000000)))
+
+// And counting a long string does not build a list of its characters, which is
+// what made `repeat("x", 536870000).len()` run out of memory on a string the
+// host had just made without trouble.
+print(len(repeat("🎉", 100000)))

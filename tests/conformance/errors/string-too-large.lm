@@ -1,0 +1,22 @@
+// A string too large to hold is a diagnostic, not a crash.
+//
+// `range()` has turned an out-of-memory into an `RT035` since v0.1 — *"to turn
+// OOM into an error"* — and the four functions that build a string of a length
+// the caller chose had no equivalent:
+//
+//   - `repeat("x", 600000000)` printed `lumen: internal error` with V8's own
+//     `RangeError: Invalid string length` and a JavaScript stack under it.
+//   - `padStart("x", 600000000)` did not get that far. It aborted the process
+//     on out-of-memory, with no diagnostic at all — there is nothing left to
+//     report a problem with once the heap is gone.
+//
+// The limit is the host's own, so nothing that would work is refused. `center`
+// needed its own check: it pads twice, and the inner call at half the width
+// passed `padded`'s guard and ran out of memory before the outer one was ever
+// reached.
+import { repeat, padStart, center } from "std/str"
+
+// Each of the three guards, the first of which stops the program.
+print(padStart("x", 600000000))
+print(center("x", 600000000))
+print(repeat("x", 600000000))

@@ -26,6 +26,7 @@ import type {
 import { LumenError, type Diagnostic, type Note, type Span } from './diagnostics.js';
 import { parse } from './parser.js';
 import {
+  codePointCount,
   Env,
   NIL,
   NONE,
@@ -1965,7 +1966,7 @@ function installBuiltins(globals: Env): void {
       const value = args[0] ?? NIL;
       switch (value.k) {
         case 'str':
-          return num([...value.v].length);
+          return num(codePointCount(value.v));
         case 'list':
           return num(value.items.length);
         case 'map':

@@ -30,6 +30,7 @@
 
 import { NIL, bool, list, map, num, str, type Value } from '@lumen-lang/core';
 import {
+  codePointCount,
   Err,
   None,
   Ok,
@@ -118,7 +119,7 @@ const optionsFrom = (args: readonly Value[], at: number): readonly Value[] =>
  * being silently wrong for any text with an emoji in it.
  */
 function codePointsBefore(text: string, offset: number): number {
-  return offset <= 0 ? offset : [...text.slice(0, offset)].length;
+  return offset <= 0 ? offset : codePointCount(text.slice(0, offset));
 }
 
 /**
