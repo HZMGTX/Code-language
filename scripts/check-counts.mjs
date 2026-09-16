@@ -196,12 +196,17 @@ for (const [relative, family] of HEADERED) {
  * them: `lumen --version` could have said one thing while the packages said
  * another, and the first person to notice would have been a user.
  */
+// The manifests are found rather than listed, the same way `check-private.mjs`
+// finds them. That list was written out there too, `packages/lsp` was added to
+// the repository and not to it, and the language server spent the whole of v0.2
+// outside the check that stops an accidental publish. A sixth package would
+// have walked into the identical hole here.
 const VERSIONS = [
   ['package.json', /"version": "([^"]+)"/],
-  ['packages/core/package.json', /"version": "([^"]+)"/],
-  ['packages/stdlib/package.json', /"version": "([^"]+)"/],
-  ['packages/lsp/package.json', /"version": "([^"]+)"/],
-  ['packages/cli/package.json', /"version": "([^"]+)"/],
+  ...readdirSync(path.join(ROOT, 'packages'))
+    .map((entry) => path.join('packages', entry, 'package.json'))
+    .filter((relative) => existsSync(path.join(ROOT, relative)))
+    .map((relative) => [relative, /"version": "([^"]+)"/]),
   ['packages/core/src/index.ts', /export const VERSION = '([^']+)'/],
   ['packages/cli/src/support.ts', /export const VERSION = '([^']+)'/],
 ];

@@ -73,6 +73,12 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   covered the day it exists. A list of things that exist goes stale exactly as
   fast as a count of them, which this repository has now learned three times.
 
+- **The version check's manifest list is found rather than written out**, for
+  the same reason and before it could bite: a sixth package would have walked
+  into the identical hole `packages/lsp` fell into. The other hand-written list
+  in that file, the two passes whose headers name their diagnostic codes, was
+  checked and really is complete — the lexer, parser and interpreter list none.
+
 - **"Zero runtime dependencies" is checked.** It is the claim the project makes
   most loudly — the README, `docs/philosophy.md`, and the whole reason the
   language server was written against raw JSON-RPC rather than
