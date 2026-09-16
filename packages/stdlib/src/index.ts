@@ -280,7 +280,67 @@ export function checkOptions(globals: readonly string[]): ResolveOptions {
     closedPrefixes: ['std/'],
     signatures: stdSignatures(),
     methods: stdMethodSignatures(),
+    effectful: effectfulFunctions(),
   };
+}
+
+/**
+ * The modules whose every function is called for what it *does*.
+ *
+ * By module rather than by function, so a native added to `std/fs` tomorrow is
+ * effectful without anybody remembering to say so — and a native added to
+ * `std/str` is not, because one that reached the host would be a design error
+ * in the first place.
+ */
+const EFFECTFUL_MODULES: readonly string[] = ['std/fs', 'std/http', 'std/process', 'std/ai'];
+
+/**
+ * The effectful functions inside modules that are otherwise pure.
+ *
+ * `push` and `pop` are the two `docs/stdlib.md` names as the exceptions to
+ * *"nothing mutates unless its name says so"*, and this is the list that makes
+ * that rule a diagnostic instead of something to remember: their twenty
+ * neighbours answer with new values, so discarding one is `TY010` and
+ * discarding a `push` is not. `serve` starts a server; the rest read or write
+ * the console, and are here rather than relying on their `Nil` return so that
+ * changing one's return type cannot quietly turn it into a no-op warning.
+ */
+const EFFECTFUL_NAMES: readonly string[] = [
+  'push',
+  'pop',
+  'serve',
+  'print',
+  'exit',
+  'sleep',
+  'seed',
+  'input',
+  'inputAll',
+];
+
+/**
+ * Every effectful function's type, plus the method names that reach one.
+ *
+ * Types for the two channels that have them, because `std/fs.remove` and
+ * `std/map.remove` are different functions with one name. Names for the method
+ * channel, where a receiver's type is all there is to go on: a name meaning
+ * both stays silent for both, which is the safe direction.
+ */
+function effectfulFunctions(): ReadonlySet<Ty | string> {
+  const out = new Set<Ty | string>();
+  const namesFromEffectfulModules = new Set<string>(EFFECTFUL_NAMES);
+
+  for (const [module, exports] of stdModuleExports()) {
+    const wholeModule = EFFECTFUL_MODULES.includes(module);
+    for (const [name, ty] of exports) {
+      if (wholeModule) namesFromEffectfulModules.add(name);
+      if (wholeModule || EFFECTFUL_NAMES.includes(name)) out.add(ty);
+    }
+  }
+  for (const [name, ty] of stdSignatures()) {
+    if (namesFromEffectfulModules.has(name)) out.add(ty);
+  }
+  for (const name of namesFromEffectfulModules) out.add(name);
+  return out;
 }
 
 /** Both built once; parsing 200 signatures per checked file would be waste. */

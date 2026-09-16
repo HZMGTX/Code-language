@@ -598,6 +598,7 @@ Annotations are **checked where they are written**, before the program runs:
 | `TY007` | A call passes more arguments than the function takes |
 | `TY008` | A call leaves out an argument the function requires |
 | `TY009` | A `match` arm names a pattern the subject's type can never produce |
+| `TY010` | A statement's only call answers with a value nothing takes — a **warning** |
 
 `TY005` speaks only when **both** operand types are known. `1 - "x"` is reported;
 `a - "x"` for an unannotated `a` is not, because `a` is `Any`. That restraint is
@@ -700,6 +701,35 @@ Four restraints, the same no-false-positives rule as everywhere else:
 - **`nil` is never impossible.** It is the one value that legitimately turns up
   where a type says otherwise, so `match n { nil => ..., _ => ... }` guarding
   against exactly that is defensive rather than wrong.
+
+`TY010` is a warning rather than an error, the line `RS011` draws: the program
+runs, and a statement that does nothing is a mistake in what the author meant
+rather than in what the machine can do.
+
+```text
+var xs: List<Num> = [3, 1, 2]
+xs.sort()      ← warning[TY010]: this statement does nothing
+print(xs)      → [3, 1, 2]
+```
+
+`xs.sort()` is the first thing anyone arriving from Python or JavaScript writes,
+and it sorts nothing: `sort` answers with a new list and leaves its subject
+alone, as almost everything in the library does. `docs/stdlib.md` states that
+rule — *"nothing mutates unless its name says so"* — and this is what enforces
+it. The two functions named there as the exceptions, `push` and `pop`, do mutate
+and so are silent; their twenty neighbours are not and so are not. The library
+states that exception list in one place, so the rule and the diagnostic cannot
+drift apart.
+
+The restraints again keep it to what is known:
+
+- Only a call to a function the **library** described, by identity rather than
+  by name, so a program declaring its own `sort` is left alone.
+- Only when the answer's type is known and is not `Nil` — a function with
+  nothing to give back was obviously called for what it does.
+- Never the last statement of a block, which is the block's own value.
+- All three spellings alike, because §4.7 says they are one expression: `f(x)`,
+  `x.f()` and `x |> f()` warn or stay silent together.
 
 What is **not** checked in this pass: parameters and `var` bindings without
 annotations, anything requiring flow analysis, and generics — `map(xs, f)`

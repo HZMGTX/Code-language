@@ -27,6 +27,7 @@
  *   TY007  more arguments than the function takes
  *   TY008  a required argument the call does not supply
  *   TY009  a match arm the subject's type can never produce
+ *   TY010  a statement whose only call answers with a value nothing takes
  */
 
 import type {
@@ -41,7 +42,7 @@ import type {
   TypeExpr,
 } from './ast.js';
 import { BUILT_IN_ENUMS } from './ast.js';
-import { type Diagnostic, type Note, type Span } from './diagnostics.js';
+import { type Diagnostic, type Note, type Severity, type Span } from './diagnostics.js';
 import { parse } from './parser.js';
 
 // ------------------------------------------------------------------- types
@@ -239,6 +240,17 @@ class Checker {
   private readonly moduleExports: ReadonlyMap<string, ReadonlyMap<string, Ty>>;
   /** Where to send every type derived, when anybody wants them. */
   private readonly record: CheckOptions['record'];
+  /** Library functions called for an effect rather than for a value. */
+  private readonly effectful: ReadonlySet<Ty | string>;
+  /**
+   * Every type the library described, by identity.
+   *
+   * The test for "is this callee the library's?" — a name resolving to some
+   * *other* `Ty` is a binding the program declared, and what a program's own
+   * function does is not something this pass can know. Identity rather than
+   * name, because a program may perfectly well declare its own `sort`.
+   */
+  private readonly libraryTypes = new Set<Ty>();
   private scope: Scope;
   /** The declared return type of the function being checked, if any. */
   private returnTy: Ty = ANY;
@@ -247,6 +259,12 @@ class Checker {
     this.methods = options.methods ?? new Map();
     this.moduleExports = options.moduleExports ?? new Map();
     this.record = options.record;
+    this.effectful = options.effectful ?? new Set();
+    for (const ty of (options.signatures ?? new Map()).values()) this.libraryTypes.add(ty);
+    for (const ty of this.methods.values()) this.libraryTypes.add(ty);
+    for (const exports of this.moduleExports.values()) {
+      for (const ty of exports.values()) this.libraryTypes.add(ty);
+    }
     // The prelude, seeded into the scope everything else nests inside. Without
     // this every standard-library call was `Any` in and `Any` out, so
     // `upper(1)` passed every static check and failed when it ran.
@@ -358,12 +376,13 @@ class Checker {
     span: Span,
     label: string,
     notes?: readonly string[],
+    severity: Severity = 'error',
   ): void {
     const key = code + '@' + String(span.start.offset) + ':' + String(span.end.offset) + ' ' + message;
     if (this.reported.has(key)) return;
     this.reported.add(key);
     this.diagnostics.push({
-      severity: 'error',
+      severity,
       code,
       message,
       span,
@@ -399,7 +418,12 @@ class Checker {
   check(module: Module): readonly Diagnostic[] {
     this.collectTypes(module.stmts);
     this.hoist(module.stmts);
-    for (const stmt of module.stmts) this.stmt(stmt);
+    for (const [i, stmt] of module.stmts.entries()) {
+      this.stmt(stmt);
+      // A module has no value, but its last statement is what the REPL echoes,
+      // so it is left alone for the same reason a block's is.
+      if (i < module.stmts.length - 1) this.checkDiscarded(stmt);
+    }
     return this.diagnostics;
   }
 
@@ -452,7 +476,12 @@ class Checker {
     const saved = this.scope;
     this.scope = new Scope(saved);
     this.hoist(block.stmts);
-    for (const stmt of block.stmts) this.stmt(stmt);
+    for (const [i, stmt] of block.stmts.entries()) {
+      this.stmt(stmt);
+      // The last statement is the block's own value, so nothing about it is
+      // discarded — `fn f() { xs.sort() }` answers with the sorted list.
+      if (i < block.stmts.length - 1) this.checkDiscarded(stmt);
+    }
     inside?.();
     this.scope = saved;
   }
@@ -551,6 +580,89 @@ class Checker {
         this.stmt(stmt.declaration);
         return;
     }
+  }
+
+  /**
+   * `TY010`: a statement that is a call whose value nobody takes, to a function
+   * that has no other effect. The line does nothing.
+   *
+   *     var xs = [3, 1, 2]
+   *     xs.sort()            ← sorts nothing; `sort` answers with a new list
+   *     print(xs)            → [3, 1, 2]
+   *
+   * `xs.sort()` is the first thing anyone arriving from Python or JavaScript
+   * writes, and eleven statements like it ran silently: `sort`, `reverse`,
+   * `unique`, `take`, `insert`, `upper`, `trim`, `set`… every one of them
+   * answers with a new value and leaves its subject alone.
+   *
+   * `docs/stdlib.md` has always stated the rule — *"nothing mutates unless its
+   * name says so"* — and this is where it stops being something to remember.
+   * The two functions it names, `push` and `pop`, really do mutate, so they are
+   * listed as effectful and say nothing here; their twenty neighbours do not,
+   * and now say so. The rule and the diagnostic cannot drift apart, because the
+   * library states the exception list in one place.
+   *
+   * Reported as a **warning**: the program runs, and a line that does nothing
+   * is a mistake in what the author meant rather than in what the machine can
+   * do. Same line `RS011` draws.
+   *
+   * Only a call whose callee is the library's own — by object identity against
+   * the signature it was seeded with, so a user function shadowing `sort` is a
+   * function this pass knows nothing about and stays silent.
+   */
+  private checkDiscarded(stmt: Stmt): void {
+    if (stmt.kind !== 'ExprStmt') return;
+    // §4.7: `f(x)`, `x.f()` and `x |> f()` are three spellings of one
+    // expression, so all three have to answer alike here. Being silent about
+    // one of them is the drift this project keeps finding.
+    const call = stmt.expr.kind === 'PipelineExpr' ? stmt.expr.right : stmt.expr;
+    if (call.kind !== 'CallExpr') return;
+
+    const known = this.libraryCallee(call.callee);
+    if (known === undefined) return;
+    if (this.effectful.has(known.ty) || this.effectful.has(known.key)) return;
+    // No value to discard means it was called for what it does.
+    if (known.ty.k !== 'fn' || known.ty.ret.k === 'nil' || known.ty.ret.k === 'any') return;
+
+    this.report(
+      'TY010',
+      '`' + known.name + '` answers with a ' + showTy(known.ty.ret) + ' that nothing takes',
+      stmt.span,
+      'this statement does nothing',
+      [
+        '`' + known.name + '` leaves its subject alone and answers with a new value',
+        'take the answer or assign it back to the subject; on its own it is thrown away',
+      ],
+      'warning',
+    );
+  }
+
+  /**
+   * The library function a callee names, or undefined for anything else.
+   *
+   * Identity against the seeded signature is the whole guard: a name resolving
+   * to some *other* `Ty` is a binding the program declared, and what a
+   * program's own function does is not something this pass can know.
+   */
+  private libraryCallee(
+    callee: Expr,
+  ): { readonly key: string; readonly name: string; readonly ty: Ty } | undefined {
+    if (callee.kind === 'Ident') {
+      const ty = this.scope.lookup(callee.name);
+      if (ty === undefined || !this.libraryTypes.has(ty)) return undefined;
+      return { key: callee.name, name: callee.name, ty };
+    }
+    if (callee.kind !== 'MemberExpr') return undefined;
+    // `x.f()` is `f(x)`, so a binding named `f` wins over the method table. If
+    // that binding is the program's own, this pass knows nothing about it.
+    const local = this.scope.lookup(callee.name);
+    if (local !== undefined && !this.libraryTypes.has(local)) return undefined;
+    const receiver = typeNameOf(this.typeOf(callee.target));
+    if (receiver === undefined) return undefined;
+    const ty =
+      this.methods.get(receiver + '.' + callee.name) ?? this.methods.get('*.' + callee.name);
+    if (ty === undefined) return undefined;
+    return { key: callee.name, name: callee.name, ty };
   }
 
   private fnBody(params: readonly Param[], ret: TypeExpr | undefined, body: Block): void {
@@ -1215,6 +1327,25 @@ export interface CheckOptions {
    * `lumen check` pays nothing for it.
    */
   readonly record?: (expr: Expr, ty: Ty) => void;
+  /**
+   * Names and method keys of library functions called for their *effect*.
+   *
+   * Everything else with a declared signature answers with a value and does
+   * nothing else, so `xs.sort()` on a line of its own is a statement that does
+   * nothing — see `TY010`. The caller supplies the set for the same reason it
+   * supplies the signatures: this package knows no library.
+   *
+   * A function whose declared return type is `Nil` never needs listing. It has
+   * no value to discard, so it is obviously called for what it does.
+   *
+   * The types rather than the names, because the library has two `remove`s and
+   * two `write`s: `std/fs.remove` deletes a file and `std/map.remove` answers
+   * with a smaller map, and a set of names could not tell them apart. Method
+   * keys are named, though — `Str.read` and `Map.remove` reach the same two
+   * through a different channel, and there a name that means both stays silent
+   * for both, which errs the safe way.
+   */
+  readonly effectful?: ReadonlySet<Ty | string>;
 }
 
 /**

@@ -64,7 +64,8 @@ signature:
    This is what makes `xs |> filter(pred) |> map(f) |> sum()` read left to right.
 2. **Nothing mutates unless its name says so.** `push` and `pop` change their
    list in place; `set`, `remove`, `merge`, `sort` and `reverse` all return new
-   values.
+   values. The checker knows which is which: `xs.sort()` on a line of its own
+   is `TY010`, a statement that does nothing, while `xs.push(1)` is not.
 3. **Fallible operations return a `Result`; absence returns an `Option`.**
    Reading a file returns `Result`. Looking up a key returns `Option`. Neither
    ever raises for an ordinary failure.

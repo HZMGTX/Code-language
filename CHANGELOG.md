@@ -34,6 +34,47 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   from its type's table and never from scope, so `xs.groupBy(f)` works with no
   import at all and those imports really were dead. They are gone.
 
+- **`TY010`: a statement that does nothing.** `xs.sort()` is the first thing
+  anyone arriving from Python or JavaScript writes, and it sorted nothing:
+
+  ```text
+  var xs: List<Num> = [3, 1, 2]
+  xs.sort()      ← warning[TY010]: this statement does nothing
+  print(xs)      → [3, 1, 2]
+  ```
+
+  Eleven statements like it ran silently in the probe that found this —
+  `sort`, `reverse`, `unique`, `take`, `insert`, `upper`, `trim`, `set` — every
+  one answering with a new value and leaving its subject alone, as almost
+  everything in the library does.
+
+  `docs/stdlib.md` has stated that rule since v0.1: *"nothing mutates unless its
+  name says so"*. This is where it stops being something to remember. The two
+  functions it names as the exceptions, `push` and `pop`, really do mutate, so
+  `xs.push(1)` says nothing while `xs.sort()` does — and the library states that
+  exception list in one place, so the rule and the diagnostic cannot drift
+  apart. A native added to `std/fs` is effectful without anybody saying so,
+  because the unit is the module; one added to `std/str` is not, because a
+  `std/str` function that reached the host would be a design error anyway.
+
+  A warning rather than an error, the line `RS011` draws: the program runs, and
+  a line that does nothing is a mistake in what the author meant rather than in
+  what the machine can do.
+
+  The restraints, as ever, are the interesting half. Only a call to a function
+  the *library* described, **by identity rather than by name**, so a program
+  declaring its own `sort` is left alone. Only when the answer's type is known
+  and is not `Nil`. Never the last statement of a block, which is the block's
+  own value. And all three spellings alike — §4.7 says `f(x)`, `x.f()` and
+  `x |> f()` are one expression, so they warn or stay silent together, since
+  being loud about one spelling and silent about another is exactly the drift
+  this project keeps finding.
+
+  The fixture needed widening before it was worth having. Removing the check
+  from block bodies left it **passing**, because every no-op in it sat at module
+  level and the two walks are separate code. Both are covered now, each verified
+  by removing it and watching the suite fail.
+
 - **`TY009`: a `match` arm the subject's type can never produce.** The mistake
   nobody makes twice and everybody makes once — misremembering whether a
   function answers with a `Result`:

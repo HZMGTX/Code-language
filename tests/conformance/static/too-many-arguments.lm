@@ -5,6 +5,6 @@
 // on, and nothing could know that until the library said so.
 fn one(a) { a }
 
-one(1, 2)
-"abc".upper(1)
-[1, 2].len(0)
+print(one(1, 2))
+print("abc".upper(1))
+print([1, 2].len(0))
