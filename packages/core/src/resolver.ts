@@ -1157,12 +1157,22 @@ export function checkModule(
     // program, then look at what merely bothers it.
     throw new LumenError(errors, module.file, source);
   }
+
+  // Both passes, filtered the same way. This line used to raise on *any* type
+  // problem, which was harmless while the type checker produced nothing but
+  // errors — and the moment `TY010` gave it a warning, that warning stopped
+  // programs from running at all. The fixture written for `TY010` recorded the
+  // broken behaviour as correct, because a golden file full of diagnostics and
+  // missing its program's output looks exactly like a fixture that only
+  // produces diagnostics.
   const typeProblems = checkTypes(module, options);
-  if (typeProblems.length > 0) {
-    throw new LumenError(typeProblems, module.file, source);
+  const typeErrors = typeProblems.filter((d) => d.severity === 'error');
+  if (typeErrors.length > 0) {
+    throw new LumenError(typeErrors, module.file, source);
   }
+
   // Warnings are returned rather than raised, which is the whole difference
   // between the two: a warning must never stop a program that works. A caller
   // that ignores them behaves exactly as it did before they existed.
-  return scopeProblems.filter((d) => d.severity !== 'error');
+  return [...scopeProblems, ...typeProblems].filter((d) => d.severity !== 'error');
 }

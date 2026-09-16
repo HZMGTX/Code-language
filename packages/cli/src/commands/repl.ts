@@ -18,12 +18,13 @@ import {
   lex,
   parse,
   typeName,
+  type Diagnostic,
   type ResolveOptions,
   type SourceUnit,
 } from '@lumen-lang/core';
 import { STD_MODULE_NAMES } from '@lumen-lang/stdlib';
 import { renderNode } from './inspect.js';
-import { VERSION, checkOptions, newInterpreter, useColor } from '../support.js';
+import { VERSION, checkOptions, newInterpreter, reportWarnings, useColor } from '../support.js';
 
 /** Operators that cannot legally end an input. */
 const DANGLING: readonly string[] = [
@@ -70,6 +71,23 @@ const HELP = [
   'Anything else is evaluated. Definitions persist across inputs.',
   'An unfinished line continues on the next one; a blank line abandons it.',
 ].join('\n');
+
+/**
+ * The warnings that mean something at a prompt.
+ *
+ * All of them but `RS011`. A binding made at the REPL is *for* the inputs that
+ * come after it — that is what a session is — so "never read" is true of nearly
+ * every one and means nothing about any of them. `RS011` already declines to
+ * report anything a module exports, and a session's top level is the same idea
+ * with no keyword for it.
+ *
+ * Everything else applies exactly as it does in a file: a statement that can
+ * never run is still dead, and a call whose answer nobody takes still does
+ * nothing.
+ */
+function sessionWarnings(warnings: readonly Diagnostic[]): readonly Diagnostic[] {
+  return warnings.filter((warning) => warning.code !== 'RS011');
+}
 
 /**
  * What the static passes are told about a session, rather than about a file.
@@ -131,7 +149,13 @@ export async function startRepl(): Promise<void> {
     try {
       const module = parse(source, '<repl>');
       // Everything bound in the session so far counts as already in scope.
-      checkModule(module, source, sessionOptions(scope));
+      //
+      // `checkModule` raises on an error and *returns* the warnings, so a
+      // caller that drops the return value shows none of them. The REPL did,
+      // which is the same bug the language server had: an unreachable statement
+      // or a call whose answer nobody takes was reported by `lumen run` and
+      // silently accepted here.
+      reportWarnings(sessionWarnings(checkModule(module, source, sessionOptions(scope))), '<repl>', source);
       const value = await interpreter.runStatements(module.stmts, scope, currentUnit);
       if (value.k !== 'nil') process.stdout.write(inspect(value) + '\n');
     } catch (error) {

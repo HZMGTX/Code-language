@@ -34,6 +34,50 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   from its type's table and never from scope, so `xs.groupBy(f)` works with no
   import at all and those imports really were dead. They are gone.
 
+- **A `TY010` warning stopped programs from running, and its own fixture
+  recorded that as correct.** `checkModule`'s comment has always said what a
+  warning is — *"a warning must never stop a program that works"* — and the line
+  below it did the opposite:
+
+  ```text
+  const typeProblems = checkTypes(module, options);
+  if (typeProblems.length > 0) {
+    throw new LumenError(typeProblems, module.file, source);   ← no severity filter
+  }
+  ```
+
+  Harmless while the type checker produced nothing but errors. `TY010` gave it a
+  warning, and `lumen run` began refusing any program carrying one: the
+  diagnostic printed and not a line of the program ran.
+
+  **The fixture written for `TY010` enshrined it.** A golden file full of
+  diagnostics with none of its program's output looks exactly like a fixture
+  that only produces diagnostics — and the `-quiet` companion passed, because a
+  program with no warnings ran fine. The asymmetry that makes those pairs worth
+  having is the same asymmetry that hid this: nothing looked wrong.
+
+  Both passes are filtered the same way now, and the returned warnings come from
+  both rather than only from the resolver. The fixture's golden file gained its
+  program's output, which is also the better fixture: it shows the warning *and*
+  that the statement really did nothing.
+
+- **A warning never stopping a program is a test now**, on every warning the
+  language has — derived from `docs/spec.md`'s own table rather than listed, so
+  a new warning code fails the suite until somebody shows a program carrying it
+  still runs. Each case ends by printing, so "it ran" is something the test can
+  see rather than infer.
+
+- **The REPL showed no warnings at all**, which is the third appearance of one
+  bug: `checkModule` raises on errors and *returns* warnings, so a caller that
+  drops the return value shows none of them. The language server did it, the
+  REPL did it, and `lumen run` did the opposite thing wrong by raising on them.
+
+  `RS011` is the one it filters out. A binding made at a prompt is *for* the
+  inputs that come after it — that is what a session is — so "never read" is
+  true of nearly every one and means nothing about any of them. `RS011` already
+  declines to report anything a module exports; a session's top level is the
+  same idea with no keyword for it.
+
 - **The REPL rejected working lines, because a session binding was checked as
   the prelude name it shadows.**
 
