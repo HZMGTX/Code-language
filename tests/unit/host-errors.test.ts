@@ -89,16 +89,25 @@ describe('no library function answers in the host’s words', () => {
     let calls = 0;
 
     for (const [moduleName, exports] of stdModuleExports()) {
-      for (const name of exports.keys()) {
+      for (const [name, ty] of exports) {
         if (UNCALLABLE.has(name)) continue;
+        // As many arguments as the function requires, not one. Passing a single
+        // argument meant `copy(a, b)` and `rename(a, b)` failed on arity and
+        // never reached their own error paths at all — which is exactly where
+        // `ERR_FS_CP_NON_DIR_TO_DIR` and `ERR_FS_CP_EINVAL` were leaking, found
+        // by a probe rather than by this sweep. A check that cannot reach half
+        // the error paths in the library is not the check it claims to be.
+        const arity =
+          ty?.k === 'fn' ? ty.params.filter((p) => !p.optional).length : 1;
         for (const wrong of WRONG_ARGUMENTS) {
-          const source = `import { ${name} } from "${moduleName}"\nprint(${name}(${wrong}))\n`;
+          const filled = Array.from({ length: Math.max(1, arity) }, () => wrong).join(', ');
+          const source = `import { ${name} } from "${moduleName}"\nprint(${name}(${filled}))\n`;
           const result = await runSource(source);
           calls += 1;
           for (const word of HOST_WORDS) {
             if (!word.test(result.output)) continue;
             leaks.push(
-              `${moduleName}.${name}(${wrong}) matched ${String(word)}:\n` +
+              `${moduleName}.${name}(${filled}) matched ${String(word)}:\n` +
                 result.output.trim().split('\n').slice(0, 6).join('\n'),
             );
             break;

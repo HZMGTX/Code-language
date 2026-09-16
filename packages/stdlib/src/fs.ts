@@ -20,13 +20,68 @@ import { Err, Ok, arg, expectStr, fn, moduleOf, withSignatures } from './support
  * different output on Windows, and would pin this library's error strings to
  * whatever Node prints next year. The `code` is stable; the sentence is ours.
  */
-function messageOf(error: unknown, action: string, target: string): string {
+/**
+ * Create a path's parent directories, without letting the attempt become the
+ * answer.
+ *
+ * `mkdir -p` fails with `EEXIST` when a path component is a *file* rather than
+ * a directory, and that errno was reported verbatim — so
+ * `write("notadir/child.txt", "x")` said `EEXIST`, which is not merely cryptic
+ * but the opposite of the truth: nothing exists that should not, a path segment
+ * is a file. `append` and `makeDir` said "a path segment is not a directory"
+ * for the identical path, because they reach the real operation and get
+ * `ENOTDIR` from it.
+ *
+ * So the parent is created on a best-effort basis and any failure is dropped.
+ * Whatever is really wrong then comes from the write itself, with the errno
+ * that describes it — which is how the three functions came to disagree about
+ * one path in the first place.
+ */
+async function makeParent(target: string): Promise<void> {
+  try {
+    await fsp.mkdir(path.dirname(target), { recursive: true });
+  } catch {
+    // Deliberately ignored; see above.
+  }
+}
+
+function messageOf(error: unknown, action: string, target: string, other?: string): string {
   const code =
     error !== null && typeof error === 'object' && 'code' in error
       ? String((error as { code: unknown }).code)
       : '';
-  const subject = action + ' `' + target + '`';
+  // Both paths when there are two. `rename(file, dir)` used to say "cannot
+  // rename `note.txt`: it is a directory" — and `note.txt` is not a directory,
+  // `archive` is. A sentence naming the wrong path sends the reader to look at
+  // the wrong thing, which is worse than one naming neither.
+  const subject =
+    other === undefined
+      ? action + ' `' + target + '`'
+      : action + ' `' + target + '` to `' + other + '`';
   switch (code) {
+    // Node's own `cp` codes. `rename` already produced sentences for these
+    // three mistakes and `copy` leaked the identifier, so the same mistake read
+    // completely differently depending on which function you reached for.
+    case 'ERR_FS_CP_NON_DIR_TO_DIR':
+      return 'cannot ' + subject + ': the destination is a directory';
+    case 'ERR_FS_CP_DIR_TO_NON_DIR':
+      return 'cannot ' + subject + ': the destination is not a directory';
+    case 'ERR_FS_CP_EINVAL':
+      return 'cannot ' + subject + ': the source and the destination are the same';
+
+    case 'ERR_FS_CP_SOCKET':
+    case 'ERR_FS_CP_FIFO_PIPE':
+    case 'ERR_FS_CP_UNKNOWN':
+      return 'cannot ' + subject + ': the source is not a file or a directory';
+    case 'ERR_FS_EISDIR':
+      return 'cannot ' + subject + ': it is a directory';
+    // A move across filesystems. `rename` cannot do it and nothing about the
+    // bare errno says what to do instead.
+    case 'EXDEV':
+      return (
+        'cannot ' + subject +
+        ': they are on different filesystems — copy and then remove instead'
+      );
     case 'ENOENT':
       return 'cannot ' + subject + ': no such file or directory';
     case 'EACCES':
@@ -93,7 +148,7 @@ export function stdFs(): Map<string, Value> {
       const target = expectStr(arg(a, 0), c, 'write(path)');
       const contents = expectStr(arg(a, 1), c, 'write(contents)');
       try {
-        await fsp.mkdir(path.dirname(target), { recursive: true });
+        await makeParent(target);
         await fsp.writeFile(target, contents, 'utf8');
         return Ok(NIL);
       } catch (error) {
@@ -101,10 +156,16 @@ export function stdFs(): Map<string, Value> {
       }
     }),
 
+    /** Add to the end, creating the file and its parent directories if needed. */
     fn('append', ['path', 'contents'], async (a, c) => {
       const target = expectStr(arg(a, 0), c, 'append(path)');
       const contents = expectStr(arg(a, 1), c, 'append(contents)');
       try {
+        // Like `write`, `copy` and `rename`. This was the one writing function
+        // that did not, so `write(p, line)` worked and `append(p, line)` to the
+        // same path did not — a split with no reason behind it, and the first
+        // line of a log file is exactly where it bit.
+        await makeParent(target);
         await fsp.appendFile(target, contents, 'utf8');
         return Ok(NIL);
       } catch (error) {
@@ -208,11 +269,16 @@ export function stdFs(): Map<string, Value> {
       const source = expectStr(arg(a, 0), c, 'copy(source)');
       const destination = expectStr(arg(a, 1), c, 'copy(destination)');
       try {
-        await fsp.mkdir(path.dirname(destination), { recursive: true });
-        await fsp.cp(source, destination, { recursive: true });
+        await makeParent(destination);
+        // `verbatimSymlinks` keeps a link as it was written. Without it Node
+        // resolves a relative link against the *source* and stores the absolute
+        // result, so copying a tree containing `latest.txt -> report.txt` gave a
+        // backup whose `latest.txt` pointed into the original — the copy was not
+        // a copy, and writing through it edited what it was a backup of.
+        await fsp.cp(source, destination, { recursive: true, verbatimSymlinks: true });
         return Ok(NIL);
       } catch (error) {
-        return Err(str(messageOf(error, 'copy', source)));
+        return Err(str(messageOf(error, 'copy', source, destination)));
       }
     }),
 
@@ -221,11 +287,11 @@ export function stdFs(): Map<string, Value> {
       const source = expectStr(arg(a, 0), c, 'rename(source)');
       const destination = expectStr(arg(a, 1), c, 'rename(destination)');
       try {
-        await fsp.mkdir(path.dirname(destination), { recursive: true });
+        await makeParent(destination);
         await fsp.rename(source, destination);
         return Ok(NIL);
       } catch (error) {
-        return Err(str(messageOf(error, 'rename', source)));
+        return Err(str(messageOf(error, 'rename', source, destination)));
       }
     }),
 

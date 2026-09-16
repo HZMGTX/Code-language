@@ -130,6 +130,53 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
     answered `["a", "b"]`, which looks like an answer and was an accident of
     which branch ran first. Refused now, with the reason.
 
+- **Five things in `std/fs`, every one of them a disagreement between functions
+  that should have said the same thing.**
+
+  - **`write` reported the opposite of the truth.** Where a path segment is a
+    file, it said `EEXIST` — and nothing exists that should not; a path segment
+    is a file. `append` and `makeDir` said "a path segment is not a directory"
+    for the identical path, because they reach the real operation and get
+    `ENOTDIR` from it, while `write` was reporting its own `mkdir -p` attempt.
+    Creating the parent is best-effort now, so whatever is really wrong comes
+    from the write.
+  - **`copy` leaked Node's identifiers** — `ERR_FS_CP_NON_DIR_TO_DIR`,
+    `ERR_FS_CP_DIR_TO_NON_DIR`, `ERR_FS_CP_EINVAL` — while `rename` managed
+    sentences for the same mistakes. All of them have sentences now, along with
+    `EXDEV`, which is the one failure a documented "move" has to explain: *they
+    are on different filesystems — copy and then remove instead*.
+  - **`copy` and `rename` named the wrong path.** "cannot rename `note.txt`: it
+    is a directory" — `note.txt` is not a directory, `archive` is. A sentence
+    naming the wrong path sends the reader to look at the wrong thing, which is
+    worse than one naming neither. Both are named now.
+  - **`append` was the only writing function that did not create parent
+    directories**, so `write(p, line)` worked and `append(p, line)` to the same
+    path did not. The first line of a log file is exactly where that bit.
+  - **`copy` broke the symlinks in a tree it copied.** Node's `cp` resolves a
+    relative link against the *source* and stores the absolute result, so
+    copying a tree containing `latest.txt -> report.txt` gave a backup whose
+    `latest.txt` pointed at the original. Writing through the copy's own link
+    edited what the copy was a backup of, and deleting the original left the
+    backup dangling. `verbatimSymlinks` keeps the link as written, and the test
+    asserts the property rather than the flag: write into the copy, the original
+    is untouched; delete the original, the copy still reads.
+
+  The host-error sweep should have caught the two leaking identifiers and did
+  not, because it passed **one** argument to every function — so `copy(a, b)`
+  and `rename(a, b)` failed on arity and never reached their own error paths at
+  all. It now passes as many as each function requires, which is the second time
+  that check has needed widening after a probe found something it should have
+  caught: the first was boundary values. Both widenings were verified by putting
+  a leak back.
+
+  Three further `std/fs` findings from the same probe were **rejected** on
+  verification, and the reasons are worth keeping: `walk` not following symlinks
+  is documented at `fs.ts:257` and matches `find -P`; `exists` answering false
+  for a dangling link is conventional (POSIX `test -e`, Python
+  `os.path.exists`); and a bare errno with no sentence yet is the documented
+  policy, not an oversight — which is why `EXDEV` got a sentence rather than the
+  policy getting changed.
+
 - **An empty `provider:` argument sent the prompt to the real API.**
   `docs/stdlib.md` states the order: an explicit argument, then
   `LUMEN_AI_PROVIDER`, then the keys, then `mock`. An **empty** argument does

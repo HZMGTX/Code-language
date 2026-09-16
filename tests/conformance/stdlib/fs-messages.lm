@@ -1,0 +1,57 @@
+// One mistake, one sentence, whichever function you reached for.
+//
+// Five things were wrong here at once, and every one of them was a *difference*
+// between functions that should have agreed:
+//
+//   - `write` said `EEXIST` where a path segment is a file, which is not merely
+//     cryptic but the opposite of the truth — nothing exists that should not, a
+//     path segment is a file. `append` and `makeDir` said "a path segment is
+//     not a directory" for the identical path, because they reach the real
+//     operation and get `ENOTDIR` from it, while `write` was reporting its own
+//     `mkdir -p` attempt.
+//   - `copy` leaked `ERR_FS_CP_NON_DIR_TO_DIR` and `ERR_FS_CP_EINVAL` while
+//     `rename` produced sentences for the same two mistakes.
+//   - `copy` and `rename` named the SOURCE for a failure caused by the
+//     destination: "cannot rename `note.txt`: it is a directory", where
+//     `note.txt` is not a directory and `archive` is.
+//   - `append` was the only writing function that did not create parent
+//     directories, so `write(p, line)` worked and `append(p, line)` to the same
+//     path did not — and the first line of a log file is exactly where it bit.
+//
+// Everything happens under one directory this makes and removes, so running it
+// changes nothing, and the paths printed are relative so the output reads the
+// same on every machine.
+import { copy, rename, write, append, read, makeDir, remove } from "std/fs"
+import { join } from "std/path"
+
+let box = join(".", "lumen-fs-message-demo")
+remove(box)
+makeDir(box)
+
+fn at(name) { join(box, name) }
+
+// A path segment that is a file rather than a directory. All three agree now.
+write(at("notadir"), "x")
+print(write(at("notadir/child.txt"), "x"))
+print(append(at("notadir/child.txt"), "x"))
+print(makeDir(at("notadir/child")))
+
+// Both paths named, and Lumen's own sentence for each of Node's `cp` codes.
+makeDir(at("archive"))
+write(at("note.txt"), "hello")
+print(copy(at("note.txt"), at("archive")))
+print(rename(at("note.txt"), at("archive")))
+print(copy(at("note.txt"), at("note.txt")))
+print(copy(at("archive"), at("note.txt")))
+
+// Every writing function creates the parents it needs.
+print(write(at("fresh-a/f.txt"), "x"))
+print(append(at("fresh-b/f.txt"), "x"))
+print(copy(at("note.txt"), at("fresh-c/f.txt")))
+print(rename(at("note.txt"), at("fresh-d/f.txt")))
+print(read(at("fresh-d/f.txt")))
+
+// And the ordinary failure, unchanged.
+print(read(at("nope.txt")))
+
+remove(box)
