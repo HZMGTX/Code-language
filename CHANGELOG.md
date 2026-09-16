@@ -130,6 +130,29 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
     answered `["a", "b"]`, which looks like an answer and was an accident of
     which branch ran first. Refused now, with the reason.
 
+- **A diagnostic about a line break pointed at the line below it.** The
+  statement-boundary token was stamped wherever the *next* real token began,
+  because `skipTrivia` consumed the break and then every blank line, comment and
+  unit of indentation after it, and only then was the position read. So
+
+  ```text
+  let x = match 1 {
+    1                  ← the `=>` is missing here
+    _ => 2,
+  }
+  ```
+
+  reported "expected `=>` after a match pattern, found a line break" with the
+  caret on the next arm's `_`, one line below the mistake. `lumen tokens` showed
+  the confusion directly: the terminator of one line printed at the position of
+  the token on the next.
+
+  `skipTrivia` returns *where* the first break was now rather than whether there
+  was one, and the caret lands at the end of the arm — which is exactly where
+  the missing `=>` belongs. Only the first break in a gap is the boundary; the
+  rest are blank lines inside it, and a fixture shows one boundary spanning a
+  blank line, a comment, another blank line and a multi-line block comment.
+
 - **A function ending in a local called `sum` was rejected.** This ordinary
   program did not compile:
 

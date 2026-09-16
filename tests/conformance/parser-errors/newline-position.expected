@@ -1,0 +1,21 @@
+error[PA001]: expected `=>` after a match pattern, found a line break
+  --> newline-position.lm:13:4
+   |
+13 |   1
+   |    ^ expected `=>`
+   |
+
+error[PA003]: unexpected `=>` after statement
+  --> newline-position.lm:14:5
+   |
+14 |   _ => 2,
+   |     ^^ expected a line break or `;` here
+   |
+   = note: statements in Lumen end at the end of the line; semicolons are optional
+
+error[PA014]: unmatched `}`
+  --> newline-position.lm:15:1
+   |
+15 | }
+   | ^ no block is open here
+   |

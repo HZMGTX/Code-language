@@ -1,0 +1,21 @@
+// Where each statement boundary is, which `lumen tokens` shows directly.
+//
+// A boundary sits at the break itself, not at whatever follows it — and the gap
+// after a break may hold blank lines, comments and any amount of indentation
+// without moving it. Only the *first* break in a gap is the boundary; the rest
+// are blank lines inside it.
+//
+// The indented line below is indented legitimately, inside a block, because
+// `fmt --check` covers every `.lm` file in the repository including this one.
+let a = 1
+
+// A comment in the gap.
+
+fn f() {
+  let b = 2
+  /* and a block comment
+     spanning lines */
+  let c = 3
+  b + c
+}
+print(a + f())

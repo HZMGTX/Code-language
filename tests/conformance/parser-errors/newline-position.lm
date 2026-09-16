@@ -1,0 +1,16 @@
+// A diagnostic about a line break points at the line break.
+//
+// The statement-boundary token was stamped wherever the *next* real token
+// began, because `skipTrivia` consumed the break and then every blank line,
+// comment and unit of indentation after it, and only then was the position
+// read. So "found a line break" pointed at the line *below* the break and
+// underlined the next arm — every other position in the file was right, which
+// made the wrong one harder to disbelieve.
+//
+// Here the missing `=>` belongs at the end of the arm `1`, and that is where
+// the caret goes.
+let x = match 1 {
+  1
+  _ => 2,
+}
+print(x)

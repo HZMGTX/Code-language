@@ -137,11 +137,11 @@ export class Lexer {
   /** Lex the whole input. Throws `LumenError` if anything went wrong. */
   lex(): Token[] {
     for (;;) {
-      const crossedNewline = this.skipTrivia();
-      if (crossedNewline && this.tokens.length > 0 && this.last()?.kind !== 'newline') {
-        // A statement boundary. Zero-width: it stands between two real tokens.
-        const p = this.here();
-        this.tokens.push({ kind: 'newline', text: '\n', span: span(p, p) });
+      const brokeAt = this.skipTrivia();
+      if (brokeAt !== undefined && this.tokens.length > 0 && this.last()?.kind !== 'newline') {
+        // A statement boundary, at the break itself rather than at whatever
+        // follows it. Zero-width: it stands between two real tokens.
+        this.tokens.push({ kind: 'newline', text: '\n', span: span(brokeAt, brokeAt) });
       }
       if (this.atEnd()) break;
       this.scanToken();
@@ -163,14 +163,26 @@ export class Lexer {
    * Skip whitespace and comments.
    * @returns whether a line break was crossed.
    */
-  private skipTrivia(): boolean {
-    let sawNewline = false;
+  /**
+   * Skip whitespace and comments, and say **where** the first line break was.
+   *
+   * The position matters, and returning only "yes there was one" is what lost
+   * it. This consumes the break *and* every blank line, comment and unit of
+   * indentation after it, so the caller's `here()` was wherever the next real
+   * token began — and the statement-boundary token was stamped there. A
+   * diagnostic reading "expected `=>` after a match pattern, found a line
+   * break" pointed at the line *below* the break, underlining the next arm.
+   */
+  private skipTrivia(): Pos | undefined {
+    let brokeAt: Pos | undefined;
     for (;;) {
       const c = this.peek();
       if (c === ' ' || c === '\t' || c === '\r') {
         this.advance();
       } else if (c === '\n') {
-        sawNewline = true;
+        // The first break is the statement boundary; later ones are blank
+        // lines inside the same gap and do not move it.
+        brokeAt ??= this.here();
         this.advance();
       } else if (c === '/' && this.peek(1) === '/') {
         const start = this.here();
@@ -180,9 +192,11 @@ export class Lexer {
         const start = this.here();
         const spanned = this.skipBlockComment();
         this.comments.push({ span: span(start, this.here()), block: true });
-        if (spanned) sawNewline = true;
+        // A block comment that spans lines *is* a statement boundary, and the
+        // break inside it is where the comment ended.
+        if (spanned) brokeAt ??= this.here();
       } else {
-        return sawNewline;
+        return brokeAt;
       }
     }
   }
