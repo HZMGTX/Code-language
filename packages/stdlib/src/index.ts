@@ -25,7 +25,7 @@ import {
   type Value,
 } from '@lumen-lang/core';
 
-import { STD_MODULES, STD_MODULE_NAMES, stdModuleExports } from './modules.js';
+import { STD_MODULES, STD_MODULE_NAMES, stdModuleExports, MODULE_EFFECTS } from './modules.js';
 import { stdCore } from './core.js';
 import { makeHelp, methodTables, preludeExtras, universalMethods } from './prelude.js';
 
@@ -36,7 +36,7 @@ export { setServeMode } from './web.js';
 // observed from Lumen — a set that got it wrong would just hold two of
 // something without complaining.
 export { setKeyForTesting } from './set.js';
-export { STD_MODULES, STD_MODULE_NAMES, stdModuleExports } from './modules.js';
+export { STD_MODULES, STD_MODULE_NAMES, MODULE_EFFECTS, stdModuleExports } from './modules.js';
 export { unmatchedSignaturesForTesting } from './support.js';
 export { locateJsonErrorForTesting } from './json.js';
 
@@ -292,45 +292,6 @@ export function checkOptions(globals: readonly string[]): ResolveOptions {
  * `std/str` is not, because one that reached the host would be a design error
  * in the first place.
  */
-/**
- * What each module does to the world, which two different checks need to know.
- *
- * - **`pure`**: every function answers with a value and does nothing else, so
- *   discarding one is `TY010`, and a test may call any of them with whatever it
- *   likes.
- * - **`effectful`**: every function is called for what it *does*. Discarding an
- *   answer is ordinary, and a test must not call one blind — a sweep handing
- *   junk arguments to `std/fs` writes real files.
- * - **`mixed`**: some of each. `EFFECTFUL_NAMES` below names the ones that act,
- *   and the rest are treated as pure; a blind sweep still stays away, because
- *   `web.serve` never returns and `core.exit` stops the process.
- *
- * Every module must appear, and a test says so rather than trusting it. This
- * used to be two lists in two files that nearly agreed, and a module added to
- * neither would have been quietly called pure by one and swept blind by the
- * other — the second of which does real I/O with whatever arguments it invents.
- */
-export const MODULE_EFFECTS: ReadonlyMap<string, 'pure' | 'mixed' | 'effectful'> = new Map([
-  ['std/core', 'mixed'],
-  ['std/str', 'pure'],
-  ['std/list', 'mixed'],
-  ['std/map', 'pure'],
-  ['std/math', 'mixed'],
-  ['std/json', 'pure'],
-  ['std/csv', 'pure'],
-  ['std/crypto', 'pure'],
-  ['std/option', 'pure'],
-  ['std/result', 'pure'],
-  ['std/set', 'pure'],
-  ['std/path', 'pure'],
-  ['std/regex', 'pure'],
-  ['std/process', 'effectful'],
-  ['std/time', 'mixed'],
-  ['std/fs', 'effectful'],
-  ['std/http', 'effectful'],
-  ['std/web', 'mixed'],
-  ['std/ai', 'effectful'],
-]);
 
 /**
  * The effectful functions inside modules that are otherwise pure.

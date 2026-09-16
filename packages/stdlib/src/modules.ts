@@ -113,3 +113,43 @@ function typeOfExport(value: Value): Ty {
     return ANY;
   }
 }
+
+/**
+ * What each module does to the world, which two different checks need to know.
+ *
+ * - **`pure`**: every function answers with a value and does nothing else, so
+ *   discarding one is `TY010`, and a test may call any of them with whatever it
+ *   likes.
+ * - **`effectful`**: every function is called for what it *does*. Discarding an
+ *   answer is ordinary, and a test must not call one blind — a sweep handing
+ *   junk arguments to `std/fs` writes real files.
+ * - **`mixed`**: some of each. `EFFECTFUL_NAMES` below names the ones that act,
+ *   and the rest are treated as pure; a blind sweep still stays away, because
+ *   `web.serve` never returns and `core.exit` stops the process.
+ *
+ * Every module must appear, and a test says so rather than trusting it. This
+ * used to be two lists in two files that nearly agreed, and a module added to
+ * neither would have been quietly called pure by one and swept blind by the
+ * other — the second of which does real I/O with whatever arguments it invents.
+ */
+export const MODULE_EFFECTS: ReadonlyMap<string, 'pure' | 'mixed' | 'effectful'> = new Map([
+  ['std/core', 'mixed'],
+  ['std/str', 'pure'],
+  ['std/list', 'mixed'],
+  ['std/map', 'pure'],
+  ['std/math', 'mixed'],
+  ['std/json', 'pure'],
+  ['std/csv', 'pure'],
+  ['std/crypto', 'pure'],
+  ['std/option', 'pure'],
+  ['std/result', 'pure'],
+  ['std/set', 'pure'],
+  ['std/path', 'pure'],
+  ['std/regex', 'pure'],
+  ['std/process', 'effectful'],
+  ['std/time', 'mixed'],
+  ['std/fs', 'effectful'],
+  ['std/http', 'effectful'],
+  ['std/web', 'mixed'],
+  ['std/ai', 'effectful'],
+]);
