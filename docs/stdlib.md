@@ -99,6 +99,23 @@ its shape. And a value that contains itself can be cloned, giving a copy with it
 own cycle. Numbers, strings and functions are returned as they are, having nothing
 to copy.
 
+**A group key must be a faithful identity.** `groupBy` and `map.invert` both
+turn a value into a `Map` key, and a `Map`'s keys are text — so the value has to
+print to something that tells two of them apart. `Str`, `Num` and `Bool` do.
+A `Map`, a `List` or a struct does not, and both functions were wrong in both
+directions at once: `{city: "Oslo", zone: 1}` and `{zone: 1, city: "Oslo"}` are
+`==` and print differently, so they became *two* groups; `1` and `"1"` are not
+`==` and both print `1`, so they became *one*, and `invert` silently dropped an
+entry.
+
+Neither is exotic — data from a CSV is all `Str` and data from JSON is mixed, so
+an `id` that is sometimes `7` and sometimes `"7"` is ordinary. Both are refused
+now, with the reason, the same way `std/csv` refuses a duplicate column: one of
+the two would silently win and which one is not something a reader could
+predict. Two values of the *same* type landing on the same text really are one
+key, which is what `groupBy` is for and what `invert`'s "the last one wins"
+means.
+
 ### `std/set`
 
 A set is a `List` with no duplicates — there is no separate `Set` type — so every

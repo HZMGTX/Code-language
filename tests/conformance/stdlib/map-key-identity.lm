@@ -1,0 +1,43 @@
+// A Map's keys are text, so a value used as one has to become text — and a
+// printed form is only an identity for some values.
+//
+// `Str`, `Num` and `Bool` print differently whenever they differ, so they are
+// safe. A Map, a List or a struct is not, and `groupBy` and `map.invert` were
+// wrong in both directions at once:
+//
+//   - `{city: "Oslo", zone: 1}` and `{zone: 1, city: "Oslo"}` are `==` and
+//     print differently, so they became TWO groups — the insertion order of a
+//     map leaked into the group name;
+//   - `1` and `"1"` are not `==` and both print `1`, so they became ONE group,
+//     and `invert({a: 1, b: "1"})` silently dropped an entry.
+//
+// Neither is exotic. Data read from a CSV is all Str and data from JSON is
+// mixed, so an `id` that is sometimes `7` and sometimes `"7"` is an ordinary
+// thing to be holding. The same reasoning `std/csv` applies to a duplicate
+// column: one of the two would silently win, and which one is not something a
+// reader could predict.
+import { groupBy } from "std/list"
+import { invert } from "std/map"
+
+// Every key type that is a faithful identity.
+print(groupBy([1, 2, 3], fn(x) { if x % 2 == 0 { "even" } else { "odd" } }))
+print(groupBy([1, 2, 3, 4], fn(x) { x % 2 }))
+print(groupBy([1, 2, 3], fn(x) { x > 1 }))
+print(groupBy([], fn(x) { x }))
+
+// Grouping by a field, which is what this is for.
+let users = [
+  { name: "ada", team: "core" },
+  { name: "bo", team: "core" },
+  { name: "cy", team: "web" },
+]
+print(groupBy(users, fn(u) { u.team }).keys())
+print(groupBy(users, fn(u) { u.name }).keys())
+
+// invert, including the collapse its docstring promises: two entries that
+// really do share a value, where the last one wins.
+print(invert({ a: "x", b: "y" }))
+print(invert({ a: "x", b: "x" }))
+print(invert({ a: 1, b: 2 }))
+print(invert({ a: true, b: false }))
+print(invert({}))

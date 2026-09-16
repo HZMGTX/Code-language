@@ -130,6 +130,35 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
     answered `["a", "b"]`, which looks like an answer and was an accident of
     which branch ran first. Refused now, with the reason.
 
+- **`groupBy` and `map.invert` were wrong about keys in both directions at
+  once.** Both turn a value into a `Map` key, and a `Map`'s keys are text:
+
+  ```lumen
+  let a = { city: "Oslo", zone: 1 }
+  let b = { zone: 1, city: "Oslo" }
+  a == b                                  // true
+  groupBy([a, b], fn(x) { x }).keys()     // two groups, named by insertion order
+
+  1 == "1"                                // false
+  groupBy([1, "1"], fn(x) { x }).keys()   // one group
+  invert({ a: 1, b: "1" })                // {"1": "b"} — the `a` entry is gone
+  ```
+
+  Equal keys split, different keys merged, and an entry disappeared. Neither
+  case is exotic: data read from a CSV is all `Str` and data from JSON is mixed,
+  so an `id` that is sometimes `7` and sometimes `"7"` is an ordinary thing to
+  be holding, and the rows for the two quietly became one group.
+
+  A shared `keyText` now refuses both — a value with no faithful text form, and
+  a collision between two types — with the same reasoning `std/csv` applies to a
+  duplicate column: one of the two would silently win, and which one is not
+  something a reader could predict. Two values of the *same* type landing on the
+  same text really are one key, so `groupBy` still groups them and `invert`
+  still collapses them, which is what its docstring has always promised.
+
+  Every use of either function in this repository keys on a `Str`, so nothing
+  changed for anything that worked.
+
 - **A NaN cannot be produced by any Lumen program, and that is now checked
   rather than hoped for.** `docs/spec.md` has always said so, and it was being
   kept by hand. Three holes turned up in an hour:

@@ -1,0 +1,12 @@
+// `1` and `"1"` are not equal and both print `1`, so merging them would lose
+// one. This is the case that made it worth checking rather than documenting:
+// data read from a CSV is all Str and data from JSON is mixed, so an id that is
+// sometimes 7 and sometimes "7" is an ordinary thing to be holding — and the
+// rows for the two would have quietly become one group.
+//
+// Two values of the *same* type landing on the same text really are one key,
+// and still are: that is what groupBy is for, and what invert's documented
+// "the last one wins" means.
+import { groupBy } from "std/list"
+print("equal: ${1 == "1"}")
+print(groupBy([1, "1"], fn(x) { x }))

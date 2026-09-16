@@ -7,9 +7,63 @@ import {
   type MapValue,
   type NativeValue,
   type Value,
+  display,
   enumValue,
   typeName,
 } from '@lumen-lang/core';
+
+/**
+ * A value as a `Map` key, or a panic saying why it cannot be one.
+ *
+ * A Lumen `Map`'s keys are text, so a value used as one has to become text —
+ * and a printed form is only an identity for some values. `Str`, `Num` and
+ * `Bool` print differently whenever they differ, so they are safe. A `Map`, a
+ * `List` or a struct is not:
+ *
+ *   - `{city: "Oslo", zone: 1}` and `{zone: 1, city: "Oslo"}` are `==` and
+ *     print differently, so `groupBy` put them in **two** groups;
+ *   - a value containing itself prints `[...]`, so every such value was the
+ *     **same** group.
+ *
+ * Across types the printed forms overlap. `1` and `"1"` are not `==` and both
+ * print `1`, so `groupBy` merged two different groups and `invert` silently
+ * dropped an entry. That is not an exotic program: data read from a CSV is all
+ * `Str` and data from JSON is mixed, so an `id` that is sometimes `7` and
+ * sometimes `"7"` is an ordinary thing to be holding.
+ *
+ * `seen` carries the type each key was made from, so a second value of a
+ * *different* type landing on the same text is refused rather than merged. Two
+ * values of the **same** type landing on the same text really are the same key,
+ * which is what `groupBy` is for and what `invert`'s documented "the last one
+ * wins" means.
+ *
+ * The same reasoning `std/csv` applies to a duplicate column: one of the two
+ * would silently win, and which one is not something a reader could predict.
+ */
+export function keyText(
+  value: Value,
+  seen: Map<string, string>,
+  ctx: CallCtx,
+  where: string,
+): string {
+  if (value.k !== 'str' && value.k !== 'num' && value.k !== 'bool') {
+    ctx.panic(where + ' needs a Str, Num or Bool as a key, got ' + typeName(value), [
+      "a Map's keys are text, and two " + typeName(value) + ' values that differ can print the same',
+      'while two that are equal can print differently — so neither grouping nor separating',
+      'them would be right. Make the key yourself: `.str()`, or the field you meant',
+    ]);
+  }
+  const text = value.k === 'str' ? value.v : display(value);
+  const already = seen.get(text);
+  if (already !== undefined && already !== typeName(value)) {
+    ctx.panic(where + ' has two different keys that both print as `' + text + '`', [
+      'one is a ' + already + ' and one is a ' + typeName(value) + ', and they are not equal',
+      'so merging them would lose one — convert both to the same type first',
+    ]);
+  }
+  seen.set(text, typeName(value));
+  return text;
+}
 
 /** Positional argument `i`, or nil when absent. */
 export function arg(args: readonly Value[], i: number): Value {

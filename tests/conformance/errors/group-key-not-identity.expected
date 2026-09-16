@@ -1,0 +1,10 @@
+equal: true
+error[RT035]: groupBy needs a Str, Num or Bool as a key, got Map
+ --> group-key-not-identity.lm:9:7
+  |
+9 | print(groupBy([a, b], fn(x) { x }))
+  |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: a Map's keys are text, and two Map values that differ can print the same
+  = note: while two that are equal can print differently — so neither grouping nor separating
+  = note: them would be right. Make the key yourself: `.str()`, or the field you meant

@@ -1,0 +1,9 @@
+// A Map cannot be a group key: two that are `==` print differently (a Lumen Map
+// keeps insertion order and `==` does not care about it), and two that differ
+// can print the same. So neither grouping nor separating them would be right,
+// and the module says so rather than picking one.
+import { groupBy } from "std/list"
+let a = { city: "Oslo", zone: 1 }
+let b = { zone: 1, city: "Oslo" }
+print("equal: ${a == b}")
+print(groupBy([a, b], fn(x) { x }))

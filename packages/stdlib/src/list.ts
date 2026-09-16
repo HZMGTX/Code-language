@@ -31,6 +31,7 @@ import {
   expectNum,
   expectStr,
   fn,
+  keyText,
   moduleOf,
   withDocs,
   withSignatures,
@@ -303,16 +304,21 @@ export function stdList(): Map<string, Value> {
      *
      * The one people reach for most often and cannot easily write, because
      * `reduce` over a Map means rebuilding the accumulator on every element.
+     *
+     * A Map's keys are text, so the key is displayed rather than inspected:
+     * grouping by `u.name` should key on `ada`, not on `"ada"`. That is only
+     * an identity for a `Str`, a `Num` or a `Bool`, so `keyText` refuses
+     * anything else and refuses a collision between types — see there for what
+     * went wrong without it, which was both splitting equal keys and merging
+     * different ones.
      */
     fn('groupBy', ['xs', 'key'], async (a, c) => {
       const xs = expectList(arg(a, 0), c, 'groupBy(xs)');
       const key = expectFn(arg(a, 1), c, 'groupBy(key)');
       const groups = new Map<string, Value>();
+      const seen = new Map<string, string>();
       for (const item of xs.items) {
-        const k = await c.call(key, [item]);
-        // A Map's keys are text, so the key is displayed rather than inspected:
-        // grouping by `u.name` should key on `ada`, not on `"ada"`.
-        const name = k.k === 'str' ? k.v : display(k);
+        const name = keyText(await c.call(key, [item]), seen, c, 'groupBy');
         const bucket = groups.get(name);
         if (bucket !== undefined && bucket.k === 'list') bucket.items.push(item);
         else groups.set(name, list([item]));

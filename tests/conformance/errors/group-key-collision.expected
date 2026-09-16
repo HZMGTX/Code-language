@@ -1,0 +1,9 @@
+equal: false
+error[RT035]: groupBy has two different keys that both print as `1`
+  --> group-key-collision.lm:12:7
+   |
+12 | print(groupBy([1, "1"], fn(x) { x }))
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: one is a Num and one is a Str, and they are not equal
+   = note: so merging them would lose one — convert both to the same type first

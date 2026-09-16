@@ -16,6 +16,7 @@ import {
   expectMap,
   expectStr,
   fn,
+  keyText,
   moduleOf,
   withDocs,
   withSignatures,
@@ -156,15 +157,23 @@ export function stdMap(): Map<string, Value> {
     /**
      * Keys and values swapped.
      *
-     * Values that are not Strs are displayed to make a key, and two entries
+     * A value that is not a Str is displayed to make a key, and two entries
      * sharing a value collapse — the last one wins, which is the only answer
      * that keeps the result a map.
+     *
+     * "Sharing a value" is the part that needed care. `1` and `"1"` do not
+     * share a value — `1 == "1"` is false — and both print `1`, so one of the
+     * two entries silently vanished: not the documented collapse, just a loss.
+     * `keyText` refuses that, and refuses a value with no faithful text form at
+     * all; two values of the same type landing on the same text are the
+     * documented collapse and still collapse.
      */
     fn('invert', ['m'], (a, c) => {
       const m = expectMap(arg(a, 0), c, 'invert(m)');
       const out = new Map<string, Value>();
+      const seen = new Map<string, string>();
       for (const [key, value] of m.entries) {
-        out.set(value.k === 'str' ? value.v : display(value), str(key));
+        out.set(keyText(value, seen, c, 'invert'), str(key));
       }
       return map(out);
     }),
