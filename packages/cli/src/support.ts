@@ -138,10 +138,42 @@ export function reportError(error: unknown): never {
     );
     process.exit(1);
   }
-  process.stderr.write(
-    'lumen: internal error\n' + (error instanceof Error ? (error.stack ?? error.message) : String(error)) + '\n',
-  );
+  process.stderr.write('lumen: internal error\n' + describeEscaped(error) + '\n');
   process.exit(70);
+}
+
+/**
+ * Whatever escaped, in words somebody could act on.
+ *
+ * `String(error)` is right for an `Error` and useless for anything else: a
+ * `return` written outside a function threw the interpreter's own
+ * `ReturnSignal`, which is a plain object, and this line printed
+ * `[object Object]` — an internal error report that says less than nothing.
+ *
+ * A bug report needs to name what escaped, so the class name comes first and
+ * the fields after it. Nothing here can throw: an unprintable value must not
+ * turn the report of a problem into a second problem.
+ */
+function describeEscaped(error: unknown): string {
+  if (error instanceof Error) return error.stack ?? error.message;
+  // Everything below this line is something Lumen threw that is not an error,
+  // which is a bug here rather than in the program being run — so each of them
+  // ends with the same sentence, and the only question is how to name it.
+  const note = '\n       this is a bug in Lumen rather than in the program: please report it';
+  if (error === null || typeof error !== 'object') return String(error) + note;
+
+  const name = error.constructor?.name ?? 'object';
+  let fields: string | undefined;
+  try {
+    fields = JSON.stringify(error, (_key, value: unknown) =>
+      typeof value === 'bigint' || typeof value === 'function' ? String(value) : value,
+    );
+  } catch {
+    // A cyclic object, or a getter that throws. Reporting a problem must not
+    // become a second problem.
+    fields = undefined;
+  }
+  return name + ' ' + (fields === undefined ? '(its fields could not be rendered)' : fields) + note;
 }
 
 /**

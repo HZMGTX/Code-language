@@ -268,6 +268,17 @@ export class Interpreter {
         last = await this.execStmt(stmt, env, unit);
       }
       return last;
+    } catch (error) {
+      // A `return` written outside any function reaches here. `runModule`
+      // catches the same signal and discards the value, because a file has
+      // nowhere to put it; this is the REPL's module boundary, where the value
+      // is exactly what the person typing wanted to see.
+      //
+      // Letting it escape instead printed `lumen: internal error` followed by
+      // `[object Object]` — a signal is a plain object, so `String` of it says
+      // nothing at all.
+      if (error instanceof ReturnSignal) return error.value;
+      throw error;
     } finally {
       this.units.pop();
     }

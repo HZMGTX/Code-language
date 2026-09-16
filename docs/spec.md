@@ -573,6 +573,12 @@ line ends it. `break` and `continue` never take one.
 a `break` inside a lambda cannot leave the loop the lambda was written in,
 because by the time it runs that loop may already have finished.
 
+`return` outside any function is **not** an error, unlike those two: it ends the
+module, which is a useful way to stop early and is what a reader expects it to
+mean. Its value has nowhere to go in a file and is discarded; at the REPL, where
+a module is one line, it is the answer and is printed. There is no `RS` code for
+it because there is nothing wrong with it.
+
 ---
 
 ## 6. Type annotations

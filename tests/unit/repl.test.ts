@@ -58,6 +58,23 @@ describe('repl', () => {
     assert.match(out, /5/);
   });
 
+  it('answers a top-level `return` instead of crashing on it', async () => {
+    // `return` written outside any function reaches the interpreter's own
+    // return signal, which a module catches and the REPL did not — so it
+    // escaped to the CLI's last resort and printed `lumen: internal error`
+    // followed by `[object Object]`, a signal being a plain object that
+    // `String` says nothing about.
+    //
+    // The REPL is a module boundary like any other; the difference is that
+    // here the value is exactly what the person typing wanted to see.
+    const out = await repl(['return 1', 'let after = 5', 'after']);
+    assert.doesNotMatch(out, /internal error|\[object Object\]/);
+    // The prompt shares the line with the value it answered.
+    assert.match(out, /lumen> 1$/mu);
+    // And the session is still alive, which is the half that matters.
+    assert.match(out, /lumen> 5$/mu);
+  });
+
   it('answers :type', async () => {
     assert.match(await repl([':type "abc"']), /Str/);
   });

@@ -34,6 +34,29 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   from its type's table and never from scope, so `xs.groupBy(f)` works with no
   import at all and those imports really were dead. They are gone.
 
+- **`return` at the REPL printed `lumen: internal error` and `[object Object]`.**
+  `return` written outside any function reaches the interpreter's own return
+  signal. `runModule` catches it — that is how `return` ends a file early — and
+  the REPL, which calls `runStatements` instead, did not. So it escaped to the
+  CLI's last resort, which did `String(error)` on a plain object and said
+  nothing whatsoever.
+
+  The REPL is a module boundary like any other, and now catches it. The
+  difference is what to do with the value: a file has nowhere to put it and
+  discards it, while at the REPL it is exactly what the person typing wanted to
+  see, so it is printed. `docs/spec.md` now says both, which it never had — the
+  behaviour of a top-level `return` had simply never been written down.
+
+- **`lumen: internal error` says what escaped.** The line was
+  `String(error)` for anything that is not an `Error`, and `String` of an object
+  is `[object Object]` — a bug report with less information in it than silence.
+  It names the class and its fields now, and ends by saying the fault is Lumen's
+  rather than the program's, which is the thing a reader most needs to know.
+
+  Nothing in it can throw. A cyclic object or a getter that fails comes back as
+  "its fields could not be rendered", because reporting a problem must not
+  become a second problem — the failure mode this line already had once.
+
 - **`RS012`: a statement that can never run.**
 
   ```text
