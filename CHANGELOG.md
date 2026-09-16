@@ -207,10 +207,27 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   say", it compares consistently, and it is equal to itself. `round(Infinity)`,
   `exp(Infinity)`, `sqrt(Infinity)` and `atan(Infinity)` all still answer.
 
-  The test is the whole route list swept at once — arithmetic, compound
-  assignment, every library function whose IEEE answer is `NaN`, and the two
-  places a number arrives from outside the program (`json.parse`, `str.toNum`).
-  It reads `type()` rather than the printed output, because a `NaN` prints as
+  The test has two halves, and the second exists because the first was not
+  enough. The first is a written list of language-level routes — arithmetic,
+  compound assignment, a unary operator — which cannot be enumerated from the
+  library and so are enumerated by hand. **That list missed
+  `list.sum([inf, -inf])`**, which does its addition in TypeScript rather than
+  through a Lumen operator, and so went round the guard exactly as compound
+  assignment had. `reduce` needs nothing, and the difference is the lesson: it
+  calls back into Lumen, so the `+` in its callback is a real operator and
+  already checked.
+
+  So the second half **derives** its routes from the library instead of
+  guessing them: every exported function is called with `Infinity`, with a
+  negative `Infinity`, and with a list of the two, and a `NaN` answer fails.
+  307 calls; one route, which is `sum`. A function added tomorrow is covered
+  without anybody remembering to add a line, and `support.ts` now carries a
+  `checkedNum` for any native that does arithmetic itself. Both halves were
+  checked against the bug by putting it back, which is the step that was
+  skipped the first time — and the derived half caught it.
+
+  The first half also covers
+  both read `type()` rather than the printed output, because a `NaN` prints as
   `NaN` and so does the text of a correct message about one:
   `toNum("NaN")` rightly answers ``Err("`NaN` is not a number")``, and reading
   the output for the word called that a defect when the sweep was first written

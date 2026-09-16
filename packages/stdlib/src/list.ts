@@ -25,6 +25,7 @@ import {
   None,
   Some,
   arg,
+  checkedNum,
   expectFn,
   expectInt,
   expectList,
@@ -165,7 +166,7 @@ export function stdList(): Map<string, Value> {
       const p = expectFn(arg(a, 1), c, 'count(predicate)');
       let total = 0;
       for (const item of xs.items) if (truthy(await c.call(p, [item]))) total += 1;
-      return num(total);
+      return checkedNum(total, c, 'sum()');
     }),
 
     fn('len', ['xs'], (a, c) => num(expectList(arg(a, 0), c, 'len(xs)').items.length)),
@@ -285,7 +286,11 @@ export function stdList(): Map<string, Value> {
         if (item.k !== 'num') return c.panic('sum() needs a List of Num, found ' + typeName(item));
         total += item.v;
       }
-      return num(total);
+      // Through `checkedNum`, because the addition happens here rather than in
+      // the interpreter: `sum([inf, -inf])` was a `NaN`, and the language says
+      // a NaN cannot exist. `reduce` needs nothing because its `+` is a real
+      // operator inside a Lumen callback, which is already guarded.
+      return checkedNum(total, c, 'sum()');
     }),
 
     fn('zip', ['xs', 'ys'], (a, c) => {

@@ -1,0 +1,11 @@
+6
+0
+Infinity
+error[RT035]: sum() has no value
+  --> sum-no-value.lm:16:7
+   |
+16 | print(sum([inf, 0 - inf]))
+   |       ^^^^^^^^^^^^^^^^^^^
+   |
+   = note: this comes from infinities cancelling, which usually means an earlier result overflowed
+   = note: a number with no value cannot be ordered or compared — see `RT046`

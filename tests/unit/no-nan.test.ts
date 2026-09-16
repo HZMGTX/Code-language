@@ -10,25 +10,84 @@
  * value that compares false against itself.
  *
  * So the invariant is worth more than a habit, and it was being kept as one.
- * Two holes were found within an hour of each other:
+ * Four holes were found in an afternoon:
  *
  *   - compound assignment had its own arithmetic inside `storeInto` and went
  *     round `checked`, so `a -= inf` was a `NaN` while `inf - inf` was
  *     `RT046`;
  *   - `asin` and `acos` are defined only on `[-1, 1]` and answered `NaN`
  *     outside it, while every sibling that can produce one already refused —
- *     `sqrt(-1)`, `log(0)`, `pow(-8, 0.5)`, `gcd(Infinity, 2)`.
+ *     `sqrt(-1)`, `log(0)`, `pow(-8, 0.5)`, `gcd(Infinity, 2)`;
+ *   - `sin`, `cos` and `tan` answered `NaN` at `Infinity`, found by the
+ *     hand-written half of this test;
+ *   - `list.sum([inf, -inf])` did its addition in TypeScript rather than
+ *     through a Lumen operator, and was **missed by the hand-written half** —
+ *     which is the lesson this file now carries in its shape.
  *
- * This is the whole route list, swept at once. A new route is a new line here.
+ * There are two halves, and the second exists because of that miss. The first
+ * is a written list of language-level routes: arithmetic, compound assignment,
+ * a unary operator. Those cannot be enumerated from the library, so they are
+ * enumerated by hand.
+ *
+ * The second **derives** its route list from the library rather than guessing
+ * it: every exported function is called with `Infinity`, with a negative
+ * `Infinity`, and with a list of the two — the arguments that make an answer
+ * undefined — and the answer is rejected if it is a `NaN`. Asserting a guessed
+ * list is how `sum` was missed; a function added tomorrow is covered without
+ * anybody remembering to add a line.
  */
 
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
 
+import { showTy, type Ty } from '@lumen-lang/core';
+import { stdModuleExports } from '@lumen-lang/stdlib';
+
 import { runSource } from '../support/harness.js';
 
 /** The largest finite double times ten, which is how a program reaches Infinity. */
 const INF = '(1e308 * 10)';
+
+/** `serve` never returns; `exit`, `sleep` and `input` stop or block the sweep. */
+const UNCALLABLE: ReadonlySet<string> = new Set(['serve', 'exit', 'sleep', 'input']);
+
+/** The name `type()` answers for a declared type. */
+function tyName(ty: Ty | undefined): string {
+  if (ty === undefined || ty.k === 'any') return 'Any';
+  return showTy(ty).replace(/<.*>$/, '');
+}
+
+/**
+ * Argument lists that push a function towards an answer with no value.
+ *
+ * `Infinity` wherever a `Num` goes, and a list of cancelling infinities
+ * wherever a `List` goes — which is exactly how `sum` got there, and how
+ * `reduce` would if its `+` were not a real Lumen operator.
+ */
+function argumentShapes(params: readonly { optional?: boolean; ty?: Ty }[]): readonly string[] {
+  const required = params.filter((p) => !p.optional);
+  const shapes = [`[${INF}, (0 - 1e308 * 10)]`, `[${INF}, 0]`].map((listArg) =>
+    required
+      .map((p) => {
+        switch (tyName(p.ty)) {
+          case 'Str':
+            return '"x"';
+          case 'Bool':
+            return 'true';
+          case 'Map':
+            return '{ a: 1 }';
+          case 'List':
+            return listArg;
+          case 'Fn':
+            return 'fn(a, b) { a + b }';
+          default:
+            return INF;
+        }
+      })
+      .join(', '),
+  );
+  return [...new Set(shapes)];
+}
 
 /**
  * Every way a number might arrive without a value.
@@ -83,6 +142,9 @@ const ROUTES: readonly (readonly [string, string, string])[] = [
   ],
   ['toNum("nan")', 'toNum("nan")', 'import { toNum } from "std/str"'],
   ['toNum("1e400")', 'toNum("1e400").unwrapOr(0)', 'import { toNum } from "std/str"'],
+  // The one the hand-written list missed, kept here as well as in the derived
+  // sweep so the miss stays visible.
+  ['list.sum([inf, -inf])', `sum([${INF}, (0 - 1e308 * 10)])`, 'import { sum } from "std/list"'],
 ];
 
 describe('a NaN cannot be produced', () => {
@@ -102,6 +164,39 @@ describe('a NaN cannot be produced', () => {
       }
     }
     assert.deepEqual(leaks, []);
+  });
+
+  it('has no route to one anywhere in the library, derived rather than listed', async () => {
+    // The list above is written by hand and missed `list.sum`. This one is not
+    // written: every function the library exports is called with the arguments
+    // that make an answer undefined, so a function added later is covered
+    // without anybody remembering to add a line for it.
+    const leaks: string[] = [];
+    let calls = 0;
+
+    for (const [moduleName, exports] of stdModuleExports()) {
+      for (const [name, ty] of exports) {
+        if (ty?.k !== 'fn' || UNCALLABLE.has(name)) continue;
+        for (const args of argumentShapes(ty.params ?? [])) {
+          const source =
+            `import { ${name} } from "${moduleName}"\n` +
+            `let answer = ${name}(${args})\n` +
+            'print("${type(answer)} ${answer}")\n';
+          const result = await runSource(source);
+          calls += 1;
+          const answer = result.output.trim().split('\n').pop()?.trim() ?? '';
+          // The type is read as well as the value, because a *message* about a
+          // NaN legitimately contains the word — `toNum("NaN")` rightly
+          // answers an `Err` mentioning it.
+          if (/^(Num|List|Map) .*\bNaN\b/.test(answer)) {
+            leaks.push(`${moduleName}.${name}(${args}) -> ${answer}`);
+          }
+        }
+      }
+    }
+
+    assert.deepEqual(leaks, []);
+    assert.ok(calls > 250, 'only made ' + String(calls) + ' calls; the sweep is not reaching the library');
   });
 
   it('answers in range, so the guards are not simply refusing everything', async () => {

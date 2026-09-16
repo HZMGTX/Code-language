@@ -9,6 +9,7 @@ import {
   type Value,
   display,
   enumValue,
+  num,
   typeName,
 } from '@lumen-lang/core';
 
@@ -63,6 +64,29 @@ export function keyText(
   }
   seen.set(text, typeName(value));
   return text;
+}
+
+/**
+ * A number a native computed, or a panic when it has no value.
+ *
+ * `checked` in the interpreter guards every operator this way, and a native
+ * doing its arithmetic in TypeScript goes round it. `sum([inf, -inf])` handed
+ * back a `NaN` — which `docs/spec.md` says cannot exist — and then
+ * `sorted([1, thatNaN, 2])` came back not sorted, because ordering a value that
+ * compares false against everything is not defined.
+ *
+ * `reduce` needs nothing, and the difference is instructive: it calls back into
+ * Lumen, so the `+` inside its callback is a real operator and already guarded.
+ * Anything that adds, multiplies or divides in TypeScript needs this instead.
+ */
+export function checkedNum(result: number, ctx: CallCtx, where: string): Value {
+  if (Number.isNaN(result)) {
+    ctx.panic(where + ' has no value', [
+      'this comes from infinities cancelling, which usually means an earlier result overflowed',
+      'a number with no value cannot be ordered or compared — see `RT046`',
+    ]);
+  }
+  return num(result);
 }
 
 /** Positional argument `i`, or nil when absent. */
