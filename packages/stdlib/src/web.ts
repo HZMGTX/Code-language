@@ -229,6 +229,47 @@ function escapeHtml(input: string): string {
  * meaning; the checker has no way to express "does not return" and does not
  * need one.
  */
+/**
+ * Whether any part of a relative path is a hidden name.
+ *
+ * `.well-known` is allowed through, and is the only one: it is where a
+ * certificate authority looks to verify a domain, so blocking it breaks HTTPS
+ * rather than protecting anything. Everything else beginning with a dot stays
+ * unserved — `.env`, `.git`, `.ssh`, `.npmrc`, editor backups.
+ */
+function hiddenSegment(relative: string): boolean {
+  return relative
+    .split(/[/\\]/)
+    .some((segment) => segment.startsWith('.') && segment !== '.well-known');
+}
+
+/**
+ * Whether `target` is still inside `root` once every symlink is followed.
+ *
+ * The path is compared twice, as written and as the filesystem really has it,
+ * because a symlink makes the first comparison a lie: a link inside the root
+ * pointing anywhere at all resolves to a path that *looks* inside it. Nothing
+ * about the request has to be strange for this — an upload directory, a build
+ * artefact, a `node_modules` someone linked.
+ *
+ * The root is resolved too, and has to be: `/var/www -> /srv/www` is an
+ * ordinary way to arrange a machine, and comparing a resolved target against an
+ * unresolved root would answer 404 to every request on one.
+ *
+ * A symlink that stays inside the root still works, which is why this checks
+ * rather than refuses: `current -> releases/v3` is how deployments are done.
+ */
+async function reallyInside(target: string, root: string): Promise<boolean> {
+  try {
+    const realRoot = await fsp.realpath(root);
+    const realTarget = await fsp.realpath(target);
+    return realTarget === realRoot || realTarget.startsWith(realRoot + path.sep);
+  } catch {
+    // A path that cannot be resolved names nothing that could be served.
+    return false;
+  }
+}
+
 const SIGNATURES: Readonly<Record<string, string>> = {
   html: '(body: Str, status: Num = 200) -> Map',
   text: '(body: Str, status: Num = 200) -> Map',
@@ -475,6 +516,19 @@ export function stdWeb(): Map<string, Value> {
      * 404 — the same answer a missing file gets, because telling an attacker
      * which of the two happened is itself information.
      *
+     * The boundary is checked twice, because once is not enough: the path as
+     * written, and then the path the filesystem really has once symlinks are
+     * followed. A link inside the root pointing anywhere at all resolves to
+     * something that *looks* inside it, and nothing about the request has to be
+     * strange for one to be there. A link that stays inside still works, since
+     * `current -> releases/v3` is how deployments are done.
+     *
+     * A name beginning with a dot is not served either. `.env` and
+     * `.git/config` are the most-exploited misconfiguration on the web, and the
+     * default `root` is the directory the program is running in, which in a
+     * checkout holds both. `.well-known` is the one exception, because it is
+     * where a certificate authority looks to prove the site is yours.
+     *
      * A directory resolves to `index.html` inside it, as a web server should.
      */
     fn(
@@ -511,6 +565,14 @@ export function stdWeb(): Map<string, Value> {
         const inside = target === rootDir || target.startsWith(rootDir + path.sep);
         if (!inside) return notFoundResponse();
 
+        // A name beginning with a dot is not served. `.env`, `.git/config` and
+        // `.ssh/id_rsa` are the most-exploited misconfiguration on the web, and
+        // the default `root` here is `"."` — the directory the program is
+        // running in, which in a checkout holds all three. `.well-known` is the
+        // exception because it is not optional: it is where a certificate
+        // authority looks to prove the site is yours.
+        if (hiddenSegment(relative)) return notFoundResponse();
+
         let stat;
         try {
           stat = await fsp.stat(target);
@@ -527,6 +589,13 @@ export function stdWeb(): Map<string, Value> {
         } else if (!stat.isFile()) {
           return notFoundResponse();
         }
+
+        // And again, against what the filesystem says these really are. The
+        // check above compares the path as *written*, which a symlink makes a
+        // lie: `public/keys.txt -> /etc/secrets` resolves to a path inside
+        // `public` and reads a file that is not. The boundary is meant to be a
+        // boundary, so it is checked on both.
+        if (!(await reallyInside(target, rootDir))) return notFoundResponse();
 
         const type =
           declaredType !== ''

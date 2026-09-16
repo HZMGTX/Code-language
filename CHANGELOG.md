@@ -130,6 +130,32 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
     answered `["a", "b"]`, which looks like an answer and was an accident of
     which branch ran first. Refused now, with the reason.
 
+- **A symlink walked straight out of a served directory.** `std/web.file`
+  blocked every textual escape — `../`, `%2e%2e%2f`, an absolute path, a NUL
+  byte, a backslash — and then served `public/keys.txt -> /etc/secrets` with a
+  200, because the boundary was checked on the path as *written* and a symlink
+  makes that a lie: a link inside the root pointing anywhere at all resolves to
+  something that looks inside it. The module's own documentation says "`root` is
+  a boundary, not a suggestion", which it was not.
+
+  Nothing about the request has to be strange for a link to be there — an upload
+  directory, a linked build artefact, a `node_modules` somebody symlinked. The
+  boundary is checked twice now, once on the path as written and once on what
+  the filesystem really has, with the root resolved too (`/var/www -> /srv/www`
+  is an ordinary way to arrange a machine, and comparing a resolved target
+  against an unresolved root would 404 every request on one). A link that stays
+  inside still works, because `current -> releases/v3` is how deployments are
+  done — which is the reason this checks rather than refusing symlinks outright.
+
+- **And it served `.env`.** The other way a web root leaks is the files a
+  checkout has in it anyway, and `file`'s default `root` is `"."` — the
+  directory the program is running in. `.env`, `.git/config`, `.ssh/id_rsa`:
+  the most-exploited misconfiguration on the web, available from a one-line
+  handler. A path with a dot-leading segment is a 404 now. `.well-known` is the
+  one exception and is not negotiable: it is where a certificate authority looks
+  to prove the site is yours, so blocking it breaks HTTPS rather than protecting
+  anything.
+
 - **Half of `std/str` counted characters and half counted UTF-16 units.**
   `len`, `slice`, `chars` and `reverse` counted code points; `indexOf`,
   `padStart`, `padEnd` and `center` inherited JavaScript's counting, where an

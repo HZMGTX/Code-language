@@ -321,6 +321,21 @@ it, and then compares the result against the resolved root; anything outside is
 a 404. Not a 403: telling an attacker which of "no such file" and "not yours to
 ask for" happened is itself information.
 
+The comparison happens **twice**, because once is not enough. The first is on
+the path as written; the second is on what the filesystem really has, once every
+symlink is followed. A link inside the root pointing anywhere at all resolves to
+something that *looks* inside it, and nothing about the request has to be
+strange for one to be there — an upload directory, a linked build artefact, a
+`node_modules` somebody symlinked. A link that stays inside the root still
+works, since `current -> releases/v3` is how deployments are arranged.
+
+**A name beginning with a dot is not served.** `.env` and `.git/config` are the
+most-exploited misconfiguration on the web, and `file`'s default `root` is `"."`
+— the directory the program is running in, which in a checkout holds both.
+`.well-known` is the one exception, and it is not optional: it is where a
+certificate authority looks to prove the site is yours, so blocking it would
+break HTTPS rather than protect anything.
+
 `isServer()` says whether the file was started with `lumen serve` or with
 `lumen run`. Branching on it lets one file be both a site and a script — serve
 the routes when asked to serve, and print what they return when asked to run —

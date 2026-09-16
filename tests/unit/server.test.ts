@@ -81,6 +81,25 @@ describe('web server', () => {
     await fsp.writeFile(path.join(publicDir, 'pixel.png'), imageBytes);
     await fsp.writeFile(path.join(workdir, 'secret.txt'), 'TOP SECRET', 'utf8');
 
+    // A symlink out of the root, a symlink to a directory out of it, and one
+    // that stays inside. Nothing about a request has to be strange for one of
+    // these to exist: an upload directory, a linked build artefact, a
+    // `current -> releases/v3` deployment.
+    await fsp.symlink(path.join(workdir, 'secret.txt'), path.join(publicDir, 'leak.txt'));
+    await fsp.symlink(workdir, path.join(publicDir, 'up'));
+    await fsp.symlink('deep', path.join(publicDir, 'alias'));
+
+    // The other way a web root leaks: the files a checkout has in it anyway.
+    await fsp.mkdir(path.join(publicDir, '.git'), { recursive: true });
+    await fsp.writeFile(path.join(publicDir, '.git', 'config'), 'TOP SECRET', 'utf8');
+    await fsp.writeFile(path.join(publicDir, '.env'), 'TOP SECRET', 'utf8');
+    await fsp.mkdir(path.join(publicDir, '.well-known', 'acme-challenge'), { recursive: true });
+    await fsp.writeFile(
+      path.join(publicDir, '.well-known', 'acme-challenge', 'token'),
+      'challenge-response',
+      'utf8',
+    );
+
     const script = path.join(workdir, 'server.lm');
     await fsp.writeFile(script, SERVER_SOURCE(port, publicDir).replace('PUBLIC_DIR', publicDir), 'utf8');
 
@@ -210,6 +229,43 @@ describe('web server', () => {
       assert.equal(res.status, 404, attempt + ' was not refused');
       assert.doesNotMatch(body, /TOP SECRET/, attempt + ' leaked the file');
     }
+  });
+
+  it('refuses a symlink that leaves the root, and allows one that does not', async () => {
+    // The path check compares the path as *written*, and a symlink makes that a
+    // lie: a link inside `public/` pointing anywhere at all resolves to
+    // something that looks inside it. Both of these were served before the
+    // boundary was checked against what the filesystem really has.
+    for (const attempt of ['/static/leak.txt', '/static/up/secret.txt']) {
+      const res = await fetch(base + attempt, { redirect: 'manual' });
+      const body = await res.text();
+      assert.equal(res.status, 404, attempt + ' was not refused');
+      assert.doesNotMatch(body, /TOP SECRET/, attempt + ' leaked the file');
+    }
+
+    // And the reason this checks rather than refusing outright: a symlink that
+    // stays inside the root is how deployments are arranged.
+    const allowed = await fetch(base + '/static/alias/note.txt');
+    assert.equal(allowed.status, 200, 'a symlink inside the root was refused');
+    assert.equal(await allowed.text(), 'nested');
+  });
+
+  it('does not serve a name beginning with a dot, except .well-known', async () => {
+    // `.env` and `.git/config` are the most-exploited misconfiguration on the
+    // web, and `file`'s default root is the directory the program runs in —
+    // which in a checkout holds both.
+    for (const attempt of ['/static/.env', '/static/.git/config']) {
+      const res = await fetch(base + attempt, { redirect: 'manual' });
+      assert.equal(res.status, 404, attempt + ' was served');
+      assert.doesNotMatch(await res.text(), /TOP SECRET/, attempt + ' leaked the file');
+    }
+
+    // The exception, and it is not optional: this is where a certificate
+    // authority looks to prove the site is yours, so blocking it breaks HTTPS
+    // rather than protecting anything.
+    const challenge = await fetch(base + '/static/.well-known/acme-challenge/token');
+    assert.equal(challenge.status, 200, '.well-known was blocked');
+    assert.equal(await challenge.text(), 'challenge-response');
   });
 
   it('returns 404 for a file that is simply missing', async () => {
