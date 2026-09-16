@@ -1,0 +1,15 @@
+"plain"
+"with \"quotes\" and \\backslash"
+"tab\there, newline\nthere"
+"\${name} is not an interpolation"
+"a bare $ and $x need nothing"
+""
+"🎉 astral"
+${name} printed raw
+{plain: 1, _leading: 2, with2: 3}
+{"a-b": 1, "has space": 2, "": 3}
+{"\${interp}": 1, "with\nnewline": 2, "with\"quote": 3}
+[1, "a", nil, true, {"k-1": ["x", "y"]}]
+{"a-b": 1}
+Point {x: 1, y: 2}
+[nil, true, false, 0, -1, 1.5, Ok(1), Err("no"), Some(2), None]

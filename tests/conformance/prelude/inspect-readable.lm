@@ -1,0 +1,42 @@
+// `inspect` prints a value the way source would write it — which is a property,
+// not a matter of taste: its output should read back as the same value.
+//
+// It used JavaScript's own escaping, which is for a different language. `${` is
+// an interpolation in Lumen, so `inspect("${name}")` produced source that
+// computed something instead of naming it; a control character came out in
+// JSON's `\uXXXX` spelling, which Lumen does not have (it writes `\u{...}`);
+// and a Map's keys were concatenated raw, so a key with a dash read back as a
+// subtraction and a key with a newline broke the output across lines.
+//
+// A Map key is an arbitrary string, and `std/csv.records`, `std/json.parse` and
+// `std/web.form` all build maps whose keys somebody else chose.
+import { inspect } from "std/core"
+
+// Strings: every escape the language has, and the one JavaScript would miss.
+print(inspect("plain"))
+print(inspect("with \"quotes\" and \\backslash"))
+print(inspect("tab\there, newline\nthere"))
+print(inspect("\${name} is not an interpolation"))
+print(inspect("a bare $ and $x need nothing"))
+print(inspect(""))
+print(inspect("🎉 astral"))
+
+// A top-level string still prints raw. `print` shows text as text; only a
+// string *inside* something is quoted, so a collection is unambiguous.
+print("\${name} printed raw")
+
+// Maps: bare when the key is a name, quoted when it is not.
+print(inspect({ plain: 1, _leading: 2, with2: 3 }))
+print(inspect({ "a-b": 1, "has space": 2, "": 3 }))
+print(inspect({ "\${interp}": 1, "with\nnewline": 2, "with\"quote": 3 }))
+
+// Nested, where the quoting is what keeps it readable at all.
+print(inspect([1, "a", nil, true, { "k-1": ["x", "y"] }]))
+print({ "a-b": 1 })
+
+// Structs keep bare field names, because a declaration's names are always names.
+struct Point { x: Num, y: Num }
+print(inspect(Point { x: 1, y: 2 }))
+
+// And the values that are not text.
+print(inspect([nil, true, false, 0, 0 - 1, 1.5, Ok(1), Err("no"), Some(2), None]))

@@ -450,7 +450,12 @@ table, supplied by `std/str`, `std/list`, `std/map`, `std/math`, `std/option` an
 `std/result`.
 
 **On every value**: `str`, `inspect`, `type`, `clone` and `isNil` — the five
-whose subject is any value at all. `42.str()`, `p.str()` on a struct and
+whose subject is any value at all. `inspect` writes a value the way source
+would: its output is a Lumen expression that reads back as the same value, so a
+string carries `\"`, `\\`, `\n`, `\t`, `\r`, `\$` before a `{`, and `\u{…}` for
+anything else unprintable, and a `Map` key is written bare only when it is a
+plain name and quoted otherwise. `str` is the plain rendering and does none of
+that — `"a\nb".str()` is two lines, `"a\nb".inspect()` is one. `42.str()`, `p.str()` on a struct and
 `v.type()` therefore work, and a chain like `n.str().padStart(3)` has somewhere
 to put the conversion, which `"${n}"` does not. A per-type method of the same
 name always wins, so these can never change what an existing call means.

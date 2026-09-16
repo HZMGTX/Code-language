@@ -130,6 +130,38 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
     answered `["a", "b"]`, which looks like an answer and was an accident of
     which branch ran first. Refused now, with the reason.
 
+- **`inspect` did not print a value the way you would write it**, which is the
+  contract stated in its own source. It escaped strings with
+  `JSON.stringify` — escaping for a different language — and concatenated a
+  `Map`'s keys raw:
+
+  ```text
+  inspect("${name}")      was  "${name}"       an interpolation, so a different value
+  inspect("a\0b")         was  "a\u0000b"      Lumen writes \u{0}; this does not lex
+  inspect({"a-b": 1})     was  {a-b: 1}        reads back as a subtraction
+  inspect({"a\nb": 1})    was  {a              broke the line, and the output after it
+  ```
+
+  None of that needs a strange program. A `Map` key is an arbitrary string, and
+  `std/csv.records`, `std/json.parse` and `std/web.form` all build maps whose
+  keys somebody else chose — so printing a parsed CSV row with an awkward
+  header column corrupted the log line it was in. A list element was *already*
+  quoted (`[1, "a"]`, never `[1, a]`), so a key not being was one function
+  answering the same question two ways.
+
+  `quote` writes Lumen's escapes now, not JavaScript's: `\"`, `\\`, `\n`, `\t`,
+  `\r`, `\u{…}` for the C0 controls and for a lone surrogate, and `\$` before a
+  `{` — an escape the lexer has had since it was written and nothing was using.
+  A bare `$` is left alone, because escaping every price and every shell
+  snippet buys nothing. A key is bare only when it is a plain name.
+
+  The test lexes the output instead of reading it, which is the part that would
+  have caught this on day one: for every awkward string, `inspect` must produce
+  exactly one token, that token must be a `string` and not a `template`, and it
+  must carry back the value it started with. `template` is the whole `${` half —
+  an unescaped marker does not produce a wrong string, it produces a different
+  kind of token.
+
 - **And a fifth, in the JSON locator added above.** The column it reports was
   counted in the host's UTF-16 units, so `["🎉",]` said column 7 where the `]`
   is the sixth character. Found by asking the same question of every function

@@ -335,8 +335,64 @@ function formatNumber(n: number): string {
   return String(n);
 }
 
+/**
+ * A string as Lumen source would write it.
+ *
+ * `JSON.stringify` covers `"`, `\` and the control characters, and misses the
+ * one escape that is Lumen's own: `${` begins an interpolation, so
+ * `inspect("${name}")` produced source that means something else entirely. The
+ * lexer has had `\$` for exactly this since it was written; nothing was using
+ * it.
+ *
+ * Only a `$` that is followed by `{` is escaped. A bare one needs nothing, and
+ * escaping every `$` would make every price and every shell snippet harder to
+ * read for no gain.
+ */
 function quote(s: string): string {
-  return JSON.stringify(s);
+  let out = '"';
+  // By code point, so a surrogate pair is one character and cannot be split.
+  for (const ch of s) {
+    if (ch === '"') out += '\\"';
+    else if (ch === '\\') out += '\\\\';
+    else if (ch === '\n') out += '\\n';
+    else if (ch === '\t') out += '\\t';
+    else if (ch === '\r') out += '\\r';
+    else {
+      const code = ch.codePointAt(0) as number;
+      // The C0 controls, and a lone surrogate — which a regex without the `u`
+      // flag can hand back half of. Both have to be escaped: raw, one would be
+      // a control character sitting in the middle of a quoted string and the
+      // other is not valid text at all.
+      const lone = code >= 0xd800 && code <= 0xdfff;
+      out += code < 0x20 || lone ? '\\u{' + code.toString(16).toUpperCase() + '}' : ch;
+    }
+  }
+  // Last, and on the assembled text: the escape depends on the *next*
+  // character, which the loop above cannot see. Nothing it emits can create a
+  // false `${` — an escape always puts a `\\` between the two.
+  return out.replace(/\$(?=\{)/g, '\\$') + '"';
+}
+
+/** A `Map` key may be written bare exactly when it is a plain name. */
+const BARE_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/**
+ * A key as a map literal would write it: bare when it can be, quoted when not.
+ *
+ * Keys were concatenated raw, which made the rendering of an ordinary map
+ * wrong in three ways at once — `{"a-b": 1}` came out as `{a-b: 1}`, which
+ * reads back as a subtraction; a key with a quote in it was ambiguous; and a
+ * key with a **newline** in it broke the output across lines and corrupted
+ * whatever was printing it. None of that needs a strange program: a `Map` key
+ * is an arbitrary string, and `std/csv.records`, `std/json.parse` and
+ * `std/web.form` all build maps whose keys a stranger chose.
+ *
+ * List elements were already quoted (`[1, "a"]` rather than `[1, a]`) for
+ * exactly this reason, so keys not being was an inconsistency inside one
+ * function.
+ */
+function keyOf(key: string): string {
+  return BARE_KEY.test(key) ? key : quote(key);
 }
 
 /**
@@ -373,7 +429,7 @@ export function inspect(v: Value, seen = new Set<unknown>()): string {
       if (seen.has(v)) return '{...}';
       seen.add(v);
       const body = [...v.entries]
-        .map(([key, value]) => key + ': ' + inspect(value, seen))
+        .map(([key, value]) => keyOf(key) + ': ' + inspect(value, seen))
         .join(', ');
       seen.delete(v);
       return '{' + body + '}';
@@ -381,8 +437,11 @@ export function inspect(v: Value, seen = new Set<unknown>()): string {
     case 'struct': {
       if (seen.has(v)) return v.typeName + ' {...}';
       seen.add(v);
+      // A struct's field names come from its declaration and so are always
+      // plain names; going through `keyOf` anyway costs nothing and means
+      // there is one answer to "how is a key written" rather than two.
       const body = [...v.fields]
-        .map(([key, value]) => key + ': ' + inspect(value, seen))
+        .map(([key, value]) => keyOf(key) + ': ' + inspect(value, seen))
         .join(', ');
       seen.delete(v);
       return v.typeName + ' {' + body + '}';
