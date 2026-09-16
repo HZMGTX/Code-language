@@ -130,6 +130,36 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
     answered `["a", "b"]`, which looks like an answer and was an accident of
     which branch ran first. Refused now, with the reason.
 
+- **The "no host error text" rule is now a test rather than a habit.**
+  `docs/stdlib.md` has always said error text belongs to Lumen and not to the
+  host, and every module kept it — which is exactly why nobody looked at the one
+  `catch` in `std/process` that stringified whatever it caught. So the question
+  is asked of the whole library at once: call every export with an argument of
+  the wrong shape and with the awkward values, and fail if the answer contains a
+  word only the host would use (`TypeError`, `ERR_…`, `errno`, `ENOENT`,
+  `[object …]`, `node:internal`, and a dozen more).
+
+  1701 calls, 390 ms, in-process. The result on the current library is zero,
+  which is the answer worth having written down.
+
+  Two things about building it are worth recording, because both were wrong
+  first:
+
+  - The first version used only wrong *types* — `nil`, `[]`, `0 - 1` — and when
+    the `std/process` bug was put back to check the test, **it still passed**.
+    `run("")` was the input that produced the `TypeError`, and no wrong type
+    goes near it. An empty string, a zero and an empty collection are what a
+    program computes by accident — a trimmed field, a `len()` of nothing, a
+    list that filtered down to none — and that is where the unconsidered branch
+    is. A check nobody verified against the bug it exists for is a check that
+    reports "all clear" about nothing.
+  - `null` and `NaN` were in the list of host words and had to come out. JSON
+    spells nil `null`, so `stringify(nil)` is `null` and `std/web.json(nil)`
+    carries a body of `null`; `Infinity` and `NaN` are how `inspect` renders
+    those values. Both are Lumen's own spelling, and reporting them made the
+    sweep call two correct answers defects — which is the failure mode a check
+    like this has to avoid, because a check nobody believes is worse than none.
+
 - **`inspect` did not print a value the way you would write it**, which is the
   contract stated in its own source. It escaped strings with
   `JSON.stringify` — escaping for a different language — and concatenated a

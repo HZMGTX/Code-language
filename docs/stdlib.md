@@ -419,7 +419,13 @@ nothing but a name (spec §1.4).
 
 ### `std/fs` and `std/http`
 
-Error text belongs to Lumen, not to the host. Node's own filesystem messages
+Error text belongs to Lumen, not to the host — and a test asks that of the
+whole library at once rather than function by function, because it was a rule
+kept by hand until `std/process` broke it. It calls every export with an
+argument of the wrong shape and with the awkward values (an empty string, a
+zero, an empty list), and fails if the answer contains a word only the host
+would use. The boundary values are the half that matters: `run("")` was what
+produced a raw `TypeError`, and no wrong *type* goes anywhere near it. Node's own filesystem messages
 name an errno, a syscall and a quoting style that differ between platforms and
 versions, so `std/fs` maps the stable part — the error code — to a sentence of
 its own: `cannot read \`config.json\`: no such file or directory`. A code with
