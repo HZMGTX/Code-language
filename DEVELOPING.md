@@ -80,6 +80,8 @@ The reason is required.
 in a trailing comment — and those are checked too:
 
 ```lumen
+fn greet(name, greeting: Str = "Hello") { "${greeting}, ${name}!" }
+
 print(greet("Ada"))                          // Hello, Ada!
 print(greet(greeting: "Hi", name: "Bob"))    // Hi, Bob!   — arguments by name
 ```

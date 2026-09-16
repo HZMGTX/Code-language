@@ -39,7 +39,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -47,14 +47,29 @@ import { fileURLToPath } from 'node:url';
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const CLI = path.join(ROOT, 'packages', 'cli', 'dist', 'index.js');
 
+/**
+ * Every markdown file in the repository, found rather than listed.
+ *
+ * The list used to be written out, and it omitted `DEVELOPING.md` — the file
+ * that explains how this checker works. Nothing was wrong with what it said,
+ * because its one sample is a fragment and is skipped; but a document added
+ * tomorrow would have been unverified and nothing would have mentioned it.
+ * `docs.test.ts` reads the directories for the same reason, and a list of
+ * things that exist goes stale exactly as fast as a count of them.
+ */
 const FILES = [
-  'docs/learn.md',
-  'docs/tour.md',
-  'docs/from-python.md',
-  'docs/spec.md',
-  'docs/stdlib.md',
-  'README.md',
-];
+  ...readdirSync(ROOT).filter((name) => name.endsWith('.md')),
+  ...readdirSync(path.join(ROOT, 'docs'))
+    .filter((name) => name.endsWith('.md'))
+    .map((name) => 'docs/' + name),
+].sort();
+
+// A guard on the guard: if the directories moved, this would otherwise verify
+// nothing and say so cheerfully.
+if (FILES.length < 8) {
+  process.stderr.write('found only ' + FILES.length + ' documents, which cannot be right\n');
+  process.exit(1);
+}
 
 /**
  * The file a diagnostic names is not part of what is being claimed — the

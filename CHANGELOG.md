@@ -73,6 +73,14 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   covered the day it exists. A list of things that exist goes stale exactly as
   fast as a count of them, which this repository has now learned three times.
 
+- **The documents whose output is verified are found rather than listed**, the
+  third instance of the same hand-written list in one afternoon. This one
+  omitted `DEVELOPING.md` — the file that explains how the checker works, whose
+  own example of the convention was the one sample nobody was checking. It was a
+  fragment referring to a `greet` defined nowhere, so it is self-contained now
+  and really does print what it claims: 34 inline results verified where there
+  were 32.
+
 - **The version check's manifest list is found rather than written out**, for
   the same reason and before it could bite: a sixth package would have walked
   into the identical hole `packages/lsp` fell into. The other hand-written list
