@@ -326,3 +326,117 @@ describe('fmt — invariants on mangled input', () => {
     });
   }
 });
+
+/**
+ * Formatting is a fixed point, checked exhaustively rather than at random.
+ *
+ * Invariant 3 was already asserted above, inside the mangling test — and it
+ * passed while `format` was not idempotent at all, because `mangle` never
+ * produced the one input that breaks it: a line indented to *exactly* the
+ * column where its enclosing bracket's first element starts.
+ *
+ *     let m = [
+ *             [1,        ← 8 spaces
+ *              2],       ← 9 spaces, level with the `1`
+ *     ]
+ *
+ * Alignment is detected against the input column and emitted at the output
+ * column, so the first pass moved `2],` from column 9 to column 3 — at which
+ * point it was no longer *past* its floor of 4, a `>` in the alignment test
+ * stopped calling it alignment, and the second pass pulled it out to the floor.
+ * `lumen fmt` followed by `lumen fmt --check` exited 1, which in a pre-commit
+ * hook is a loop.
+ *
+ * Random mangling is the wrong instrument for that: the interesting column is
+ * one specific number out of a dozen, and it has to coincide with a bracket on
+ * another line. So this walks every combination instead. It is cheap — `format`
+ * is a pure function over a handful of lines — and it is the shape of test that
+ * would have caught this on the day the alignment rule was written.
+ */
+describe('formatting is a fixed point, for every indentation', () => {
+  /**
+   * Templates whose inner lines can be indented anywhere.
+   *
+   * Each `%` is a line whose leading whitespace is varied over every width
+   * below; the others are fixed. Nested brackets are the point — alignment is a
+   * relationship between a line and a bracket opened on an earlier one.
+   */
+  const TEMPLATES: readonly (readonly string[])[] = [
+    ['let m = [', '%[1,', '%2],', ']', 'print(m)'],
+    ['let m = [', '%[1,', '%2],', '%[3]', ']', 'print(m)'],
+    ['print(sum(', '%[1,', '%2]', '))'],
+    ['let m = {', '%a: [1,', '%2],', '%b: 3,', '}', 'print(m)'],
+    ['let n = xs', '%.filter(fn(x) { x > 1 })', '%.len()', 'print(n)'],
+    ['fn f() {', '%let m = [', '%[1,', '%2],', '%]', '}'],
+  ];
+
+  /** Every width worth trying: zero through past the widest bracket column. */
+  const WIDTHS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12];
+
+  for (const [index, template] of TEMPLATES.entries()) {
+    it('template ' + String(index + 1) + ': every indentation reaches a fixed point', () => {
+      const varying = template.filter((line) => line.startsWith('%')).length;
+      let checked = 0;
+      const failures: string[] = [];
+
+      // Every combination of widths for the varying lines.
+      const total = WIDTHS.length ** varying;
+      for (let n = 0; n < total; n += 1) {
+        let rest = n;
+        const widths: number[] = [];
+        for (let v = 0; v < varying; v += 1) {
+          widths.push(WIDTHS[rest % WIDTHS.length] as number);
+          rest = Math.floor(rest / WIDTHS.length);
+        }
+
+        let next = 0;
+        const source =
+          template
+            .map((line) =>
+              line.startsWith('%')
+                ? ' '.repeat(widths[next++] as number) + line.slice(1)
+                : line,
+            )
+            .join('\n') + '\n';
+
+        const once = format(source, 'fixed.lm');
+        const twice = format(once, 'fixed.lm');
+        checked += 1;
+        if (twice !== once && failures.length < 3) {
+          failures.push(
+            'widths ' + JSON.stringify(widths) + '\n--- input ---\n' + source +
+              '--- once ---\n' + once + '--- twice ---\n' + twice,
+          );
+        }
+      }
+
+      assert.deepEqual(failures, []);
+      assert.equal(checked, total);
+    });
+  }
+
+  it('keeps the token stream while doing it', () => {
+    // The fixed point is worth nothing if reaching it changed the program. This
+    // is invariant 2 over the same exhaustive inputs, on the template with the
+    // most brackets.
+    const template = ['fn f() {', '%let m = [', '%[1,', '%2],', '%]', '}'];
+    for (const a of [0, 3, 8, 9]) {
+      for (const b of [0, 2, 9, 11]) {
+        for (const c of [0, 3, 10, 12]) {
+          for (const d of [0, 2, 8]) {
+            const widths = [a, b, c, d];
+            let next = 0;
+            const source =
+              template
+                .map((line) =>
+                  line.startsWith('%') ? ' '.repeat(widths[next++] as number) + line.slice(1) : line,
+                )
+                .join('\n') + '\n';
+            const once = format(source, 'fixed.lm');
+            assert.equal(tokenKey(once), tokenKey(source), 'token stream changed for ' + JSON.stringify(widths));
+          }
+        }
+      }
+    }
+  });
+});

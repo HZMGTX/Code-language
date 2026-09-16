@@ -265,10 +265,16 @@ export function format(source: string, file = '<input>'): string {
       // Starting exactly where the enclosing bracket's first element does: that
       // is alignment, and it is kept. Anything else past the floor is a mistake,
       // and is pulled back to it.
-      const aligned =
-        current.length > floor.length &&
-        current.length === enclosing?.column &&
-        !current.includes('\t');
+      //
+      // Whether the alignment column is past the floor or short of it does not
+      // matter, and requiring `>` here is what stopped `format` being a fixed
+      // point. Alignment is detected against the *input* column and emitted at
+      // the *output* column, so the first pass moves an aligned line from, say,
+      // column 9 to column 3 — at which point it is no longer past its floor of
+      // 4, the second pass stopped calling it alignment, and pulled it out to
+      // the floor. `fmt` then `fmt --check` exited 1, and a third pass was
+      // needed before the file stopped changing.
+      const aligned = current.length === enclosing?.column && !current.includes('\t');
       const indent = aligned ? ' '.repeat(enclosing?.outColumn ?? current.length) : floor;
       out.push(indent + raw.trim());
       shift = indent.length - current.length;
