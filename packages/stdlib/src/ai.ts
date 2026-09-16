@@ -33,7 +33,19 @@ const DEFAULT_MODELS: Record<Provider, string> = {
 };
 
 function resolveProvider(explicit: Value, ctx: CallCtx): Provider {
-  const named = explicit.k === 'str' ? explicit.v : ctx.host.getEnv('LUMEN_AI_PROVIDER');
+  // An explicit argument takes effect only when it *names* something. An empty
+  // string does not, so step 1 of the documented order does not apply to it and
+  // step 2 does.
+  //
+  // That is the whole of a nasty bug. `provider: ""` made `named` the empty
+  // string, so `LUMEN_AI_PROVIDER` was never consulted, and the guard below
+  // then fell through to the key-based default — which means
+  // `chat(prompt, provider: config.getOr("provider", ""))`, reading the
+  // provider from a config file with an empty default, silently cancelled
+  // `LUMEN_AI_PROVIDER=mock` and sent the prompt to the real API with the real
+  // key. That setting is what keeps every test and all of CI offline.
+  const given = explicit.k === 'str' && explicit.v !== '' ? explicit.v : undefined;
+  const named = given ?? ctx.host.getEnv('LUMEN_AI_PROVIDER');
   if (named !== undefined && named !== '') {
     const normalized = named.toLowerCase();
     if (normalized === 'anthropic' || normalized === 'openai' || normalized === 'mock') {
@@ -49,7 +61,11 @@ function resolveProvider(explicit: Value, ctx: CallCtx): Provider {
   return 'mock';
 }
 
-function mockReply(messages: readonly Message[], scripted: string | undefined): string {
+function mockReply(
+  messages: readonly Message[],
+  scripted: string | undefined,
+  why: 'asked' | 'no-key',
+): string {
   // `LUMEN_AI_MOCK_REPLY` makes the mock say exactly one thing. A program that
   // asks the model for JSON and then parses it has two paths worth testing —
   // the reply parsed, and the reply did not — and without this only the second
@@ -59,10 +75,21 @@ function mockReply(messages: readonly Message[], scripted: string | undefined): 
 
   const lastUser = [...messages].reverse().find((m) => m.role === 'user');
   const prompt = lastUser?.content ?? '';
+  // Two different reasons to be here, and they want different advice. Telling
+  // somebody to set a key they have already set — because `mock` was *asked*
+  // for, by argument or by environment, and overrides the key — is advice that
+  // cannot be followed, and the reader is left assuming their key is broken.
+  const advice =
+    why === 'asked'
+      ? 'The mock provider was asked for, so no key is being used.'
+      : 'Set ANTHROPIC_API_KEY or OPENAI_API_KEY for a real answer.';
   return (
-    '(mock) No AI provider is configured, so this is a canned reply. ' +
+    '(mock) ' +
+    (why === 'asked'
+      ? 'This is a canned reply. '
+      : 'No AI provider is configured, so this is a canned reply. ') +
     'You asked: "' + prompt + '". ' +
-    'Set ANTHROPIC_API_KEY or OPENAI_API_KEY for a real answer.'
+    advice
   );
 }
 
@@ -153,8 +180,16 @@ async function dispatch(
       return await callAnthropic(ctx, model, system, maxTokens, messages);
     case 'openai':
       return await callOpenai(ctx, model, system, maxTokens, messages);
-    default:
-      return Ok(str(mockReply(messages, ctx.host.getEnv('LUMEN_AI_MOCK_REPLY'))));
+    default: {
+      // Whether `mock` was asked for or merely fallen back to changes what
+      // advice the reply can honestly give.
+      const asked =
+        (providerValue.k === 'str' && providerValue.v !== '') ||
+        (ctx.host.getEnv('LUMEN_AI_PROVIDER') ?? '') !== '';
+      return Ok(
+        str(mockReply(messages, ctx.host.getEnv('LUMEN_AI_MOCK_REPLY'), asked ? 'asked' : 'no-key')),
+      );
+    }
   }
 }
 

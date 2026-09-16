@@ -130,6 +130,31 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
     answered `["a", "b"]`, which looks like an answer and was an accident of
     which branch ran first. Refused now, with the reason.
 
+- **An empty `provider:` argument sent the prompt to the real API.**
+  `docs/stdlib.md` states the order: an explicit argument, then
+  `LUMEN_AI_PROVIDER`, then the keys, then `mock`. An **empty** argument does
+  not name a provider, so step 1 should not apply to it — and it did:
+
+  ```text
+  LUMEN_AI_PROVIDER=mock ANTHROPIC_API_KEY=sk-real
+  chat("say hi", provider: "")        // went to Anthropic, with the key
+  ```
+
+  The empty string made the resolver skip the environment entirely and fall
+  through to the key. So `chat(prompt, provider: config.getOr("provider", ""))`
+  — reading the provider from a config file with an empty default, which is an
+  ordinary way to write it — silently cancelled the one setting that keeps every
+  test and all of CI offline, and sent the prompt out. `provider: nil` already
+  fell through correctly; now the empty string does too.
+
+- **And the mock's own advice could not be followed.** With
+  `LUMEN_AI_PROVIDER=mock` and a key set, the reply said "No AI provider is
+  configured … Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` for a real answer" —
+  and the key *was* set, and `mock` overrides it, so following the advice
+  changes nothing and the reader is left assuming their key is broken. The mock
+  now says which of the two situations it is in: asked for, or fallen back to.
+  The second keeps the original advice, where it is exactly right.
+
 - **`groupBy` and `map.invert` were wrong about keys in both directions at
   once.** Both turn a value into a `Map` key, and a `Map`'s keys are text:
 

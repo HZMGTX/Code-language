@@ -367,6 +367,13 @@ Which provider runs is decided in this order:
 3. `ANTHROPIC_API_KEY`, then `OPENAI_API_KEY`
 4. otherwise the built-in `mock` provider
 
+An explicit argument counts only when it **names** something. `provider: ""`
+and `provider: nil` do not, so step 1 does not apply to them and step 2 does —
+which is what `chat(prompt, provider: config.getOr("provider", ""))` needs to be
+safe. It was not: the empty string used to skip the environment entirely and
+fall through to step 3, so an empty default in a config file silently cancelled
+`LUMEN_AI_PROVIDER=mock` and sent the prompt to the real API with the real key.
+
 The `mock` provider is deliberate, not a stub: it makes examples, tests and CI
 run with no key, no network and a deterministic answer. Real credentials are
 strictly opt-in.
