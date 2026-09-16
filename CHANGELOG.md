@@ -73,6 +73,21 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   covered the day it exists. A list of things that exist goes stale exactly as
   fast as a count of them, which this repository has now learned three times.
 
+- **One classification of what each module does to the world**, replacing two
+  lists in two files that nearly agreed. `TY010` asked "is every function here
+  called for its effect"; the `Result` sweep asked "can this module be called
+  with junk arguments without doing real damage" — different questions with
+  overlapping answers, kept separately.
+
+  A module added to neither would have been quietly treated as pure by the
+  first, warning about working code, and swept blind by the second, which hands
+  invented arguments to every export it can reach. `std/fs` is in that sweep's
+  blast radius.
+
+  Every module now carries `pure`, `mixed` or `effectful`, and a test requires
+  the classification to name exactly the modules that exist — in both
+  directions, so a module removed is caught as well as one added.
+
 - **The documentation checker names the blocks it could not check**, rather than
   counting them. *"2 blocks whose output does not line up with their prints"*
   tells a reader there is something unverified and gives them no way to look at

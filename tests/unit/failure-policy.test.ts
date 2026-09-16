@@ -37,25 +37,23 @@ import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
 
 import { showTy } from '@lumen-lang/core';
-import { stdModuleExports } from '@lumen-lang/stdlib';
+import { MODULE_EFFECTS, stdModuleExports } from '@lumen-lang/stdlib';
 
 import { runSource } from '../support/harness.js';
 
 /**
- * Modules whose functions reach the world, and so cannot be swept blind.
+ * Whether a module can be swept blind — from the library's own classification,
+ * not a second list beside it.
  *
- * Each has its own test with a seam: `server.test.ts` over a real socket,
- * `process.test.ts` and `fs-copy.test.ts` in a temporary directory, `std/ai`
- * against its mock provider. Calling `fs.remove` with a swept path is not a
- * test, it is a hazard.
+ * Anything but `pure` stays out. Each of those has its own test with a seam:
+ * `server.test.ts` over a real socket, `process.test.ts` and `fs-copy.test.ts`
+ * in a temporary directory, `std/ai` against its mock provider. Calling
+ * `fs.remove` with a swept path is not a test, it is a hazard — and this used
+ * to be a copy of that classification, which is a copy that can disagree.
  */
-const REACHES_THE_WORLD: ReadonlySet<string> = new Set([
-  'std/fs',
-  'std/http',
-  'std/process',
-  'std/ai',
-  'std/web',
-]);
+function canSweep(module: string): boolean {
+  return MODULE_EFFECTS.get(module) === 'pure';
+}
 
 /** Awkward but right-typed values, by the type the signature declares. */
 const AWKWARD: Readonly<Record<string, readonly string[]>> = {
@@ -104,13 +102,26 @@ function benignFor(shown: string): string {
 }
 
 describe('a Result-returning function answers with a Result', () => {
+  it('has a classification for every module, so none is swept blind', () => {
+    // The guard that makes `canSweep` safe. A module added to the library and
+    // not to `MODULE_EFFECTS` would come back `undefined` — which is not
+    // `pure`, so the sweep would skip it rather than call it, but it would also
+    // be treated as pure by `TY010` and warn about working code. Either way
+    // somebody has to classify it, and this is where they find out.
+    const missing = [...stdModuleExports().keys()].filter((name) => !MODULE_EFFECTS.has(name));
+    assert.deepEqual(missing, [], 'these modules have no entry in MODULE_EFFECTS');
+
+    const extra = [...MODULE_EFFECTS.keys()].filter((name) => !stdModuleExports().has(name));
+    assert.deepEqual(extra, [], 'MODULE_EFFECTS names modules that do not exist');
+  });
+
   it('never raises for a value its declared type fully describes', async () => {
     const raised: string[] = [];
     let calls = 0;
     let functions = 0;
 
     for (const [moduleName, exports] of stdModuleExports()) {
-      if (REACHES_THE_WORLD.has(moduleName)) continue;
+      if (!canSweep(moduleName)) continue;
       for (const [name, ty] of exports) {
         if (ty.k !== 'fn' || showTy(ty.ret) !== 'Result') continue;
         functions += 1;
