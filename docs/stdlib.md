@@ -703,7 +703,7 @@ maximum(xs: List) -> Option
 minBy(xs: List, key: fn(Any) -> Any) -> Option
 minimum(xs: List) -> Option
 partition(xs: List, predicate: fn(Any) -> Any) -> List
-pop(xs: List) -> List
+pop(xs: List) -> Option
 push(xs: List, value) -> List
 reduce(xs: List, f: fn(Any, Any) -> Any, initial)
 removeAt(xs: List, index: Num) -> List

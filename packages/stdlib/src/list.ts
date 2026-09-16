@@ -70,7 +70,7 @@ const SIGNATURES: Readonly<Record<string, string>> = {
   last: '(xs: List) -> Option',
   at: '(xs: List, index: Num) -> Option',
   push: '(xs: List, value: Any) -> List',
-  pop: '(xs: List) -> List',
+  pop: '(xs: List) -> Option',
   // `end` defaults to nil and means "to the end", so it takes a Num or nil.
   slice: '(xs: List, start: Num, end: Any = nil) -> List',
   take: '(xs: List, n: Num) -> List',

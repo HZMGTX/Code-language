@@ -130,6 +130,41 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
     answered `["a", "b"]`, which looks like an answer and was an accident of
     which branch ran first. Refused now, with the reason.
 
+- **`std/list.pop` declared the wrong return type, so the idiomatic use was
+  rejected.** The signature said `(xs: List) -> List`; the docstring says
+  "Some(x), or None if empty" and the implementation returns exactly that. Only
+  the signature disagreed — and a signature is not documentation that can be
+  quietly wrong, it is what the checker believes:
+
+  ```text
+  error[TY001]: `unwrapOr` expects Option for `option` but was given List
+  ```
+
+  A false positive on correct code, which `docs/philosophy.md` names as the one
+  thing gradual typing must never do. The converse was live too: code that
+  really did treat the answer as a list was approved.
+
+  Four tests already compared a signature with its implementation — the same
+  parameter names, the same order, the same ones optional, the same defaults.
+  None looked at the *return*, and there is nothing in TypeScript to compare it
+  against: a native's callback is typed `Value` and nothing finer. So the new
+  test **calls** each function and compares the answer's own `type()`, with
+  arguments derived from the declared parameter types; a call that cannot be
+  made is skipped rather than reported. 235 functions declare a return type and
+  exactly one was wrong — then the test was checked against the bug it exists
+  for by putting the signature back, and it names it exactly.
+
+- **`std/option` and `std/result` reported the interpreter's internal tags.**
+  `andThen([1], f)` said `note: this is list` — and there is no type called
+  `list` in this language. Both use `typeName` now, which is what `type()`
+  answers and what every other diagnostic in the library uses.
+
+  Found by tripping over it while writing the test above: its first version
+  rendered type names by hand and produced `num`, `str` and `list` rather than
+  `Num`, `Str` and `List`, reporting all 72 functions as mismatched. The test
+  uses `showTy` — the language's own rendering — for the same reason the library
+  now uses `typeName`.
+
 - **`min` and `max` were two functions, and importing the wrong one broke
   working code.** This compiled and ran:
 

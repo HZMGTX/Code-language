@@ -13,14 +13,26 @@
  * Every function takes the Option first, so each is also a method.
  */
 
-import { bool, enumValue, truthy, type CallCtx, type EnumValue, type Value } from '@lumen-lang/core';
+import {
+  bool,
+  enumValue,
+  truthy,
+  typeName,
+  type CallCtx,
+  type EnumValue,
+  type Value,
+} from '@lumen-lang/core';
 import { None, Some, arg, expectFn, fn, moduleOf, withSignatures } from './support.js';
 
 /** The Option a function was handed, or a panic naming what it got instead. */
 function expectOption(value: Value, ctx: CallCtx, where: string): EnumValue {
   if (value.k === 'enum' && value.enumName === 'Option') return value;
   return ctx.panic(where + ' needs an Option (Some(x) or None)', [
-    'this is ' + (value.k === 'enum' ? value.enumName : value.k),
+    // `typeName`, not `value.k`: the second is the interpreter's internal tag,
+    // so a Num was reported as `num` and a List as `list` — names of types this
+    // language does not have. `typeName` is what `type()` answers and what every
+    // other diagnostic in the library uses.
+    'this is ' + (value.k === 'enum' ? value.enumName : typeName(value)),
   ]) as never;
 }
 
