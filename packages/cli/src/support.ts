@@ -122,8 +122,19 @@ export function reportError(error: unknown): never {
     process.exit(1);
   }
   if (error instanceof Error && error.name === 'RangeError' && /call stack/i.test(error.message)) {
+    // A last resort, and deliberately vague about the cause. It used to say "a
+    // function is probably recursing without a base case", which was reported
+    // for programs that declare no function at all: seven kinds of deeply
+    // nested *source* reached here, because the parser's depth limit counted
+    // the parser's own recursion and not the depth of the tree it built. Those
+    // are `PA016` now and real runaway recursion is `RT045`, naming the
+    // function and its depth — so anything still arriving here is something
+    // nobody has diagnosed yet, and guessing at it would send the reader after
+    // the wrong thing.
     process.stderr.write(
-      'lumen: stack overflow — a function is probably recursing without a base case\n',
+      'lumen: stack overflow — the program or the source is nested deeper than Lumen can walk\n' +
+        '       runaway recursion is reported as `RT045` and deeply nested source as `PA016`,\n' +
+        '       so this is a case neither of them caught: please report the file\n',
     );
     process.exit(1);
   }

@@ -867,7 +867,15 @@ different meaning. Selected codes:
 
 The parser reports multiple errors per run, suppressing duplicates and bounding
 cascades at 25. It also refuses source nested more than 250 levels deep
-(`PA016`), which is far past anything written by hand. That limit is what keeps
+(`PA016`), which is far past anything written by hand. The limit counts the
+**depth of the tree**, not the parser's own recursion, and those are not the
+same thing: `1 + 1 + 1 + …` is parsed by a loop, so three thousand terms once
+parsed at depth 1 and then took the type checker's stack out with a bare
+`RangeError`. Seven shapes did that — a chained operator, a chained `**`, a
+repeated unary, `x = x = …`, `a[0][0]…`, a nested pattern, a nested type
+annotation — and a nested `${…}` did it by starting a fresh budget for every
+interpolation. All of them are `PA016` now, and a test generates twenty deep
+shapes rather than listing the ones that were found. That limit is what keeps
 every later walk of the tree bounded too — the resolver, the type checker,
 printing, equality — none of which can meet a tree deeper than the parser was
 willing to build.

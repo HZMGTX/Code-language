@@ -140,7 +140,18 @@ export class Parser {
     private readonly tokens: readonly Token[],
     private readonly file: string,
     private readonly source: string,
-  ) {}
+    /**
+     * Where this parser's nesting budget starts.
+     *
+     * Each `${…}` is parsed by a *new* `Parser`, so a nested interpolation used
+     * to reset the budget to zero and recurse as far as the host's stack
+     * allowed. Passing the depth in makes one budget span the whole file,
+     * however many sub-parsers it takes to read it.
+     */
+    depth = 0,
+  ) {
+    this.depth = depth;
+  }
 
   // ------------------------------------------------------------- navigation
 
@@ -757,6 +768,10 @@ export class Parser {
   // ------------------------------------------------------------------ types
 
   private parseTypeExpr(): TypeExpr {
+    return this.nested(() => this.parseTypeExprInner());
+  }
+
+  private parseTypeExprInner(): TypeExpr {
     this.skipNewlines();
     const start = this.cur();
     if (this.at('fn')) {
@@ -799,6 +814,10 @@ export class Parser {
   // --------------------------------------------------------------- patterns
 
   private parsePattern(): Pattern {
+    return this.nested(() => this.parsePatternInner());
+  }
+
+  private parsePatternInner(): Pattern {
     const start = this.cur();
 
     if (this.at('ident') && start.text === '_') {
@@ -952,14 +971,25 @@ export class Parser {
    * 250 is far past anything written by hand and well short of where the
    * stack gives out, which is somewhere between 500 and 1000.
    */
+  /**
+   * `PA016`, wherever the limit is reached.
+   *
+   * `what` names the thing there is too much of, because the two shapes that
+   * get here are not the same shape: one is genuinely nested, the other is a
+   * flat chain of operators that nests only in the tree it produces.
+   */
+  private tooDeep(what: string): never {
+    return this.fail(
+      'PA016',
+      'nested too deeply',
+      'more than ' + String(MAX_NESTING) + ' ' + what + ' here',
+      [{ message: 'this is usually generated source; break it into named parts' }],
+    );
+  }
+
   private nested<T>(parse: () => T): T {
     if (this.depth >= MAX_NESTING) {
-      return this.fail(
-        'PA016',
-        'nested too deeply',
-        'more than ' + String(MAX_NESTING) + ' levels here',
-        [{ message: 'this is usually generated source; break it into named parts' }],
-      );
+      return this.tooDeep('levels');
     }
     this.depth += 1;
     try {
@@ -976,7 +1006,8 @@ export class Parser {
 
     const opTok = this.advance();
     this.skipNewlines();
-    const value = this.parseAssign(); // right-associative
+    // Right-associative, and so recursive: `x = x = x = …` is a deep tree.
+    const value = this.nested(() => this.parseAssign());
     // `[a, b] = [b, a]` assigns positionally, so a swap is one line. Only
     // plain `=`: `[a, b] += ...` has no sensible meaning.
     const destructuring = left.kind === 'ListLit' && opTok.kind === '=';
@@ -1022,6 +1053,14 @@ export class Parser {
   private parseBinary(minPrec: number): Expr {
     const start = this.cur();
     let left = this.parseUnary();
+    // Every operator chained at this level adds a level to the tree, even
+    // though the parser is looping rather than recursing — and every later walk
+    // of that tree *does* recurse. `nested`'s comment claims the limit "bounds
+    // every later walk of the tree as well, since none of them can meet a tree
+    // deeper than the parser was willing to build", and for a flat chain that
+    // was not true: `1 + 1 + ...` three thousand times parsed at depth 1 and
+    // then took the type checker's stack out with a bare `RangeError`.
+    let chained = 0;
 
     for (;;) {
       this.skipNewlinesBeforeContinuation();
@@ -1029,12 +1068,20 @@ export class Parser {
       const prec = PRECEDENCE[tok.kind];
       if (prec === undefined || prec < minPrec) break;
 
+      chained += 1;
+      if (this.depth + chained >= MAX_NESTING) return this.tooDeep('chained operators');
+
       this.advance();
       this.skipNewlines();
       // A right-associative operator re-enters at its own level, so the next
       // one of the same kind lands in the right operand rather than closing
       // this one.
-      const right = this.parseBinary(RIGHT_ASSOCIATIVE.includes(tok.kind) ? prec : prec + 1);
+      // Counted: a right-associative operator re-enters at its own level, so a
+      // chain of `**` recurses here rather than looping above, and the
+      // `chained` counter never sees it.
+      const right = this.nested(() =>
+        this.parseBinary(RIGHT_ASSOCIATIVE.includes(tok.kind) ? prec : prec + 1),
+      );
       const nodeSpan = this.spanFrom(start);
 
       switch (tok.kind) {
@@ -1070,7 +1117,10 @@ export class Parser {
     if (this.atAny('-', '!', 'not')) {
       const op = this.advance();
       this.skipNewlines();
-      const operand = this.parseUnary();
+      // Counted, because this recursion is the parser's own stack: `nested`
+      // wraps a whole expression once, so three thousand `-` in a row all sat
+      // at depth 1 and overflowed before any limit was consulted.
+      const operand = this.nested(() => this.parseUnary());
 
       // `-2 ** 2` is refused rather than answered. Both readings are defensible
       // — Python reads it as `-(2 ** 2)`, which is -4, and binding the unary
@@ -1127,9 +1177,16 @@ export class Parser {
   private parsePostfix(): Expr {
     const start = this.cur();
     let expr = this.parsePrimary();
+    // One level of tree per suffix, the same as a chained binary operator:
+    // `a[0][0][0]…` and `m.a.a.a…` are loops here and a deep spine afterwards.
+    let suffixes = 0;
 
     for (;;) {
       this.skipNewlinesBeforeContinuation();
+      if (this.atAny('(', '[', '.', '?')) {
+        suffixes += 1;
+        if (this.depth + suffixes >= MAX_NESTING) return this.tooDeep('chained suffixes');
+      }
 
       if (this.at('(')) {
         this.advance();
@@ -1520,7 +1577,9 @@ export class Parser {
       }
       try {
         const subTokens = lex(part.source, this.file, part.span.start);
-        const sub = new Parser(subTokens, this.file, this.source);
+        // The depth is passed on, so `"${"${…}"}"` shares one budget with the
+        // file it is in rather than starting again from zero.
+        const sub = new Parser(subTokens, this.file, this.source, this.depth + 1);
         parts.push({ kind: 'expr', expr: sub.parseExpressionEntry() });
       } catch (err) {
         if (err instanceof LumenError) {

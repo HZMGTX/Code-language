@@ -130,6 +130,44 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
     answered `["a", "b"]`, which looks like an answer and was an accident of
     which branch ran first. Refused now, with the reason.
 
+- **Seven kinds of deeply nested source crashed with a bare `RangeError`.**
+  `docs/spec.md` promises `PA016` past 250 levels, and the parser's own comment
+  explains why it matters: *"The limit bounds every later walk of the tree as
+  well — the resolver, the type checker, `display`, equality — since none of
+  them can meet a tree deeper than the parser was willing to build."*
+
+  That was not true, because the limit counted the **parser's** recursion rather
+  than the depth of the tree it built, and several shapes deepen one without the
+  other. `1 + 1 + 1 + …` three thousand times is parsed by a *loop*: it sat at
+  depth 1, and then took the type checker's stack out. So did a chained `**` (it
+  recurses on the right instead of looping), a repeated unary, `x = x = …`,
+  `a[0][0]…`, `m.a.a…`, a nested list pattern and a nested `List<…>` annotation.
+  And a nested `${…}` built a **new** parser for each interpolation, starting
+  the budget again from zero.
+
+  Every one printed `RangeError: Maximum call stack size exceeded` — the host's
+  own words, with no file, no line, no diagnostic — and in a multi-file
+  `lumen check` that was the *only* line about the file that failed. `lumen run`
+  printed "stack overflow — a function is probably recursing without a base
+  case" about programs that declare no function at all.
+
+  All of them are `PA016` now, with the chain and suffix cases counted where
+  they loop, and the sub-parser inheriting the budget. The boundary is still
+  exactly 250: a 248-term chain and 248 unary minuses both run.
+
+  The test **generates** twenty deep shapes rather than listing the seven that
+  were found — the same lesson the NaN route list taught an hour earlier — and
+  it found the nested-interpolation case, which no hand list had. It asserts
+  only that the host's stack never becomes the user's problem, and that a
+  failure says *where*; which diagnostic it is remains the language's business.
+
+  The two last-resort messages are honest now as well. `lumen check` no longer
+  prints a bare host exception with no file name, and the CLI's stack-overflow
+  line no longer diagnoses a construct it cannot see — runaway recursion is
+  `RT045`, naming the function and its depth, and deep source is `PA016`, so
+  anything still reaching that branch is something nobody has diagnosed and
+  guessing would send the reader after the wrong thing.
+
 - **The formatter was not a fixed point.** `lumen fmt` followed by
   `lumen fmt --check` exited 1:
 

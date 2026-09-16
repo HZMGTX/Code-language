@@ -44,7 +44,14 @@ export async function checkFiles(target: string): Promise<void> {
     } catch (error) {
       withProblems += 1;
       process.stdout.write(
-        error instanceof LumenError ? error.render(color) + '\n\n' : String(error) + '\n\n',
+        // A non-`LumenError` is a bug rather than a bad file, and `String(error)`
+        // put the host's own words on the terminal with no file name attached —
+        // `RangeError: Maximum call stack size exceeded` and nothing else, which
+        // in a multi-file run was the only line about the file that failed.
+        error instanceof LumenError
+          ? error.render(color) + '\n\n'
+          : 'lumen: internal error while checking ' + file + '\n' +
+            (error instanceof Error ? error.message : String(error)) + '\n\n',
       );
       continue;
     }
