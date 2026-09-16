@@ -130,6 +130,26 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
     answered `["a", "b"]`, which looks like an answer and was an accident of
     which branch ran first. Refused now, with the reason.
 
+- **Compound assignment went round the NaN guard.** `inf - inf` is `RT046`;
+  `a -= inf` was a `NaN`, and `lumen check` said the file had no problems.
+  Every binary operator goes through `checked`, and compound assignment had its
+  own little arithmetic inside `storeInto` that did not — so `+=`, `-=`, `*=`
+  and `/=` were the one path that could put a `NaN` into a Lumen value.
+
+  `docs/spec.md` forbids it outright — *"any arithmetic that would produce one
+  is `RT046`"* — and the reason is in the guard's own comment: a `NaN` is equal
+  to nothing, including itself, so one that gets into a value poisons every
+  comparison it later reaches. The whole point of `RT046` is that it cannot
+  get in.
+
+  All four now go through `checked`, and the message names the *base* operator:
+  `the result of Infinity - Infinity is undefined`, because that is the
+  arithmetic which has no answer and is what the reader has to see. `/= 0` is
+  still `RT018`, and `Infinity` itself is still an ordinary value — it means
+  "larger than we can say", it compares consistently, and it is equal to
+  itself. A second fixture pins every ordinary use, including `+=` on a string
+  and a list, and an index and a field as targets.
+
 - **`std/list.pop` declared the wrong return type, so the idiomatic use was
   rejected.** The signature said `(xs: List) -> List`; the docstring says
   "Some(x), or None if empty" and the implementation returns exactly that. Only

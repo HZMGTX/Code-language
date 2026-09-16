@@ -1,0 +1,15 @@
+// `x -= y` is the same arithmetic as `x = x - y`, and has to answer the same.
+//
+// It did not. Every binary operator goes through the guard that makes a NaN an
+// error — docs/spec.md: "any arithmetic that would produce one is RT046" — and
+// compound assignment had its own little arithmetic that went round it. So
+// `inf - inf` was RT046 and `a -= inf` was a NaN, which then poisons every
+// comparison it reaches, since a NaN is equal to nothing, including itself.
+//
+// The message names the base operator rather than the compound one, because
+// `Infinity - Infinity` is the arithmetic that has no answer and is what the
+// reader has to see.
+let inf = 1e308 * 10
+var a = inf
+a -= inf
+print("unreachable: ${a}")

@@ -1296,18 +1296,29 @@ export class Interpreter {
     const combine = (current: Value): Value => {
       if (op === '=') return incoming;
       if (current.k === 'num' && incoming.k === 'num') {
+        // Through `checked`, like every binary operator, and for the same
+        // reason: `x -= inf` is the same arithmetic as `x = x - inf`, and it
+        // was the one path that put a `NaN` into a Lumen value. `inf - inf` was
+        // `RT046` and `a -= inf` was `NaN` — which the spec forbids outright
+        // ("any arithmetic that would produce one is RT046") and which then
+        // poisons every comparison it reaches, since a NaN is equal to nothing
+        // including itself.
+        //
+        // The base operator is passed rather than the compound one, so the
+        // message reads `Infinity - Infinity` — the arithmetic that actually
+        // has no answer, which is what the reader needs to see.
         switch (op) {
           case '+=':
-            return num(current.v + incoming.v);
+            return this.checked(current.v + incoming.v, '+', current.v, incoming.v, span);
           case '-=':
-            return num(current.v - incoming.v);
+            return this.checked(current.v - incoming.v, '-', current.v, incoming.v, span);
           case '*=':
-            return num(current.v * incoming.v);
+            return this.checked(current.v * incoming.v, '*', current.v, incoming.v, span);
           case '/=':
             if (incoming.v === 0) {
               this.fail('RT018', 'division by zero', span, 'the right operand is 0');
             }
-            return num(current.v / incoming.v);
+            return this.checked(current.v / incoming.v, '/', current.v, incoming.v, span);
           default:
             break;
         }
