@@ -34,6 +34,30 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   from its type's table and never from scope, so `xs.groupBy(f)` works with no
   import at all and those imports really were dead. They are gone.
 
+- **The library's failure policy is a test now, and it turned out to hold.**
+  `docs/stdlib.md` has always said *"fallible operations return a `Result` …
+  neither ever raises for an ordinary failure"*, which is the whole of Lumen's
+  error story: there are no exceptions, so a program's only way to handle a
+  failure is to be handed one as a value. A `Result`-returning function that
+  raises instead takes the process out on input it was written to cope with.
+
+  Unlike the sweeps beside it this one **found nothing**, across 198 calls to
+  every function the library declares as answering with a `Result`. It is here
+  for the reason the others are: the rule was kept by hand, and `std/process`
+  had already shown what that is worth.
+
+  Its one restraint is what makes it a fair question, and it is a property of
+  the type language rather than a list of names. A value is used only when the
+  declared type **fully describes** it: a bare `List` says nothing about its
+  elements, so `[1]` satisfies `csv.write`'s annotation while breaking its
+  requirement — and *that* raise is a wrong argument, which the policy says
+  should raise. `List<Str>` does describe its elements, so its awkward values
+  are fair game. Likewise `fn(Any) -> Any` cannot say that `result.andThen`
+  needs a `Result` back, so the callback the sweep passes honours that.
+
+  Both of those were found by running the sweep without them and reading what it
+  reported, rather than by deciding in advance what it should ignore.
+
 - **The editor is now checked for agreeing with the compiler, over the whole
   conformance corpus.** The language server's own header states the property —
   *"an editor that disagrees with the compiler is worse than an editor with no
