@@ -1,0 +1,27 @@
+// `TY011`: an indexing that cannot work, said a pass earlier.
+//
+// `RT021` and `RT023` have always said this at run time, with both types in
+// hand — so the only thing missing was asking the same question where the
+// answer is free and arrives before the program ships.
+//
+// It became worth having the moment `indexOf` started answering `Option`:
+// `xs[xs.indexOf(v)]` is the shape of every program written against the old
+// `-1`, and turning a silent wrong answer into a run-time one was only most of
+// the fix.
+let xs: List<Str> = ["alpha", "beta", "gamma"]
+print(xs[xs.indexOf("delta")])
+
+// A Map is keyed by Str, always — a Num key is the other half of the same
+// mistake, and one a table built from numbers makes on its first line.
+let counts: Map<Num> = { a: 1 }
+print(counts[1])
+
+// A Str is indexed by position, not by content.
+let word: Str = "abc"
+print(word["a"])
+
+// And the things that cannot be indexed at all.
+let n: Num = 1
+print(n[0])
+let flag: Bool = true
+print(flag[0])

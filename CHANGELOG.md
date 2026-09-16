@@ -34,6 +34,26 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   from its type's table and never from scope, so `xs.groupBy(f)` works with no
   import at all and those imports really were dead. They are gone.
 
+- **`TY011`: an indexing that cannot work, said a pass earlier.** `RT021` and
+  `RT023` have always reported this at run time with both types in hand, so
+  nothing was missing but the timing:
+
+  ```text
+  xs[xs.indexOf("delta")]   ← an Option is not a position
+  counts[1]                 ← every Map key is a Str
+  word["a"]                 ← a Str is indexed by position, not by content
+  1[0]                      ← a Num cannot be indexed at all
+  ```
+
+  It became worth having the moment `indexOf` started answering `Option`, since
+  `xs[xs.indexOf(v)]` is the shape of every program written against the old
+  `-1` — and turning a silent wrong answer into a run-time one was only most of
+  the fix. The diagnostic for that case says what to do about it rather than
+  only what is wrong.
+
+  The restraint is `TY005`'s, and for the same reason: both sides must be known.
+  A container indexed by something `Any` is a program that may well be right.
+
 - **`indexOf` answers `Option`, because `-1` is a position.** It used to answer
   `-1` when it found nothing, which is what C, Java, JavaScript and Python's
   `str.find` all do — and what none of them has is §4's rule that `xs[i]` counts

@@ -1,0 +1,41 @@
+// Every indexing here can work, and the checker says nothing at all.
+//
+// The companion to `index-type.lm`. `TY011`'s restraint is `TY005`'s and for
+// the same reason: **both** sides must be known. A container indexed by
+// something `Any` is a program that may well be right, and saying otherwise is
+// the one mistake this pass must not make. Every line runs.
+
+// Neither side is known, which is the case that makes the check safe to have.
+fn pick(container, key) { container[key] }
+print(pick([1, 2], 0))
+print(pick({ a: 1 }, "a"))
+
+// The ordinary spellings, including a negative index, which §4 says counts
+// from the end.
+let xs: List<Num> = [1, 2, 3]
+print(xs[0])
+print(xs[xs.len() - 1])
+print(xs[0 - 1])
+
+let m: Map<Num> = { a: 1 }
+print(m["a"])
+print(m["${1}"])
+
+let word: Str = "abc"
+print(word[0])
+
+// A computed index, once it has been taken out of its Option.
+match xs.indexOf(2) {
+  Some(at) => print(xs[at])
+  None     => print("none")
+}
+
+// A struct's list field, a list of lists, and a map of lists.
+struct Row { cells: List<Str> }
+print(Row { cells: ["a", "b"] }.cells[1])
+
+let grid: List<List<Num>> = [[1, 2], [3, 4]]
+print(grid[1][0])
+
+let byKey: Map<List<Num>> = { a: [1, 2] }
+print(byKey["a"][1])

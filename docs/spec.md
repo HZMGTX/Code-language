@@ -599,6 +599,7 @@ Annotations are **checked where they are written**, before the program runs:
 | `TY008` | A call leaves out an argument the function requires |
 | `TY009` | A `match` arm names a pattern the subject's type can never produce |
 | `TY010` | A statement's only call answers with a value nothing takes — a **warning** |
+| `TY011` | An index cannot be one, or the thing indexed cannot be |
 
 `TY005` speaks only when **both** operand types are known. `1 - "x"` is reported;
 `a - "x"` for an unannotated `a` is not, because `a` is `Any`. That restraint is
@@ -730,6 +731,12 @@ The restraints again keep it to what is known:
 - Never the last statement of a block, which is the block's own value.
 - All three spellings alike, because §4.7 says they are one expression: `f(x)`,
   `x.f()` and `x |> f()` warn or stay silent together.
+
+`TY011` asks `RT021` and `RT023`'s question a pass earlier. Both have always had
+the two types in hand at run time, so nothing was missing but the timing. A
+`List` and a `Str` are indexed by a `Num`, a `Map` by a `Str`, and nothing else
+is indexed at all — and again only when **both** sides are known, since a
+container indexed by something `Any` is a program that may well be right.
 
 What is **not** checked in this pass: parameters and `var` bindings without
 annotations, anything requiring flow analysis, and generics — `map(xs, f)`

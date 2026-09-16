@@ -28,6 +28,7 @@
  *   TY008  a required argument the call does not supply
  *   TY009  a match arm the subject's type can never produce
  *   TY010  a statement whose only call answers with a value nothing takes
+ *   TY011  an indexing that cannot work, when both sides are known
  */
 
 import type {
@@ -108,6 +109,12 @@ function describeTarget(expr: Expr): string {
     default:
       return 'this target';
   }
+}
+
+/** `a Num`, `an Option` — a type named in prose rather than in a signature. */
+export function aTy(ty: Ty): string {
+  const shown = showTy(ty);
+  return (/^[AEIOU]/u.test(shown) ? 'an ' : 'a ') + shown;
 }
 
 /** How a type is written in a diagnostic. */
@@ -665,6 +672,63 @@ class Checker {
     return { key: callee.name, name: callee.name, ty };
   }
 
+  /**
+   * `TY011`: an indexing that cannot work, when both sides are known.
+   *
+   * `RT021` and `RT023` have always said this at run time, with both types in
+   * hand — so the only thing missing was asking the same question a pass
+   * earlier, where the answer is free and arrives before the program ships.
+   *
+   * It became worth having the moment `indexOf` started answering `Option`:
+   * `xs[xs.indexOf(v)]` is the shape of every program written against the old
+   * `-1`, and turning a silent wrong answer into a run-time one was only most
+   * of the fix. Now it does not run.
+   *
+   * The restraint is `TY005`'s, and for the same reason: both sides must be
+   * known. A `Map` indexed by something `Any` is a program that may well be
+   * right, and saying otherwise is the one mistake this pass must not make.
+   */
+  private checkIndex(target: Ty, index: Ty, expr: Expr & { readonly index: Expr }): void {
+    if (target.k === 'any' || index.k === 'any') return;
+
+    if (target.k === 'list' || target.k === 'str') {
+      if (index.k === 'num') return;
+      this.report(
+        'TY011',
+        aTy(target) + ' is indexed by a Num, not ' + aTy(index),
+        expr.index.span,
+        'expected Num',
+        index.k === 'enum' && index.name === 'Option'
+          ? ['an Option holds the number rather than being one', 'take it out first: `match … { Some(i) => xs[i], None => … }`']
+          : [],
+      );
+      return;
+    }
+
+    if (target.k === 'map') {
+      if (index.k === 'str') return;
+      this.report(
+        'TY011',
+        'a Map is indexed by a Str, not ' + aTy(index),
+        expr.index.span,
+        'expected Str',
+        ['every Map key is a Str; `${' + '…}` turns a value into one'],
+      );
+      return;
+    }
+
+    // Nothing else can be indexed at all, which `RT023` says at run time.
+    if (target.k === 'nil' || target.k === 'num' || target.k === 'bool') {
+      this.report(
+        'TY011',
+        aTy(target) + ' cannot be indexed',
+        expr.span,
+        'not indexable',
+        ['`[…]` reads from a List, a Str or a Map'],
+      );
+    }
+  }
+
   private fnBody(params: readonly Param[], ret: TypeExpr | undefined, body: Block): void {
     const savedScope = this.scope;
     const savedReturn = this.returnTy;
@@ -930,7 +994,8 @@ class Checker {
 
       case 'IndexExpr': {
         const target = this.typeOf(expr.target);
-        this.typeOf(expr.index);
+        const index = this.typeOf(expr.index);
+        this.checkIndex(target, index, expr);
         if (target.k === 'list') return target.of;
         if (target.k === 'map') return target.of;
         if (target.k === 'str') return STR;
