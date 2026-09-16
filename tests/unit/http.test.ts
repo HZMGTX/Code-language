@@ -14,6 +14,7 @@
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
+import { createServer, type Server } from 'node:http';
 import { promises as fsp } from 'node:fs';
 import * as net from 'node:net';
 import * as os from 'node:os';
@@ -237,5 +238,122 @@ describe('std/http', () => {
     // `cause`; the module names the request instead, which is the only part a
     // reader can act on.
     assert.equal(line('unreachable'), 'unreachable ERR true');
+  });
+});
+
+/**
+ * The three things a Lumen server cannot be made to do to its own client.
+ *
+ * `std/web` builds its headers from a Map, so it can set one `Set-Cookie` and
+ * not three — and three is the case that was broken. The other two need no
+ * server at all: both are refused before a request is made.
+ */
+describe('std/http: cookies, header values and URL schemes', () => {
+  let server: Server | undefined;
+  let base = '';
+
+  before(async () => {
+    server = createServer((req, res) => {
+      if (req.url === '/cookies') {
+        // The ordinary login response: a session and a CSRF token, and one more
+        // to show that it is not an off-by-one.
+        res.writeHead(200, {
+          'content-type': 'text/plain',
+          'Set-Cookie': ['session=abc123; Path=/; HttpOnly', 'csrf=tok987; Path=/', 'theme=dark'],
+          'x-repeated': ['one', 'two'],
+        });
+        res.end('ok');
+        return;
+      }
+      res.writeHead(200, { 'content-type': 'text/plain' });
+      res.end('plain');
+    });
+    const port = await freePort();
+    await new Promise<void>((resolve) => server?.listen(port, '127.0.0.1', resolve));
+    base = 'http://127.0.0.1:' + String(port);
+  });
+
+  after(() => {
+    server?.close();
+  });
+
+  /** Run a snippet and hand back its trimmed output. */
+  async function run(body: string): Promise<string> {
+    const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'lumen-http-x-'));
+    const file = path.join(dir, 'probe.lm');
+    await fsp.writeFile(file, body, 'utf8');
+    try {
+      return await new Promise((resolve, reject) => {
+        const child = spawn(process.execPath, [CLI, 'run', file], {
+          stdio: ['ignore', 'pipe', 'pipe'],
+          env: { ...process.env, NO_COLOR: '1' },
+        });
+        let out = '';
+        child.stdout.on('data', (c: Buffer) => (out += c.toString('utf8')));
+        child.stderr.on('data', (c: Buffer) => (out += c.toString('utf8')));
+        child.on('error', reject);
+        child.on('exit', () => resolve(out.trim()));
+      });
+    } finally {
+      await fsp.rm(dir, { recursive: true, force: true });
+    }
+  }
+
+  it('keeps every Set-Cookie, not only the last', async () => {
+    // `Set-Cookie` is the one header the Fetch API deliberately does not
+    // combine, because a cookie value can contain a comma
+    // (`Expires=Wed, 09 Jun 2021`) so a joined form could not be split back.
+    // `forEach` therefore yields one of them, and `headers["set-cookie"]` held
+    // the last — so a login response setting a session and a CSRF token gave up
+    // one of the two, silently.
+    const out = await run(
+      'import { get } from "std/http"\n' +
+        `let r = get("${base}/cookies").unwrapOr({})\n` +
+        'print(r.getOr("cookies", []))\n' +
+        'print(r.getOr("headers", {}).getOr("x-repeated", "?"))\n',
+    );
+    const lines = out.split('\n');
+    assert.equal(lines[0], '["session=abc123; Path=/; HttpOnly", "csrf=tok987; Path=/", "theme=dark"]');
+    // Every *other* repeated header is combined, which is correct and is why
+    // `Set-Cookie` needed its own field rather than a change to `headers`.
+    assert.equal(lines[1], 'one, two');
+  });
+
+  it('refuses a header value that is not text, rather than sending an empty one', async () => {
+    // The one answer that is silently wrong: `headers: { authorization: token }`
+    // where `token` came back `nil` — a config value that was not there — put
+    // `authorization:` on the wire with nothing after it, and the server's 401
+    // then sent the reader hunting for a token problem rather than a nil.
+    for (const value of ['nil', 'true', '[1, 2]', '{ a: 1 }']) {
+      const out = await run(
+        'import { get } from "std/http"\n' +
+          `print(get("${base}/plain", headers: { authorization: ${value} }))\n`,
+      );
+      assert.match(out, /must be a Str or Num/, value + ' was accepted as a header value');
+    }
+    // A Num is fine: it has one obvious reading as text.
+    const ok = await run(
+      'import { get } from "std/http"\n' +
+        `print(get("${base}/plain", headers: { "x-retry": 3 }).unwrapOr({}).getOr("status", 0))\n`,
+    );
+    assert.equal(ok, '200');
+  });
+
+  it('names the scheme when the URL is not one it speaks', async () => {
+    // The host named the wrong thing for every one of these: `file://` answered
+    // "not implemented... yet...", and `blob:` answered "invalid method" — for
+    // a GET. Only `ws://` happened to mention a scheme.
+    for (const [url, expected] of [
+      ['file:///etc/hostname', /not `file`/],
+      ['blob:http://x/y', /not `blob`/],
+      ['ws://x/y', /not `ws`/],
+      ['not-a-url', /that is not a URL/],
+      ['http://', /that is not a URL/],
+    ] as const) {
+      const out = await run(
+        'import { get } from "std/http"\n' + `print(get(${JSON.stringify(url)}))\n`,
+      );
+      assert.match(out, expected, url + ' was reported as: ' + out);
+    }
   });
 });

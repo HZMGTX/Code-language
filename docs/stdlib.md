@@ -455,7 +455,28 @@ versions, so `std/fs` maps the stable part — the error code — to a sentence 
 its own: `cannot read \`config.json\`: no such file or directory`. A code with
 no sentence yet keeps the code rather than hiding it behind something vague.
 `std/http` names the request that failed, since "fetch failed" on its own says
-nothing when several are in flight.
+nothing when several are in flight — and it also names what is wrong with a URL
+it will not fetch. The host does not: `file://…` answered "not implemented...
+yet...", and `blob:…` answered "invalid method" for a GET. Only the scheme is
+wrong, so the scheme is what the message says. `std/ai` said the bare "fetch
+failed" this paragraph singles out until it was told to do the same.
+
+**Every `Set-Cookie` is reachable, in `cookies`.** It is the one header the
+Fetch API deliberately does not combine — a cookie value can contain a comma
+(`Expires=Wed, 09 Jun 2021`), so a joined form could not be split back — which
+meant `headers["set-cookie"]` held only one of them. A login response setting a
+session cookie and a CSRF token gave up one of the two, silently, and reading
+`set-cookie` is very nearly the only reason to look at a response's headers at
+all. `response.cookies` is a `List<Str>` of all of them, in order; every other
+repeated header is still combined in `headers`, which is correct and is why this
+is a new field rather than a change to an old one.
+
+**A header value must be a `Str` or a `Num`.** Anything else used to go out as
+an *empty* header, which is the one answer that is silently wrong:
+`headers: { authorization: token }` where `token` came back `nil` — a config
+value that was not there — put `authorization:` on the wire with nothing after
+it, and the server's 401 then sent the reader hunting for a token problem rather
+than a nil.
 
 This is the same reason `std/json` writes its own `invalid JSON at line 3,
 column 29: ...` rather than passing through V8's parser message: a Lumen program

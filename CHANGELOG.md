@@ -130,6 +130,42 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
     answered `["a", "b"]`, which looks like an answer and was an accident of
     which branch ran first. Refused now, with the reason.
 
+- **`std/http` lost two of three cookies.** `Set-Cookie` is the one header the
+  Fetch API deliberately does not combine — a cookie value can contain a comma,
+  as in `Expires=Wed, 09 Jun 2021`, so a joined form could not be split back —
+  so `Headers.forEach` yields one of them and `headers["set-cookie"]` held the
+  **last**. A login response setting a session cookie and a CSRF token gave up
+  one of the two, silently, and reading `set-cookie` is very nearly the only
+  reason to look at a response's headers at all.
+
+  `response.cookies` is a `List<Str>` of all of them, in order, from
+  `getSetCookie()`. A new field rather than a change to `headers`, because every
+  *other* repeated header is combined there correctly — `x-repeated: "one, two"`
+  — and that is worth keeping.
+
+- **A header value that was not text went out empty.** `nil`, `true`, a list
+  and a map all became `authorization:` with nothing after it — the one answer
+  that is silently wrong. `headers: { authorization: token }` where `token` came
+  back `nil`, because a config value was not there, produced a request that
+  looked authorized and blank, and the server's 401 then sent the reader hunting
+  for a token problem. A `Str` or a `Num` now, or a panic naming the header. A
+  value containing a newline was already refused by the host, which is the one
+  thing here that was right.
+
+- **A URL `std/http` will not fetch now says why.** The host named the wrong
+  thing for every one of them: `file:///etc/hostname` answered "not
+  implemented... yet...", `blob:http://…` answered "invalid method" — for a GET
+  — and only `ws://` happened to mention a scheme. The scheme is checked up
+  front, so all three say `std/http speaks http and https, not \`file\``, and
+  something that is not a URL at all says that instead.
+
+- **`std/ai` said the bare "fetch failed"** that `docs/stdlib.md` singles out as
+  the thing not to do: *"`std/http` names the request that failed, since 'fetch
+  failed' on its own says nothing when several are in flight."* `std/http` does
+  it properly — pulling the real reason out of `cause`, which is the only place
+  it is — and both `std/ai` providers threw the whole thing away. A program that
+  asks a model something has one request in flight and no other clue about it.
+
 - **Five things in `std/fs`, every one of them a disagreement between functions
   that should have said the same thing.**
 

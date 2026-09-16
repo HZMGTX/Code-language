@@ -61,6 +61,27 @@ function resolveProvider(explicit: Value, ctx: CallCtx): Provider {
   return 'mock';
 }
 
+/**
+ * A failed request, said in Lumen's words and naming which request it was.
+ *
+ * `fetch` rejects with the two words "fetch failed" and hides the reason in
+ * `cause`, so both providers answered `Err("fetch failed")` — no provider, no
+ * endpoint, and no cause. `docs/stdlib.md` singles that exact message out as
+ * the thing not to do: *"`std/http` names the request that failed, since 'fetch
+ * failed' on its own says nothing when several are in flight."* `std/http` does
+ * it properly; these two did not, and a program that asks a model something is
+ * a program with one request in flight and no other clue about it.
+ */
+function requestFailed(provider: string, endpoint: string, error: unknown): Value {
+  const cause =
+    error !== null && typeof error === 'object' && 'cause' in error
+      ? (error as { cause: unknown }).cause
+      : undefined;
+  const detail =
+    cause instanceof Error ? cause.message : error instanceof Error ? error.message : String(error);
+  return Err(str(provider + ' request to ' + endpoint + ' failed: ' + detail));
+}
+
 function mockReply(
   messages: readonly Message[],
   scripted: string | undefined,
@@ -126,7 +147,7 @@ async function callAnthropic(
       .join('');
     return Ok(str(reply));
   } catch (error) {
-    return Err(str(error instanceof Error ? error.message : String(error)));
+    return requestFailed('anthropic', 'https://api.anthropic.com/v1/messages', error);
   }
 }
 
@@ -155,7 +176,7 @@ async function callOpenai(
     const data = JSON.parse(text) as { choices?: { message?: { content?: string } }[] };
     return Ok(str(data.choices?.[0]?.message?.content ?? ''));
   } catch (error) {
-    return Err(str(error instanceof Error ? error.message : String(error)));
+    return requestFailed('openai', 'https://api.openai.com/v1/chat/completions', error);
   }
 }
 
