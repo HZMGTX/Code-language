@@ -73,6 +73,14 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   covered the day it exists. A list of things that exist goes stale exactly as
   fast as a count of them, which this repository has now learned three times.
 
+- **The documentation checker names the blocks it could not check**, rather than
+  counting them. *"2 blocks whose output does not line up with their prints"*
+  tells a reader there is something unverified and gives them no way to look at
+  it — and whether a block is *legitimately* ambiguous is a judgement somebody
+  has to be able to make. Both of the current two turn out to be exactly the
+  documented cases: a `match` whose output the trailing-comment convention
+  cannot describe, and a multi-line string.
+
 - **The documents whose output is verified are found rather than listed**, the
   third instance of the same hand-written list in one afternoon. This one
   omitted `DEVELOPING.md` — the file that explains how the checker works, whose

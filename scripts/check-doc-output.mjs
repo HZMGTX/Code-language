@@ -84,7 +84,8 @@ const workdir = mkdtempSync(path.join(os.tmpdir(), 'lumen-docs-'));
 let checked = 0;
 let skipped = 0;
 let inlineChecked = 0;
-let ambiguous = 0;
+/** Blocks whose inline claims could not be lined up, and where they are. */
+const ambiguous = [];
 const failures = [];
 
 try {
@@ -177,7 +178,13 @@ function checkInlineResults(file, text) {
 
     const out = (run.stdout ?? '').replace(/\n$/, '').split('\n');
     if (out.length !== printLines.length) {
-      ambiguous += 1;
+      // Named rather than counted. "2 blocks" tells a reader there is something
+      // unchecked and gives them no way to look at it, and whether a block is
+      // *legitimately* ambiguous — a loop, a multi-line string — is a judgement
+      // somebody has to be able to make.
+      ambiguous.push(
+        file + ':' + startLine + ' (' + printLines.length + ' prints, ' + out.length + ' lines out)',
+      );
       continue;
     }
     inlineChecked += annotated.length;
@@ -208,6 +215,9 @@ const summary =
   checked + ' documented examples run and ' + inlineChecked + ' inline results checked, ' +
   (failures.length === 0 ? 'all correct' : failures.length + ' WRONG') +
   (skipped > 0 ? '; ' + skipped + ' skipped' : '') +
-  (ambiguous > 0 ? '; ' + ambiguous + ' blocks whose output does not line up with their prints' : '');
+  (ambiguous.length > 0
+    ? '; ' + ambiguous.length + ' blocks whose output does not line up with their prints'
+    : '');
 process.stdout.write('\n' + summary + '\n');
+for (const where of ambiguous) process.stdout.write('  unchecked: ' + where + '\n');
 process.exit(failures.length === 0 ? 0 : 1);
