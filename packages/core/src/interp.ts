@@ -84,9 +84,20 @@ function takesNote(paramNames: readonly string[], positional: boolean): string {
 
 class BreakSignal {}
 class ContinueSignal {}
-/** Raised by postfix `?` to carry an `Err`/`None` out of the enclosing function. */
+/**
+ * Raised by postfix `?` to carry an `Err`/`None` out of the enclosing function.
+ *
+ * It carries the span of the `?` that raised it, because when one reaches the
+ * top of a program there is no enclosing function to blame and the diagnostic
+ * has to point somewhere. It used to point at the module, which renders as the
+ * first line of the file — so a `?` on line forty put the caret under the
+ * `import` on line one, the one line that was certainly not the problem.
+ */
 class TryPropagate {
-  constructor(readonly value: Value) {}
+  constructor(
+    readonly value: Value,
+    readonly span: Span,
+  ) {}
 }
 
 /** A range materialised by `..` may not exceed this, to turn OOM into an error. */
@@ -231,18 +242,9 @@ export class Interpreter {
         await this.callValue(main.value, [], module.span);
       }
     } catch (error) {
-      if (error instanceof TryPropagate) {
-        // `?` used at top level with nothing to return to.
-        this.fail(
-          'RT001',
-          '`?` propagated ' + inspect(error.value) + ' out of the program',
-          module.span,
-          'unhandled at top level',
-          ['handle it with `match`, or return it from a function that yields a Result'],
-        );
-      }
-      if (error instanceof ReturnSignal) return;
-      throw error;
+      // A module has nowhere to put a returned value, so the answer is dropped.
+      this.atTopLevel(error);
+      return;
     } finally {
       this.units.pop();
     }
@@ -269,19 +271,44 @@ export class Interpreter {
       }
       return last;
     } catch (error) {
-      // A `return` written outside any function reaches here. `runModule`
-      // catches the same signal and discards the value, because a file has
-      // nowhere to put it; this is the REPL's module boundary, where the value
-      // is exactly what the person typing wanted to see.
-      //
-      // Letting it escape instead printed `lumen: internal error` followed by
-      // `[object Object]` — a signal is a plain object, so `String` of it says
-      // nothing at all.
-      if (error instanceof ReturnSignal) return error.value;
-      throw error;
+      // The REPL's module boundary. The difference from `runModule` is only
+      // what becomes of a returned value: a file has nowhere to put it, and
+      // here it is exactly what the person typing wanted to see.
+      return this.atTopLevel(error);
     } finally {
       this.units.pop();
     }
+  }
+
+  /**
+   * What a control-flow signal means when it reaches the top of a program.
+   *
+   * There are four — `return`, `break`, `continue` and `?` — and the two places
+   * a program can end, `runModule` and `runStatements`, each used to decide for
+   * themselves which of them to catch. They disagreed, and the REPL was the one
+   * that lost: a top-level `return` printed `lumen: internal error` with
+   * `[object Object]` after it, and `parse("x")?` printed the same and exited
+   * 70, while a file reported `RT001` for the second and ended quietly for the
+   * first.
+   *
+   * One place to decide it, so a fifth signal cannot be handled by one boundary
+   * and not the other. `break` and `continue` never arrive: `RS006` reports
+   * either outside a loop before anything runs, and a function boundary counts.
+   */
+  private atTopLevel(error: unknown): Value {
+    if (error instanceof TryPropagate) {
+      // `?` used at the top level, with nothing to return the error to.
+      this.fail(
+        'RT001',
+        '`?` propagated ' + inspect(error.value) + ' out of the program',
+        // The `?` itself, not the module: see `TryPropagate`.
+        error.span,
+        'unhandled at top level',
+        ['handle it with `match`, or return it from a function that yields a Result'],
+      );
+    }
+    if (error instanceof ReturnSignal) return error.value;
+    throw error;
   }
 
   // ------------------------------------------------------------------ hoisting
@@ -801,11 +828,11 @@ export class Interpreter {
         if (value.k === 'enum') {
           if (value.enumName === 'Result') {
             if (value.variant === 'Ok') return value.values[0] ?? NIL;
-            if (value.variant === 'Err') throw new TryPropagate(value);
+            if (value.variant === 'Err') throw new TryPropagate(value, expr.span);
           }
           if (value.enumName === 'Option') {
             if (value.variant === 'Some') return value.values[0] ?? NIL;
-            if (value.variant === 'None') throw new TryPropagate(value);
+            if (value.variant === 'None') throw new TryPropagate(value, expr.span);
           }
         }
         return this.fail(

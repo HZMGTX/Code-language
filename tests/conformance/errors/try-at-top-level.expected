@@ -1,0 +1,9 @@
+this runs
+so does this
+error[RT001]: `?` propagated Err("invalid JSON at line 1, column 1: `not` is not a value JSON knows — a key or a word has to be in double quotes") out of the program
+  --> try-at-top-level.lm:17:7
+   |
+17 | print(parse("not json")?)
+   |       ^^^^^^^^^^^^^^^^^^ unhandled at top level
+   |
+   = note: handle it with `match`, or return it from a function that yields a Result

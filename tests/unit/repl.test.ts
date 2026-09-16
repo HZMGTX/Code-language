@@ -75,6 +75,24 @@ describe('repl', () => {
     assert.match(out, /lumen> 5$/mu);
   });
 
+  it('reports an unhandled `?` the way a file does, and carries on', async () => {
+    // The sibling of the case above, and the reason that one was not enough:
+    // `runModule` and `runStatements` each decided for themselves which of the
+    // four control-flow signals to catch, and disagreed. A `?` at the top level
+    // printed `lumen: internal error`, `TryPropagate {…}`, and exited 70 —
+    // while the same program in a file reported `RT001` and carried on.
+    const out = await repl([
+      'import { parse } from "std/json"',
+      'parse("nope")?',
+      'let after = 6',
+      'after',
+    ]);
+    assert.doesNotMatch(out, /internal error|TryPropagate/);
+    assert.match(out, /RT001/);
+    assert.match(out, /unhandled at top level/);
+    assert.match(out, /lumen> 6$/mu);
+  });
+
   it('answers :type', async () => {
     assert.match(await repl([':type "abc"']), /Str/);
   });

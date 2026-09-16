@@ -1,0 +1,17 @@
+// An unhandled `?` points at the `?`, not at the top of the file.
+//
+// `RT001` used to be reported against the *module's* span, which renders as its
+// first line — so a `?` on line forty put the caret under the `import` on line
+// one, which is the one line that was certainly not the problem. The signal
+// carries the span of the `?` that raised it now.
+//
+// The same diagnostic reaches the REPL, which used to print `lumen: internal
+// error` and `[object Object]` instead: `runModule` caught this signal and
+// `runStatements` did not, and the two decided for themselves which signals to
+// handle. They share one boundary now.
+import { parse } from "std/json"
+
+print("this runs")
+print("so does this")
+
+print(parse("not json")?)

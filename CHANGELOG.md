@@ -34,18 +34,32 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   from its type's table and never from scope, so `xs.groupBy(f)` works with no
   import at all and those imports really were dead. They are gone.
 
-- **`return` at the REPL printed `lumen: internal error` and `[object Object]`.**
-  `return` written outside any function reaches the interpreter's own return
-  signal. `runModule` catches it — that is how `return` ends a file early — and
-  the REPL, which calls `runStatements` instead, did not. So it escaped to the
-  CLI's last resort, which did `String(error)` on a plain object and said
-  nothing whatsoever.
+- **The two ends of a program disagreed about control flow, and the REPL lost.**
+  There are four signals — `return`, `break`, `continue` and `?` — and the two
+  places a program can end, `runModule` and `runStatements`, each decided for
+  themselves which to catch. A file reported `RT001` for a top-level `?` and
+  ended quietly on a top-level `return`; the REPL printed `lumen: internal
+  error` for both, with `[object Object]` after the first and `TryPropagate {…}`
+  after the second, and exited 70 on one of them.
 
-  The REPL is a module boundary like any other, and now catches it. The
-  difference is what to do with the value: a file has nowhere to put it and
-  discards it, while at the REPL it is exactly what the person typing wanted to
-  see, so it is printed. `docs/spec.md` now says both, which it never had — the
-  behaviour of a top-level `return` had simply never been written down.
+  They share one boundary now, so a fifth signal cannot be handled by one and
+  not the other. `break` and `continue` never reach it: `RS006` reports either
+  outside a loop before anything runs, and a function boundary counts.
+
+  The remaining difference is what becomes of a returned value — a file has
+  nowhere to put it and drops it, while at the REPL it is exactly what the
+  person typing wanted to see, so it is printed. `docs/spec.md` now states both,
+  which it never had: the behaviour of a top-level `return` had simply never
+  been written down.
+
+  **Fixing the first of the two found the second**, which is the argument for
+  asking what the whole set does rather than fixing the one that turned up.
+
+- **An unhandled `?` pointed at the top of the file.** `RT001` was reported
+  against the *module's* span, which renders as its first line — so a `?` on
+  line forty put the caret under the `import` on line one, the one line that was
+  certainly not the problem. The signal carries the span of the `?` that raised
+  it now, and the caret lands on it.
 
 - **`lumen: internal error` says what escaped.** The line was
   `String(error)` for anything that is not an `Error`, and `String` of an object
