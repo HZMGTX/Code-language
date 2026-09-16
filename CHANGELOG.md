@@ -130,6 +130,39 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
     answered `["a", "b"]`, which looks like an answer and was an accident of
     which branch ran first. Refused now, with the reason.
 
+- **`min` and `max` were two functions, and importing the wrong one broke
+  working code.** This compiled and ran:
+
+  ```lumen
+  let scores = [3, 1, 4, 1, 5]
+  print(max(scores))
+  ```
+
+  and stopped compiling the moment somebody added
+  `import { sqrt, min, max } from "std/math"`, with `TY008: max is missing a
+  value for b`. True of `std/math`'s `max`, false of the `max` everybody means
+  — and `std/math` is exactly where a reader goes looking for `min`.
+
+  The prelude's pair is variadic and takes a list *or* the numbers themselves,
+  because guessing wrong about which one a beginner meant is a bad first
+  experience. `std/math` kept a narrower pair of its own, exactly two `Num`s,
+  **with a signature saying so** — and the comment beside the prelude's version
+  explains that a variadic deliberately carries none "so that the checker's
+  argument-count rule can never be wrong about them". The narrow pair's
+  signature is precisely what made the rule wrong.
+
+  The prelude's header states the rule that was broken: *"so there is one
+  implementation, not two."* The variadic pair lives in `std/math` now, where
+  the functions belong, and the prelude takes them from there the way it already
+  takes `split`, `join`, `abs` and `round` — one native, so the two cannot
+  disagree. Which is the answer this project had already reached for `now`,
+  shared between `std/core` and `std/time` for the same reason.
+
+  The generated reference follows on its own: `min` and `max` read `min(...)`
+  rather than a two-parameter signature, and typed coverage stays at 100%
+  because variadics are excluded from both sides of that count — 244/244, was
+  246/246.
+
 - **The "no host error text" rule is now a test rather than a habit.**
   `docs/stdlib.md` has always said error text belongs to Lumen and not to the
   host, and every module kept it — which is exactly why nobody looked at the one

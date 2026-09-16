@@ -766,8 +766,8 @@ gcd(a: Num, b: Num) -> Num
 hypot(a: Num, b: Num) -> Num
 lcm(a: Num, b: Num) -> Num
 log(n: Num, base: Num = ...) -> Num
-max(a: Num, b: Num) -> Num
-min(a: Num, b: Num) -> Num
+max(...)
+min(...)
 pow(base: Num, exponent: Num) -> Num
 random() -> Num
 randomInt(low: Num, high: Num) -> Num

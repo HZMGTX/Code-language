@@ -50,32 +50,6 @@ function alias(source: NativeValue, name: string, doc: string): NativeValue {
 }
 
 /**
- * Reduce over either a single list or the arguments themselves, so that both
- * `min([3, 1, 2])` and `min(3, 1, 2)` work — Python accepts both, and guessing
- * wrong about which one a beginner meant is a bad first experience.
- */
-function extremum(which: 'min' | 'max') {
-  return (args: readonly Value[], ctx: CallCtx): Value => {
-    const first = args[0] ?? NIL;
-    const items = args.length === 1 && first.k === 'list' ? first.items : args;
-    if (items.length === 0) {
-      return ctx.panic(which + '() needs at least one value', [
-        'it takes either a list, as ' + which + '([1, 2, 3]), or several numbers',
-      ]);
-    }
-    let best: number | undefined;
-    for (const item of items) {
-      if (item.k !== 'num') {
-        return ctx.panic(which + '() needs Nums, found ' + typeName(item));
-      }
-      if (best === undefined) best = item.v;
-      else best = which === 'min' ? Math.min(best, item.v) : Math.max(best, item.v);
-    }
-    return num(best ?? 0);
-  };
-}
-
-/**
  * Render a function's signature the way it would be written in Lumen.
  *
  * The declared one when there is one, because it says more and is already
@@ -134,28 +108,23 @@ export function preludeExtras(): Map<string, Value> {
   define(alias(take(M, 'ceil'), 'ceil', 'Round up to a whole number.'));
   define(alias(take(M, 'fixed'), 'fixed', 'A number as text with a fixed number of decimals: fixed(4.5, 2) is "4.50".'));
 
-  // No signature on either of these, deliberately. They take a list *or* the
+  // Taken from `std/math` like everything else here, rather than defined
+  // again. These two used to be the exception, and the exception cost exactly
+  // what this file's header says it would: `std/math` kept a *narrower* pair of
+  // its own — exactly two Nums — so `max([3, 1, 4])` worked until somebody
+  // wrote `import { sqrt, min, max } from "std/math"`, at which point a
+  // working program stopped compiling. `std/math` is where a reader looks for
+  // `min`, so that import is the natural thing to write.
+  //
+  // Neither carries a signature, deliberately. They take a list *or* the
   // numbers themselves — `min([1, 2])` and `min(1, 2)` are both good, because
   // guessing wrong about which one a beginner meant is a bad first experience —
   // and a fixed parameter list cannot describe that. A variadic never carries
   // one: see `withSignatures`, which refuses to attach a signature to one, so
-  // that the checker's argument-count rule can never be wrong about them.
-  define({
-    k: 'native',
-    name: 'min',
-    params: [],
-    variadic: true,
-    doc: 'The smallest of a list, or of the numbers given.',
-    call: extremum('min'),
-  });
-  define({
-    k: 'native',
-    name: 'max',
-    params: [],
-    variadic: true,
-    doc: 'The largest of a list, or of the numbers given.',
-    call: extremum('max'),
-  });
+  // that the checker's argument-count rule can never be wrong about them. The
+  // narrow pair *had* one, which is what made the rule wrong.
+  define(take(M, 'min'));
+  define(take(M, 'max'));
 
   // --- strings ---------------------------------------------------------------
   define(alias(take(S, 'split'), 'split', 'Split a string on a separator, giving a list.'));

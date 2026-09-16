@@ -1,7 +1,56 @@
 /** `std/math` — numeric helpers and constants. */
 
-import { NIL, list, num, str, type Value } from '@lumen-lang/core';
+import {
+  NIL,
+  list,
+  num,
+  str,
+  typeName,
+  type CallCtx,
+  type NativeValue,
+  type Value,
+} from '@lumen-lang/core';
 import { None, Some, arg, expectInt, expectList, expectNum, fn, moduleOf, withSignatures } from './support.js';
+
+/**
+ * Reduce over either a single list or the arguments themselves, so that both
+ * `min([3, 1, 2])` and `min(3, 1, 2)` work — Python accepts both, and guessing
+ * wrong about which one a beginner meant is a bad first experience.
+ *
+ * This lives here, in the module the functions belong to, and the prelude takes
+ * it from here. It used to live in the prelude with `std/math` keeping a
+ * narrower pair of its own, which is the one thing the prelude's own header
+ * says must not happen: "so there is one implementation, not two".
+ */
+function extremum(which: 'min' | 'max') {
+  return (args: readonly Value[], ctx: CallCtx): Value => {
+    const first = args[0] ?? NIL;
+    const items = args.length === 1 && first.k === 'list' ? first.items : args;
+    if (items.length === 0) {
+      return ctx.panic(which + '() needs at least one value', [
+        'it takes either a list, as ' + which + '([1, 2, 3]), or several numbers',
+      ]);
+    }
+    let best: number | undefined;
+    for (const item of items) {
+      if (item.k !== 'num') {
+        return ctx.panic(which + '() needs Nums, found ' + typeName(item));
+      }
+      if (best === undefined) best = item.v;
+      else best = which === 'min' ? Math.min(best, item.v) : Math.max(best, item.v);
+    }
+    return num(best ?? 0);
+  };
+}
+
+/** A native that takes any number of arguments, and so declares no signature. */
+function variadicFn(
+  name: string,
+  doc: string,
+  call: (args: readonly Value[], ctx: CallCtx) => Value,
+): NativeValue {
+  return { k: 'native', name, params: [], variadic: true, doc, call };
+}
 
 /**
  * Every function's type. `Num` throughout, which is the whole of this module.
@@ -32,8 +81,6 @@ const SIGNATURES: Readonly<Record<string, string>> = {
   lcm: '(a: Num, b: Num) -> Num',
   log: '(n: Num, base: Num = 2.718281828459045) -> Num',
   pow: '(base: Num, exponent: Num) -> Num',
-  min: '(a: Num, b: Num) -> Num',
-  max: '(a: Num, b: Num) -> Num',
   clamp: '(n: Num, low: Num, high: Num) -> Num',
   fixed: '(n: Num, places: Num = 2) -> Str',
   random: '() -> Num',
@@ -167,13 +214,20 @@ export function stdMath(): Map<string, Value> {
       return num(Math.pow(base, exponent));
     }),
 
-    fn('min', ['a', 'b'], (a, c) =>
-      num(Math.min(expectNum(arg(a, 0), c, 'min a'), expectNum(arg(a, 1), c, 'min b'))),
-    ),
-
-    fn('max', ['a', 'b'], (a, c) =>
-      num(Math.max(expectNum(arg(a, 0), c, 'max a'), expectNum(arg(a, 1), c, 'max b'))),
-    ),
+    // `min` and `max` are the prelude's, which the prelude takes from here —
+    // one native, not two. They were two, with different contracts: this
+    // module's took exactly two Nums and the prelude's takes a list *or* the
+    // numbers themselves, so `max([3, 1, 4])` worked until somebody wrote
+    // `import { sqrt, min, max } from "std/math"` and the narrower one took
+    // over. A working program stopped compiling because of an import, and
+    // `std/math` is exactly where a reader goes looking for `min`.
+    //
+    // A variadic carries no signature — see `withSignatures`, which refuses to
+    // give one to one — precisely so the checker's argument-count rule can
+    // never be wrong about them. The narrow pair had one, which is what made
+    // the rule wrong.
+    variadicFn('min', 'The smallest of a list, or of the numbers given.', extremum('min')),
+    variadicFn('max', 'The largest of a list, or of the numbers given.', extremum('max')),
 
     fn('clamp', ['n', 'low', 'high'], (a, c) => {
       const n = expectNum(arg(a, 0), c, 'clamp n');
