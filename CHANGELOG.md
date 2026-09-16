@@ -34,6 +34,28 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   from its type's table and never from scope, so `xs.groupBy(f)` works with no
   import at all and those imports really were dead. They are gone.
 
+- **The regex warning named the wrong half of the danger.** `docs/stdlib.md`
+  already said `std/regex` has no backtracking guard and that *"a pattern from a
+  stranger is a denial of service"* — which is true, and is the half that
+  matters least. A probe hung the interpreter with a pattern the *program* wrote,
+  `(a+)+$`, against thirty characters of input: the classic shape is a hard-coded
+  validator meeting a submitted field, and a reader who concluded "my patterns
+  are all literals, so I am safe" would have drawn exactly the wrong lesson from
+  what was written.
+
+  Both sides are named now, with what to do about it — `std/str`'s `contains`,
+  `startsWith`, `splitOnce` and `count` cannot backtrack at all, a quantifier
+  should not contain another where input from outside will meet it, and bounding
+  the input's length is the other half, since the blow-up is in *its* length.
+
+  It also records something reassuring that was true by accident and is now held
+  by a test: **`std/web`'s router does not use `std/regex`.** A route is matched
+  by splitting the path into segments and comparing them, so no request can make
+  a server backtrack. The test sends a real server a path built to blow up a
+  backtracking matcher — one that a `^/(a+)+$` never returns from at all — and
+  requires a 404 within two seconds. A refactor to regex-based routing fails it
+  rather than shipping a server one request can hang.
+
 - **`TY011`: an indexing that cannot work, said a pass earlier.** `RT021` and
   `RT023` have always reported this at run time with both types in hand, so
   nothing was missing but the timing:

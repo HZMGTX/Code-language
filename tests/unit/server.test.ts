@@ -131,6 +131,28 @@ describe('web server', () => {
     if (workdir !== '') await fsp.rm(workdir, { recursive: true, force: true });
   });
 
+  it('answers a pathological path promptly, because routing does not backtrack', async () => {
+    // `std/regex` has no backtracking guard — `docs/stdlib.md` says so, and
+    // `(a+)+$` against thirty characters is a program that does not come back.
+    // What keeps that out of a *server* is that a route is matched by splitting
+    // the path into segments and comparing them, never by a regular expression.
+    //
+    // That is a property rather than an accident, so it is held here: a request
+    // whose path is built to blow up a backtracking matcher has to be answered
+    // like any other. A refactor to regex-based routing fails this test rather
+    // than shipping a server one request can hang.
+    const nasty = '/' + 'a'.repeat(400) + '!' + '/' + 'a('.repeat(100);
+    const started = process.hrtime.bigint();
+    const res = await fetch(base + encodeURI(nasty));
+    const tookMs = Number(process.hrtime.bigint() - started) / 1e6;
+
+    assert.equal(res.status, 404);
+    // Generous by three orders of magnitude against an exponential blow-up,
+    // which does not come back at all rather than coming back slowly — so this
+    // cannot be flaky on a loaded machine without also being broken.
+    assert.ok(tookMs < 2000, 'took ' + tookMs.toFixed(0) + 'ms to answer a pathological path');
+  });
+
   it('serves a full HTML document', async () => {
     const res = await fetch(base + '/');
     assert.equal(res.status, 200);

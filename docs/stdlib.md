@@ -571,9 +571,24 @@ tool — a bare `\d` inside a class, a lone `{` — and a valid pattern being
 refused here is a worse surprise than `.` matching half an astral character.
 
 **There is no backtracking guard.** `(a+)+b` against a long run of `a`s takes
-time exponential in its length, here as in most engines. A pattern from a
-trusted source is fine; one from a stranger is a denial of service, and this is
-written down rather than left to be discovered.
+time exponential in its length, here as in most engines, and nothing interrupts
+it: thirty characters is already a program that does not come back.
+
+**Both sides are the hazard, not just the pattern.** A pattern from a stranger
+is the obvious half. The half that actually bites is a pattern *you* wrote,
+applied to text somebody else chose — a hard-coded validator against a submitted
+field is the classic shape, and "my patterns are all literals" is not the
+defence it sounds like. Either side being untrusted is enough.
+
+What to do about it: prefer `std/str` — `contains`, `startsWith`, `splitOnce`,
+`count` — which cannot backtrack at all, and keep a quantifier from containing
+another (`(a+)+`, `(a|a)*`, `(.*)*`) when a pattern must meet input from
+outside. Bounding the input's length first is the other half, since the blow-up
+is in *its* length rather than the pattern's.
+
+`std/web`'s router does not use this module: a route pattern is matched by
+splitting the path into segments and comparing them, so no request can make a
+server backtrack. That is a property worth keeping, and a test holds it.
 
 ### `std/process`
 
