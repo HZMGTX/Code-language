@@ -1,0 +1,74 @@
+// Every statement here runs, and the checker says nothing at all.
+//
+// The companion to `unreachable.lm`. `RS012` is a claim that a line can never
+// run, and getting it wrong means telling somebody their working code is dead —
+// so the test for "always leaves" is deliberately the shapes that are certain,
+// with no cleverness. A `while true` with no `break` never ends either, and
+// working that out is the beginning of a flow analysis this pass is not.
+
+// An `if` with no `else` falls through by definition.
+fn guarded(n) {
+  if n < 0 { return "negative" }
+  "not negative"
+}
+
+// One branch leaves, the other does not.
+fn oneWay(n) {
+  if n < 0 { return "negative" } else { print("checking") }
+  "not negative"
+}
+
+// A `return` as the last statement leaves nothing after it.
+fn last(n) { return n }
+
+// A guarded arm may not fire, so the match may fall through — which
+// disqualifies the whole match, however the other arms end.
+fn guardedMatch(n) {
+  match n {
+    x if x > 0 => return "pos"
+    _          => return "other"
+  }
+}
+
+// A match with no catch-all falls through to `RT020` rather than leaving, so
+// what follows it is reachable as far as this pass can tell.
+enum Colour { Red, Green }
+fn colour(c) {
+  match c {
+    Colour.Red   => return "red"
+    Colour.Green => return "green"
+  }
+  "after the match"
+}
+
+// A loop body that continues conditionally.
+fn skipping(xs) {
+  var kept = []
+  for x in xs {
+    if x < 0 { continue }
+    kept = kept.push(x)
+  }
+  kept
+}
+
+// A program that declares its own `panic` is calling its own, so nothing here
+// leaves — the test is the binding, not the name.
+fn panic(why) { "noted: ${why}" }
+fn mine() {
+  panic("not fatal")
+  "still here"
+}
+
+// `break` as the last statement of a loop body.
+fn firstOf(xs) {
+  var found = nil
+  for x in xs {
+    found = x
+    break
+  }
+  found
+}
+
+print(guarded(1) + oneWay(1) + "${last(1)}")
+print(guardedMatch(1) + colour(Colour.Red))
+print("${skipping([1, 0 - 1, 2])} ${mine()} ${firstOf([9, 8])}")

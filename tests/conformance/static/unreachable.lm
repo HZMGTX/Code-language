@@ -1,0 +1,50 @@
+// `RS012`: a statement that can never run, because the one before it leaves.
+//
+// Almost always a misplaced `return` or a leftover from an edit, and neither is
+// visible from reading the line itself — the mistake is a line above. `RS003`
+// already reports a `match` arm that can never be reached and `RS011` a binding
+// that is never read; this is the same family, for statements.
+//
+// A warning rather than an error, the line `RS011` draws: the program runs.
+fn afterReturn(n) {
+  return n
+  print("never runs")
+  let spare = 1
+  spare
+}
+
+fn afterPanic() {
+  panic("stop")
+  print("never runs either")
+}
+
+fn inLoops(xs) {
+  for x in xs {
+    continue
+    print("never")
+  }
+  for x in xs {
+    break
+    print("never")
+  }
+  0
+}
+
+// Both ways out of an `if` means the `if` itself leaves.
+fn bothBranches(n) {
+  if n > 0 { return "pos" } else { return "neg" }
+  print("unreachable")
+}
+
+// And a match where every arm leaves and one of them catches everything.
+fn everyArm(n) {
+  match n {
+    0 => return "zero"
+    _ => return "other"
+  }
+  print("unreachable too")
+}
+
+print(afterReturn(1))
+print(inLoops([1]))
+print(bothBranches(1) + everyArm(0))

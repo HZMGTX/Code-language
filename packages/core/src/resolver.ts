@@ -18,6 +18,7 @@
  *   RS009  an import of a name a known module does not export
  *   RS010  an import from a module that does not exist
  *   RS011  a binding that is never read — a **warning**, not an error
+ *   RS012  a statement that can never run — a **warning**, not an error
  *
  * The guiding rule is **no false positives**. A check that rejects a valid
  * program is worse than one that misses an invalid one, so anything the
@@ -552,8 +553,117 @@ class Resolver {
     this.pushScope();
     this.expectAll(block.stmts);
     this.hoist(block.stmts);
+    this.checkReachable(block.stmts);
     for (const stmt of block.stmts) this.stmt(stmt);
     this.popScope();
+  }
+
+  /**
+   * `RS012`: a statement that can never run, because the one before it leaves.
+   *
+   *     fn check(n) {
+   *       return n
+   *       print("never runs")     ← RS012
+   *     }
+   *
+   * Almost always a misplaced `return` or a leftover from an edit, and neither
+   * is visible from reading the line itself — the mistake is a line above.
+   * `RS003` already reports a `match` arm that can never be reached and `RS011`
+   * a binding that is never read; this is the same family, for statements.
+   *
+   * A **warning**, the line `RS011` draws: the program runs, and the mistake is
+   * in what the author meant rather than in what the machine can do.
+   *
+   * Reported once per block, at the first statement that cannot run, because a
+   * dead tail of ten lines is one mistake and ten diagnostics would bury it.
+   */
+  private checkReachable(stmts: readonly Stmt[]): void {
+    for (const [i, stmt] of stmts.entries()) {
+      if (!this.leaves(stmt)) continue;
+      const next = stmts[i + 1];
+      if (next === undefined) return;
+      this.report(
+        'RS012',
+        'this can never run',
+        { start: next.span.start, end: (stmts[stmts.length - 1] ?? next).span.end },
+        'unreachable',
+        ['the line above always leaves, so nothing after it in this block runs'],
+        'warning',
+      );
+      return;
+    }
+  }
+
+  /**
+   * Whether a statement always leaves the block it is in.
+   *
+   * Deliberately the shapes that are certain, and no cleverness: a `while true`
+   * with no `break` never ends either, and working that out is the beginning of
+   * a flow analysis this pass is not. Being wrong here means telling somebody
+   * their working code is unreachable, which is the one thing it must not do.
+   */
+  private leaves(stmt: Stmt): boolean {
+    // `break` and `continue` are statements in their own right here, and
+    // `JumpExpr` only where one is written as an expression — both spellings
+    // leave, and covering one was covering half the cases.
+    if (stmt.kind === 'ReturnStmt' || stmt.kind === 'BreakStmt' || stmt.kind === 'ContinueStmt') {
+      return true;
+    }
+    if (stmt.kind !== 'ExprStmt') return false;
+    return this.exprLeaves(stmt.expr);
+  }
+
+  private exprLeaves(expr: Expr): boolean {
+    switch (expr.kind) {
+      case 'JumpExpr':
+        return true;
+
+      case 'IfExpr':
+        // Both ways out, or it is not certain. An `if` with no `else` falls
+        // through by definition.
+        if (expr.otherwise === undefined) return false;
+        return (
+          this.blockLeaves(expr.then) &&
+          (expr.otherwise.kind === 'IfExpr'
+            ? this.exprLeaves(expr.otherwise)
+            : this.blockLeaves(expr.otherwise))
+        );
+
+      case 'MatchExpr':
+        // Every arm leaves, and one of them is a catch-all — a structural test
+        // rather than asking `RS002` whether the enum is covered, because a
+        // match that matches nothing falls through to `RT020` instead of
+        // leaving, and a catch-all is the one shape that cannot. A guarded arm
+        // may not fire at all, so it disqualifies the whole match.
+        return (
+          expr.arms.some(
+            (arm) =>
+              arm.guard === undefined &&
+              (arm.pattern.kind === 'PWildcard' || arm.pattern.kind === 'PBinding'),
+          ) && expr.arms.every((arm) => arm.guard === undefined && this.exprLeaves(arm.body))
+        );
+
+      case 'BlockExpr':
+        return this.blockLeaves(expr.block);
+
+      case 'CallExpr':
+        // `panic(...)` never comes back, and is the commonest way a function
+        // ends other than `return`. By the binding rather than by the name: a
+        // program that declares its own `panic` is calling its own.
+        return expr.callee.kind === 'Ident' && this.isBuiltIn(expr.callee.name, 'panic');
+
+      default:
+        return false;
+    }
+  }
+
+  private blockLeaves(block: Block): boolean {
+    return block.stmts.some((stmt) => this.leaves(stmt));
+  }
+
+  /** Whether this name is the prelude's own, rather than one the program declared. */
+  private isBuiltIn(name: string, expected: string): boolean {
+    return name === expected && this.scope.lookup(name)?.kind === 'built-in';
   }
 
   private stmt(stmt: Stmt): void {

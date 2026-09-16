@@ -798,9 +798,21 @@ program uses can be resolved without running it.
 | `RS009` | An `import` names something a known module does not export |
 | `RS010` | An `import` names a module that does not exist |
 | `RS011` | A binding is never read — a **warning**, not an error |
+| `RS012` | A statement can never run — a **warning**, not an error |
 
 The value is that a mistake is reported whether or not execution reaches it: a
 typo on a branch that never runs is still a typo.
+
+`RS012` is that idea turned around: a statement the program can never reach at
+all. It is almost always a misplaced `return` or a leftover from an edit, and
+neither is visible from reading the line itself — the mistake is a line above.
+The test for "always leaves" is deliberately the shapes that are certain —
+`return`, `break`, `continue`, a call to the prelude's `panic`, an `if` whose
+branches all leave, a `match` where every arm leaves and one catches everything
+— and no cleverness beyond them. A `while true` with no `break` never ends
+either, and working that out is the beginning of a flow analysis this pass is
+not. It reports once per block, at the first statement that cannot run, because
+a dead tail of ten lines is one mistake.
 
 Two rules bound what is checked, both in the direction of never rejecting a
 valid program:

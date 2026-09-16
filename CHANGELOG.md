@@ -34,6 +34,42 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   from its type's table and never from scope, so `xs.groupBy(f)` works with no
   import at all and those imports really were dead. They are gone.
 
+- **`RS012`: a statement that can never run.**
+
+  ```text
+  fn check(n) {
+    return n
+    print("never runs")     ← warning[RS012]
+  }
+  ```
+
+  Nothing reported it. Almost always a misplaced `return` or a leftover from an
+  edit, and neither is visible from reading the line itself — the mistake is a
+  line above. `RS003` has always reported a `match` arm that cannot be reached
+  and `RS011` a binding that is never read; this is the same family, for
+  statements, and a warning for the same reason: the program runs.
+
+  The test for "always leaves" is deliberately the shapes that are certain —
+  `return`, `break`, `continue`, a call to the prelude's `panic`, an `if` whose
+  branches all leave, and a `match` where every arm leaves *and* one of them
+  catches everything. No cleverness beyond that: a `while true` with no `break`
+  never ends either, and working that out is the beginning of a flow analysis
+  this pass is not. Being wrong here means telling somebody their working code
+  is dead, which is the one thing it must not do.
+
+  Three restraints came out of the `-quiet` companion rather than from thinking
+  about it first. A guarded arm may not fire, so it disqualifies its whole
+  match. A match with no catch-all falls through to `RT020` rather than leaving.
+  And `panic` is recognised by its **binding** rather than its name, so a
+  program that declares its own is calling its own.
+
+  It reports once per block, at the first statement that cannot run, because a
+  dead tail of ten lines is one mistake and ten diagnostics would bury it.
+
+  Writing it, `break` and `continue` turned out to be statements in their own
+  right *and* expressions when written as one — covering `JumpExpr` alone
+  covered half the cases, and the fixture caught it.
+
 - **`std/web.url`, because `escape` cannot make a link safe.** `docs/stdlib.md`
   said *"always use `escape` on anything a visitor supplied"*, and following
   that advice exactly ships a cross-site script:
