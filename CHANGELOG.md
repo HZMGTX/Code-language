@@ -73,6 +73,23 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   covered the day it exists. A list of things that exist goes stale exactly as
   fast as a count of them, which this repository has now learned three times.
 
+- **The bundle is checked with more than a hello-world.** It is the artifact
+  people are actually handed — a single file with a JavaScript runtime inside it
+  — and it was verified by running `hello.lm` and answering one LSP
+  `initialize`.
+
+  That mattered the same afternoon. A `const` declared below the function that
+  read it broke every bundled run: fine in ESM, where a binding is live by the
+  time anything calls it, and not fine once the bundler has wrapped each module
+  in a factory. It happened to sit on the `run` path, so the check caught it —
+  the same mistake in the formatter or the static passes would have shipped.
+
+  The sandbox now also runs a program that imports a module and calls a method,
+  a file with a deliberate mistake through `lumen check`, and `lumen fmt
+  --check` — the module registry, the method tables, the static passes,
+  diagnostic rendering and the formatter, none of which a hello-world reaches.
+  Verified by breaking `str.upper` and watching the import case fail.
+
 - **One classification of what each module does to the world**, replacing two
   lists in two files that nearly agreed. `TY010` asked "is every function here
   called for its effect"; the `Result` sweep asked "can this module be called

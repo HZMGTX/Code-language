@@ -15,7 +15,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, copyFileSync, rmSync, readdirSync } from 'node:fs';
+import { existsSync, mkdtempSync, copyFileSync, rmSync, readdirSync, writeFileSync } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -109,6 +109,41 @@ check('portable bundle is self-contained', () => {
       throw new Error('unexpected output: ' + JSON.stringify(out) + (r.stderr ?? ''));
     }
 
+    // More than a hello-world, because the bundle is the artifact people are
+    // handed and was checked by one. A `const` declared below the function that
+    // read it broke every run when bundled — fine in ESM, where a binding is
+    // live by the time anything calls it, and not fine once the bundler has
+    // wrapped each module in a factory. That happened to sit on the `run` path;
+    // the same mistake in the formatter or the static passes would have shipped.
+    writeFileSync(
+      path.join(sandbox, 'imports.lm'),
+      'import { upper } from "std/str"\nprint(upper("a,b".split(",").join("-")))\n',
+      'utf8',
+    );
+    writeFileSync(path.join(sandbox, 'wrong.lm'), 'print(nope)\n', 'utf8');
+
+    const exercises = [
+      // A module import, a method call and a prelude function: the method
+      // tables and the module registry, which a hello-world never touches.
+      { args: ['run', 'imports.lm'], wants: /^A-B$/mu },
+      // The static passes and the rendering of a diagnostic.
+      { args: ['check', 'wrong.lm'], wants: /RS001/u, failing: true },
+      // The formatter, which is a whole pass of its own.
+      { args: ['fmt', '--check', 'imports.lm'], wants: /already formatted/u },
+    ];
+    for (const { args, wants, failing } of exercises) {
+      const ran = spawnSync(node, ['lumen.cjs', ...args], { cwd: sandbox, encoding: 'utf8' });
+      const said = (ran.stdout ?? '') + (ran.stderr ?? '');
+      if (!wants.test(said)) {
+        throw new Error('`lumen ' + args.join(' ') + '` in the bundle said:\n' + said);
+      }
+      if ((ran.status !== 0) !== Boolean(failing)) {
+        throw new Error(
+          '`lumen ' + args.join(' ') + '` in the bundle exited ' + String(ran.status) + '\n' + said,
+        );
+      }
+    }
+
     // The language server too, because it is a whole workspace the bundler had
     // to learn about — it was left out of the bundle the day it was written,
     // and `lumen lsp` then failed with "cannot find module" on exactly the
@@ -128,7 +163,7 @@ check('portable bundle is self-contained', () => {
           (lsp.stdout ?? '') + (lsp.stderr ?? ''),
       );
     }
-    return 'ran a program and a language server from ' + sandbox + ', with nothing else present';
+    return 'ran a program, an import, a check, a format and a language server from ' + sandbox;
   } finally {
     rmSync(sandbox, { recursive: true, force: true });
   }
