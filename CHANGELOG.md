@@ -73,6 +73,27 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   covered the day it exists. A list of things that exist goes stale exactly as
   fast as a count of them, which this repository has now learned three times.
 
+- **One library export cannot be called by its own name.** `std/option.or` is a
+  keyword in expression position, so `or(maybe, fallback)` is a syntax error and
+  only `maybe.or(fallback)` parses. The import even succeeds, which is the trap:
+  it binds a name the program can never use.
+
+  It stays. `maybe.or(fallback)` is how every language with an `Option` spells
+  it, and there is no fixing the other spelling — `a or (b)` genuinely cannot be
+  told from `or(a, b)`. Renaming would cost the reading that matters to gain the
+  one that does not. `docs/stdlib.md` says so now, where it was silent.
+
+  The rest of the library is held to the rule instead. Every one of the 253
+  exports is parsed as a plain call, and anything that will not parse has to be
+  renamed or listed with a reason — so a future `and`, `not`, `in` or `match` is
+  caught on the day it is written rather than by somebody's import three
+  releases later. It is the same mistake the language fixed from the other side
+  in v0.2, when `from` and `as` stopped being keywords because the library had
+  twice ended up with a parameter no Lumen program could declare.
+
+  Found by calling `help()` on all 253 exports and reading the one module whose
+  program would not parse.
+
 - **Nearly half the language's diagnostics had never been triggered by a test.**
   `check-counts.mjs` fails on a code that is emitted and not *documented*; the
   other half of the question had not been asked. **43 of 96** appeared in no

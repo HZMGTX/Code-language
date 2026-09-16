@@ -448,6 +448,14 @@ trusting it, and have something to do when it is wrong.
 
 ### `std/option` and `std/result`
 
+**`or` is a method and nothing else.** `maybe.or(fallback)` works; `or(maybe,
+fallback)` is a syntax error, because `or` in that position is the logical
+operator and `a or (b)` cannot be told from `or(a, b)`. It is the one export in
+the library whose three spellings are not one expression, and it keeps the name
+because `maybe.or(fallback)` is how every language with an `Option` says it —
+the reading that matters is the one that works. A test holds the rest of the
+library to the rule, so a future `and` or `in` is caught before it ships.
+
 `match` is the honest way to handle absence or failure and will always be
 there. But a great many uses of an Option or a Result are one of three shapes —
 turn the value into another value, supply a default, ask which one you have —
