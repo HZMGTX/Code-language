@@ -39,7 +39,23 @@ function codesIn(text: string): readonly string[] {
 }
 
 /**
- * What `lumen check` reports for this source, as a list of codes.
+ * A diagnostic as this file compares them: its code *and* how loud it is.
+ *
+ * Severity matters as much as the code: it is the difference between a red
+ * squiggle under working code and a grey note beside it.
+ *
+ * What this catches is the **editor** deciding a severity for itself and
+ * getting it wrong. It cannot catch a severity that is wrong in the compiler,
+ * because both sides here read the same `checkModule` and would be wrong
+ * together — the conformance fixtures are what hold that, since a code
+ * changing from `warning` to `error` changes the bytes they pin.
+ */
+function asPair(d: { readonly code: string; readonly severity: string }): string {
+  return d.code + '/' + d.severity;
+}
+
+/**
+ * What `lumen check` reports for this source, as a code and severity each.
  *
  * `parse` is inside the `try` as well, because a fixture in `lexer/` or
  * `parser-errors/` never reaches the checker — and those are most of the
@@ -49,9 +65,9 @@ function codesIn(text: string): readonly string[] {
 function codesFromChecker(source: string, file: string, globals: readonly string[]): readonly string[] {
   try {
     const module = parse(source, file);
-    return checkModule(module, source, checkOptions(globals)).map((d) => d.code);
+    return checkModule(module, source, checkOptions(globals)).map(asPair);
   } catch (error) {
-    if (error instanceof LumenError) return error.diagnostics.map((d) => d.code);
+    if (error instanceof LumenError) return error.diagnostics.map(asPair);
     throw error;
   }
 }
@@ -110,9 +126,10 @@ describe('the editor reports what the compiler reports', () => {
     for (const fixture of cases) {
       const file = path.basename(fixture.name);
       const fromChecker = codesFromChecker(fixture.source, file, globals);
-      const fromEditor = analyse('file:///' + file, 1, fixture.source, globals).diagnostics.map(
-        (d) => d.code,
-      );
+      // Severity as well as code. It is the difference between a red squiggle
+      // under working code and a grey one, and it is exactly what went wrong
+      // when `TY010` made the type checker produce its first warning.
+      const fromEditor = analyse('file:///' + file, 1, fixture.source, globals).diagnostics.map(asPair);
       if (fromChecker.join(',') !== fromEditor.join(',')) {
         disagreements.push(
           fixture.name + ': checker ' + JSON.stringify(fromChecker) + ' editor ' + JSON.stringify(fromEditor),
