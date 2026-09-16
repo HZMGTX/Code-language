@@ -1,0 +1,8 @@
+error[RT035]: tan has no answer for Infinity
+ --> math-domain-tan.lm:7:7
+  |
+7 | print(tan(1e308 * 10))
+  |       ^^^^^^^^^^^^^^^
+  |
+  = note: a number with no value is equal to nothing, including itself, so every
+  = note: comparison it later reached would quietly be false — see `RT046`

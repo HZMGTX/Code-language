@@ -130,6 +130,46 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
     answered `["a", "b"]`, which looks like an answer and was an accident of
     which branch ran first. Refused now, with the reason.
 
+- **A NaN cannot be produced by any Lumen program, and that is now checked
+  rather than hoped for.** `docs/spec.md` has always said so, and it was being
+  kept by hand. Three holes turned up in an hour:
+
+  - compound assignment, above;
+  - `asin` and `acos` are defined only on `[-1, 1]` and answered `NaN` outside
+    it, while every sibling that can produce one already refused — `sqrt(-1)`,
+    `log(0)`, `pow(-8, 0.5)`, `gcd(Infinity, 2)`;
+  - `sin`, `cos` and `tan` answered `NaN` at `Infinity`, where the value
+    oscillates and has no limit. **That one was found by the test itself**,
+    which is the best argument for having written it.
+
+  So the guard moved to the helper that builds every unary numeric function
+  rather than sitting on the functions one at a time. `sqrt` and `log` were
+  guarded by hand, `asin` and `acos` were missed, `tan` was missed after that —
+  and a function added later can no longer reopen the hole. `asin` and `acos`
+  keep their own domain message, because "outside that range there is no angle
+  whose sine this is" says more than a general refusal.
+
+  `Infinity` is untouched and deliberately so: it means "larger than we can
+  say", it compares consistently, and it is equal to itself. `round(Infinity)`,
+  `exp(Infinity)`, `sqrt(Infinity)` and `atan(Infinity)` all still answer.
+
+  The test is the whole route list swept at once — arithmetic, compound
+  assignment, every library function whose IEEE answer is `NaN`, and the two
+  places a number arrives from outside the program (`json.parse`, `str.toNum`).
+  It reads `type()` rather than the printed output, because a `NaN` prints as
+  `NaN` and so does the text of a correct message about one:
+  `toNum("NaN")` rightly answers ``Err("`NaN` is not a number")``, and reading
+  the output for the word called that a defect when the sweep was first written
+  by hand. A second test checks the guards did not simply refuse their whole
+  domain, which would pass the first one and break the functions.
+
+  This matters beyond tidiness. Four separate findings about `std/set`,
+  `sorted`, `minimum`/`maximum` and `groupBy` mishandling a `NaN` are, with
+  this, **unreachable rather than fixed** — none of those functions is written
+  to cope with a value that compares false against itself, and now none has to
+  be. If a route ever reopens, they come back, which is exactly why the route
+  list is a test.
+
 - **Compound assignment went round the NaN guard.** `inf - inf` is `RT046`;
   `a -= inf` was a `NaN`, and `lumen check` said the file had no problems.
   Every binary operator goes through `checked`, and compound assignment had its

@@ -1,0 +1,122 @@
+/**
+ * A `NaN` cannot be produced by any Lumen program.
+ *
+ * `docs/spec.md` states it: *"any arithmetic that would produce one is
+ * `RT046`"*. The reason is in the guard's own comment — a `NaN` is equal to
+ * nothing, including itself, and is neither less than nor greater than
+ * anything, so one that gets into a value silently breaks every comparison it
+ * later reaches. Sorting, set membership, `minimum`, `maximum` and `groupBy`
+ * all rest on comparison behaving, and none of them is written to cope with a
+ * value that compares false against itself.
+ *
+ * So the invariant is worth more than a habit, and it was being kept as one.
+ * Two holes were found within an hour of each other:
+ *
+ *   - compound assignment had its own arithmetic inside `storeInto` and went
+ *     round `checked`, so `a -= inf` was a `NaN` while `inf - inf` was
+ *     `RT046`;
+ *   - `asin` and `acos` are defined only on `[-1, 1]` and answered `NaN`
+ *     outside it, while every sibling that can produce one already refused —
+ *     `sqrt(-1)`, `log(0)`, `pow(-8, 0.5)`, `gcd(Infinity, 2)`.
+ *
+ * This is the whole route list, swept at once. A new route is a new line here.
+ */
+
+import { strict as assert } from 'node:assert';
+import { describe, it } from 'node:test';
+
+import { runSource } from '../support/harness.js';
+
+/** The largest finite double times ten, which is how a program reaches Infinity. */
+const INF = '(1e308 * 10)';
+
+/**
+ * Every way a number might arrive without a value.
+ *
+ * Each is an expression that is `NaN` in IEEE 754, or a library call whose
+ * IEEE answer is. What the language does instead is its own business — a
+ * panic, a `Result`, or a defined answer like `Infinity` — and this test only
+ * insists that it is not a `NaN`.
+ */
+const ROUTES: readonly (readonly [string, string, string])[] = [
+  // Arithmetic.
+  ['inf - inf', `${INF} - ${INF}`, ''],
+  ['inf * 0', `${INF} * 0`, ''],
+  ['inf / inf', `${INF} / ${INF}`, ''],
+  ['inf % 2', `${INF} % 2`, ''],
+  ['2 % 0', '2 % 0', ''],
+  ['-inf + inf', `(0 - ${INF}) + ${INF}`, ''],
+  ['inf ** 0', `${INF} ** 0`, ''],
+  ['(-8) ** (1/3)', '(0 - 8) ** (1 / 3)', ''],
+  ['0 ** -1', '0 ** (0 - 1)', ''],
+  // Compound assignment, which had its own arithmetic and went round the guard.
+  ['x -= inf', `${INF}`, 'var x = ' + INF + '\nx -= ' + INF],
+  ['x *= 0', `${INF}`, 'var x = ' + INF + '\nx *= 0'],
+  ['x /= inf', `${INF}`, 'var x = ' + INF + '\nx /= ' + INF],
+  ['x += -inf', `${INF}`, 'var x = ' + INF + '\nx += (0 - ' + INF + ')'],
+  // Library functions whose IEEE answer is NaN outside their domain.
+  ['asin(2)', 'asin(2)', 'import { asin } from "std/math"'],
+  ['asin(-2)', 'asin(0 - 2)', 'import { asin } from "std/math"'],
+  ['acos(2)', 'acos(2)', 'import { acos } from "std/math"'],
+  ['acos(-2)', 'acos(0 - 2)', 'import { acos } from "std/math"'],
+  ['asin(inf)', `asin(${INF})`, 'import { asin } from "std/math"'],
+  ['sqrt(-1)', 'sqrt(0 - 1)', 'import { sqrt } from "std/math"'],
+  ['log(0)', 'log(0)', 'import { log } from "std/math"'],
+  ['log(-1)', 'log(0 - 1)', 'import { log } from "std/math"'],
+  ['pow(-8, 0.5)', 'pow(0 - 8, 0.5)', 'import { pow } from "std/math"'],
+  ['gcd(inf, 2)', `gcd(${INF}, 2)`, 'import { gcd } from "std/math"'],
+  ['lcm(inf, 2)', `lcm(${INF}, 2)`, 'import { lcm } from "std/math"'],
+  ['hypot(inf, inf)', `hypot(${INF}, ${INF})`, 'import { hypot } from "std/math"'],
+  ['round(inf)', `round(${INF})`, 'import { round } from "std/math"'],
+  ['fixed(inf, 2)', `fixed(${INF}, 2)`, 'import { fixed } from "std/math"'],
+  ['trunc(inf)', `trunc(${INF})`, 'import { trunc } from "std/math"'],
+  ['sign(inf)', `sign(${INF})`, 'import { sign } from "std/math"'],
+  ['clamp(inf, 0, 1)', `clamp(${INF}, 0, 1)`, 'import { clamp } from "std/math"'],
+  ['tan(inf)', `tan(${INF})`, 'import { tan } from "std/math"'],
+  ['exp(inf) - exp(inf)', `exp(${INF}) - exp(${INF})`, 'import { exp } from "std/math"'],
+  // Text and JSON, where a number arrives from outside the program.
+  ['json 1e400', 'parse("1e400").unwrapOr(0)', 'import { parse } from "std/json"'],
+  [
+    'json 1e400 - 1e400',
+    'parse("1e400").unwrapOr(0) - parse("1e400").unwrapOr(0)',
+    'import { parse } from "std/json"',
+  ],
+  ['toNum("nan")', 'toNum("nan")', 'import { toNum } from "std/str"'],
+  ['toNum("1e400")', 'toNum("1e400").unwrapOr(0)', 'import { toNum } from "std/str"'],
+];
+
+describe('a NaN cannot be produced', () => {
+  it('has no route to one', async () => {
+    const leaks: string[] = [];
+    for (const [label, expr, prelude] of ROUTES) {
+      const source = prelude + '\nprint(' + expr + ')\n';
+      const result = await runSource(source);
+      // `type()` rather than the printed value: a `NaN` prints as `NaN`, but so
+      // does the text of a message about one — `toNum("NaN")` correctly answers
+      // `Err("\`NaN\` is not a number")`, and reading the output for the word
+      // called that a defect when the sweep was first written by hand.
+      const typed = await runSource(prelude + '\nprint(type(' + expr + '))\n');
+      const isNumber = typed.output.trim().split('\n').pop()?.trim() === 'Num';
+      if (!result.failed && isNumber && /\bNaN\b/.test(result.output)) {
+        leaks.push(label + ' produced ' + result.output.trim().split('\n').pop());
+      }
+    }
+    assert.deepEqual(leaks, []);
+  });
+
+  it('answers in range, so the guards are not simply refusing everything', async () => {
+    // The other direction. A guard that rejected its whole domain would pass
+    // the test above and break the functions.
+    const result = await runSource(
+      'import { asin, acos, atan, sqrt, log } from "std/math"\n' +
+        'print("${asin(0)} ${asin(1)} ${asin(0 - 1)}")\n' +
+        'print("${acos(0)} ${acos(1)} ${acos(0 - 1)}")\n' +
+        'print("${atan(1)} ${sqrt(4)} ${log(1)}")\n',
+    );
+    assert.equal(result.failed, false, result.output);
+    const lines = result.output.trim().split('\n');
+    assert.equal(lines[0], '0 1.5707963267948966 -1.5707963267948966');
+    assert.equal(lines[1], '1.5707963267948966 0 3.141592653589793');
+    assert.equal(lines[2], '0.7853981633974483 2 0');
+  });
+});

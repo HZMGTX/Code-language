@@ -136,8 +136,46 @@ function nextRandom(): number {
 }
 
 export function stdMath(): Map<string, Value> {
+  /**
+   * A unary numeric function, guarded against handing back a NaN.
+   *
+   * None of these has a NaN as a real answer, so one means the input was
+   * outside anything the function can say about it — `tan`, `sin` and `cos` at
+   * `Infinity`, for instance, where the value oscillates and has no limit. The
+   * guard is on the helper rather than on each function because that is what
+   * makes the invariant structural: `sqrt` and `log` were guarded by hand,
+   * `asin` and `acos` were missed, and `tan` was missed after that. A function
+   * added later cannot reopen the hole.
+   *
+   * `Infinity` is untouched — `round(Infinity)` and `exp(Infinity)` are
+   * `Infinity`, which is a value that compares consistently and is equal to
+   * itself. It is only a NaN that this language will not produce.
+   */
   const unary = (name: string, op: (n: number) => number) =>
-    fn(name, ['n'], (a, c) => num(op(expectNum(arg(a, 0), c, name + '(n)'))));
+    fn(name, ['n'], (a, c) => {
+      const n = expectNum(arg(a, 0), c, name + '(n)');
+      const result = op(n);
+      if (Number.isNaN(result) && !Number.isNaN(n)) {
+        c.panic(name + ' has no answer for ' + n, [
+          'a number with no value is equal to nothing, including itself, so every',
+          'comparison it later reached would quietly be false — see `RT046`',
+        ]);
+      }
+      return num(result);
+    });
+
+  /** A unary function defined only on [-1, 1], which is `asin` and `acos`. */
+  const domainLimited = (name: string, op: (n: number) => number) =>
+    fn(name, ['n'], (a, c) => {
+      const n = expectNum(arg(a, 0), c, name + '(n)');
+      if (n < -1 || n > 1) {
+        c.panic(name + ' needs a number between -1 and 1, got ' + n, [
+          'outside that range there is no angle whose ' +
+            (name === 'asin' ? 'sine' : 'cosine') + ' this is',
+        ]);
+      }
+      return num(op(n));
+    });
 
   const exports = moduleOf(
     unary('abs', Math.abs),
@@ -150,8 +188,14 @@ export function stdMath(): Map<string, Value> {
     unary('cos', Math.cos),
     unary('tan', Math.tan),
     unary('exp', Math.exp),
-    unary('asin', Math.asin),
-    unary('acos', Math.acos),
+    // `asin` and `acos` are defined only on [-1, 1]; outside it IEEE 754 answers
+    // NaN, and a NaN is the one value this language will not hand back. Every
+    // sibling that can produce one already refuses — `sqrt(-1)`, `log(0)`,
+    // `pow(-8, 0.5)`, `gcd(Infinity, 2)` — and these two were the last two
+    // routes to a NaN left in the language once compound assignment was
+    // guarded. `atan` needs nothing: it is defined for every real number.
+    domainLimited('asin', Math.asin),
+    domainLimited('acos', Math.acos),
     unary('atan', Math.atan),
     // Defined for every real number, unlike `sqrt`: every number has one real
     // cube root, including the negative ones.
