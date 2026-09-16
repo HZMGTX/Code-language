@@ -221,6 +221,43 @@ function escapeHtml(input: string): string {
 }
 
 /**
+ * The schemes a link may carry. Everything else is refused outright.
+ *
+ * An allow-list rather than a block-list, because the list of schemes that can
+ * run code is open-ended — `javascript:`, `data:text/html`, `vbscript:`, and
+ * whatever a browser adds next — while the list people actually link to is
+ * four items long and has not changed in twenty years.
+ */
+const LINKABLE = new Set(['http', 'https', 'mailto', 'tel']);
+
+/**
+ * A URL safe to put in an `href`, or `about:blank` when it is not one.
+ *
+ * `escape` cannot do this job and never could: there is nothing in
+ * `javascript:alert(1)` to escape, so it comes back untouched and runs the
+ * moment somebody clicks. Escaping answers "could this text break out of where
+ * I am putting it"; a link needs "does this text tell the browser to run
+ * something", which is a different question with a different answer.
+ *
+ * The scheme is read the way a browser reads it. Leading whitespace and control
+ * characters are stripped before the test, because they are stripped before the
+ * scheme is decided — `java\tscript:alert(1)` and ` javascript:alert(1)` are
+ * both `javascript:` to a browser and were both "not a scheme I know" to a
+ * naive check. Case is ignored for the same reason.
+ *
+ * No scheme at all means a relative link — `/about`, `?q=1`, `#top` — which is
+ * the common case and is safe. A protocol-relative `//host/path` is also left
+ * alone: it navigates rather than executing, so it is an open-redirect question
+ * for the program to answer rather than something this can decide.
+ */
+function linkableUrl(raw: string): string {
+  const seen = raw.replace(/[\u0000-\u0020\u007F]/gu, '');
+  const scheme = /^([a-zA-Z][a-zA-Z0-9+.\-]*):/u.exec(seen)?.[1]?.toLowerCase();
+  if (scheme !== undefined && !LINKABLE.has(scheme)) return 'about:blank';
+  return raw;
+}
+
+/**
  * A response is a `Map` with `status`, `headers` and `body`, and everything
  * that builds one says so. A handler is `fn(req) -> response`, which is spelled
  * `fn(Map) -> Map` — the one shape this module is organised around.
@@ -279,6 +316,7 @@ const SIGNATURES: Readonly<Record<string, string>> = {
   route: '(method: Str, path: Str, handler: fn(Map) -> Map) -> Map',
   router: '(routes: List, notFound: Any = nil) -> fn(Map) -> Map',
   escape: '(text: Str) -> Str',
+  url: '(link: Str) -> Str',
   form: '(req: Map) -> Map',
   file: '(path: Str, root: Str = ".", type: Str = "") -> Map',
   page: '(title: Str, body: Str, style: Str = "") -> Map',
@@ -464,6 +502,24 @@ export function stdWeb(): Map<string, Value> {
     }),
 
     fn('escape', ['text'], (a, c) => str(escapeHtml(expectStr(arg(a, 0), c, 'escape(text)')))),
+
+    /**
+     * A visitor's link, ready to put straight into an `href`.
+     *
+     * `escape` is the wrong tool for this and the documentation used to say
+     * otherwise: *"always use `escape` on anything a visitor supplied"*, which
+     * for `<a href="${escape(link)}">` produces
+     * `<a href="javascript:alert(document.cookie)">` — the advice followed
+     * exactly, and a working cross-site script. There was nothing to escape.
+     *
+     * So this answers the question a link actually poses. An unlinkable scheme
+     * becomes `about:blank`, which leaves the page working and the link dead
+     * rather than silently dropping it, and the result is escaped for the
+     * attribute as well, so it is one call rather than two.
+     */
+    fn('url', ['link'], (a, c) =>
+      str(escapeHtml(linkableUrl(expectStr(arg(a, 0), c, 'url(link)')))),
+    ),
 
     /**
      * The fields a form submitted, whichever way it was sent.

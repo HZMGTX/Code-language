@@ -5,7 +5,7 @@
 //
 // `serve` keeps running until you stop it with Ctrl-C.
 
-import { serve, router, route, page, json, notFound, escape } from "std/web"
+import { serve, router, route, page, json, notFound, escape, url } from "std/web"
 import { map, join, find } from "std/list"
 
 struct Post {
@@ -27,8 +27,12 @@ let posts = [
   },
 ]
 
+// `escape` for the text, `url` for the link. These slugs are the program's own
+// and could go in bare, but an `href` built by interpolation is exactly where
+// the habit has to already be — `escape` cannot make a link safe, because there
+// is nothing in `javascript:alert(1)` to escape.
 fn postLink(p) -> Str {
-  "<li><a href='/post/${p.slug}'>${escape(p.title)}</a></li>"
+  "<li><a href='${url("/post/" + p.slug)}'>${escape(p.title)}</a></li>"
 }
 
 fn indexPage() {

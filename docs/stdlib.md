@@ -304,7 +304,33 @@ serve(handler: handle, port: 3000)
 ```
 
 `serve` never returns — a web server that exited on its own would be a bug.
-Always use `escape` on anything a visitor supplied.
+
+**`escape` for text, `url` for a link.** `escape` turns `&`, `<`, `>`, `"` and
+`'` into entities, which is exactly right for the body of an element and for a
+quoted attribute value, and is what almost every use needs. It is the wrong tool
+for an `href`, and this page used to say otherwise:
+
+```text
+<a href="${escape(link)}">   with link = javascript:alert(document.cookie)
+→ <a href="javascript:alert(document.cookie)">
+```
+
+The advice followed exactly, and a working cross-site script — because there is
+nothing in `javascript:alert(1)` to escape. Escaping answers *"could this text
+break out of where I am putting it"*; a link needs *"does this text tell the
+browser to run something"*, which is a different question. `url(link)` answers
+that one: a scheme that is not `http`, `https`, `mailto` or `tel` becomes
+`about:blank`, and the result is escaped for the attribute as well, so it is one
+call rather than two. The scheme is read the way a browser reads it, with
+leading whitespace and control characters stripped first, because
+`java\tscript:alert(1)` is `javascript:` to a browser and was not to a naive
+check.
+
+Neither is the tool for text inside a `<script>` block — nothing here is. Put
+the value in a `data-` attribute and read it from there, or send it as JSON.
+A relative link needs no scheme and is left alone, as is a protocol-relative
+`//host/path`: that navigates rather than executing, so whether to allow it is
+an open-redirect question for the program to answer.
 
 `form(req)` reads the fields a form submitted, whichever way the page sent
 them: the query string for `method="get"`, the urlencoded body for
@@ -1000,6 +1026,7 @@ route(method: Str, path: Str, handler: fn(Map) -> Map) -> Map
 router(routes: List, notFound = ...) -> fn(Map) -> Map
 serve(handler: fn(Map) -> Map, port: Num = ..., host: Str = ...) -> Nil
 text(body: Str, status: Num = ...) -> Map
+url(link: Str) -> Str
 ```
 
 <!-- END GENERATED REFERENCE -->

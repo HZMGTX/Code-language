@@ -1,0 +1,48 @@
+// `escape` for text, `url` for a link.
+//
+// The documentation used to say "always use `escape` on anything a visitor
+// supplied", which for an `href` is advice that ships a cross-site script:
+//
+//     <a href="${escape(link)}">   with link = javascript:alert(1)
+//     → <a href="javascript:alert(1)">
+//
+// `escape` did its job. There is nothing in `javascript:alert(1)` to escape.
+// Escaping answers "could this text break out of where I am putting it"; a link
+// needs "does this text tell the browser to run something", and nothing in the
+// library answered that until now.
+import { escape, url } from "std/web"
+
+// The links a page really carries, left alone.
+for link in ["https://example.com/a?b=1", "http://example.com", "mailto:a@b.c", "tel:+1234"] {
+  print(url(link))
+}
+
+// A relative link has no scheme to check.
+for link in ["/about", "?q=1", "#top", "about.html", ""] {
+  print("[${url(link)}]")
+}
+
+// A protocol-relative link navigates rather than executing, so it is left for
+// the program to decide about.
+print(url("//other.example/x"))
+
+// Everything that can run code, refused.
+for link in [
+  "javascript:alert(1)",
+  "data:text/html,<script>alert(1)</script>",
+  "vbscript:msgbox(1)",
+  "file:///etc/passwd",
+] { print(url(link)) }
+
+// And the tricks, which are the reason the scheme is read the way a browser
+// reads it: case is ignored, and whitespace and control characters are stripped
+// before the test because a browser strips them before deciding the scheme.
+for link in ["JaVaScRiPt:alert(1)", " javascript:alert(1)", "java\tscript:alert(1)", "java\nscript:alert(1)"] {
+  print(url(link))
+}
+
+// A legitimate link still gets escaped for the attribute it is going into.
+print(url("https://example.com/?q=\"a\"&b=<c>"))
+
+// And `escape` is still what text wants.
+print(escape("<b>hi</b> & \"quotes\""))

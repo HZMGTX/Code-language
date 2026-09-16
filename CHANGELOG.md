@@ -34,6 +34,43 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   from its type's table and never from scope, so `xs.groupBy(f)` works with no
   import at all and those imports really were dead. They are gone.
 
+- **`std/web.url`, because `escape` cannot make a link safe.** `docs/stdlib.md`
+  said *"always use `escape` on anything a visitor supplied"*, and following
+  that advice exactly ships a cross-site script:
+
+  ```text
+  <a href="${escape(link)}">   with link = javascript:alert(document.cookie)
+  → <a href="javascript:alert(document.cookie)">
+  ```
+
+  `escape` did its job. There is nothing in `javascript:alert(1)` to escape.
+  Escaping answers *"could this text break out of where I am putting it"*; a
+  link needs *"does this text tell the browser to run something"*, which is a
+  different question — and nothing in the library answered it.
+
+  `url(link)` does. A scheme that is not `http`, `https`, `mailto` or `tel`
+  becomes `about:blank`, which leaves the page working and the link dead rather
+  than silently dropping it, and the result is escaped for the attribute too, so
+  it is one call rather than two. An allow-list rather than a block-list,
+  because the schemes that can run code are open-ended — `javascript:`,
+  `data:text/html`, `vbscript:`, and whatever a browser adds next — while the
+  ones people actually link to are four and have not changed in twenty years.
+
+  The scheme is read the way a **browser** reads it: leading whitespace and
+  control characters stripped first, case ignored. `java\tscript:alert(1)` and
+  ` javascript:alert(1)` are both `javascript:` to a browser and were both "not
+  a scheme I recognise" to a naive check.
+
+  A relative link has no scheme and is left alone. So is a protocol-relative
+  `//host/path`, which navigates rather than executing — that is an
+  open-redirect question for the program to answer, not something a library can
+  decide. And nothing here is the tool for text inside a `<script>` block; the
+  documentation now says so, and says to use a `data-` attribute instead.
+
+  `examples/website.lm` builds its links through it now. Its slugs are the
+  program's own and could go in bare — but an `href` built by interpolation is
+  exactly where the habit has to already be.
+
 - **The regex warning named the wrong half of the danger.** `docs/stdlib.md`
   already said `std/regex` has no backtracking guard and that *"a pattern from a
   stranger is a denial of service"* — which is true, and is the half that
