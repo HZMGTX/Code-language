@@ -101,14 +101,37 @@ const optionsFrom = (args: readonly Value[], at: number): readonly Value[] =>
   [args[at], args[at + 1], args[at + 2]].map((v) => v ?? bool(false));
 
 /**
+ * How many code points come before a UTF-16 offset.
+ *
+ * The engine reports where a match started in UTF-16 units, and every position
+ * in Lumen is a code point — `std/str.slice`, `len` and `chars` all count them.
+ * Handing back the engine's number made `at` unusable for the one thing it is
+ * for:
+ *
+ *     let text = "🎉 order 42 shipped"       // the `4` is code point 8
+ *     find(text, "\\d+")                     // said at = 9
+ *     slice(text, 9)                         // "2 shipped" — inside the match
+ *     slice(text, 9, 9 + len("42"))          // "2 " — not even the match itself
+ *
+ * A match whose own text cannot be recovered from its own reported position is
+ * not a position. One pass over the prefix fixes it, which is nothing beside
+ * being silently wrong for any text with an emoji in it.
+ */
+function codePointsBefore(text: string, offset: number): number {
+  return offset <= 0 ? offset : [...text.slice(0, offset)].length;
+}
+
+/**
  * One match, as a Lumen value.
  *
- * `text` is what matched, `at` is where it started, `groups` are the numbered
- * captures and `named` the named ones. A group that did not take part is `nil`
- * rather than missing, because a list whose length changes with which branch of
- * an alternation fired is a list nobody can index.
+ * `text` is what matched, `at` is where it started **in code points**, `groups`
+ * are the numbered captures and `named` the named ones. A group that did not
+ * take part is `nil` rather than missing, because a list whose length changes
+ * with which branch of an alternation fired is a list nobody can index.
+ *
+ * The subject is passed in only to convert `at`; see `codePointsBefore`.
  */
-function matchValue(found: RegExpExecArray): Value {
+function matchValue(found: RegExpExecArray, text: string): Value {
   const groups = found.slice(1).map((captured) => (captured === undefined ? NIL : str(captured)));
   const named = new Map<string, Value>();
   for (const [name, captured] of Object.entries(found.groups ?? {})) {
@@ -117,7 +140,7 @@ function matchValue(found: RegExpExecArray): Value {
   return map(
     new Map<string, Value>([
       ['text', str(found[0])],
-      ['at', num(found.index)],
+      ['at', num(codePointsBefore(text, found.index))],
       ['groups', list(groups)],
       ['named', map(named)],
     ]),
@@ -192,8 +215,9 @@ export function stdRegex(): Map<string, Value> {
             expectStr(arg(a, 1), c, 'find(pattern)'),
             flagsFor(optionsFrom(a, 2), false),
             (re) => {
-              const found = re.exec(expectStr(arg(a, 0), c, 'find(text)'));
-              return found === null ? None : Some(matchValue(found));
+              const text = expectStr(arg(a, 0), c, 'find(text)');
+              const found = re.exec(text);
+              return found === null ? None : Some(matchValue(found, text));
             },
           ),
         ),
@@ -203,7 +227,10 @@ export function stdRegex(): Map<string, Value> {
           withPattern(
             expectStr(arg(a, 1), c, 'findAll(pattern)'),
             flagsFor(optionsFrom(a, 2), true),
-            (re) => list(allMatches(re, expectStr(arg(a, 0), c, 'findAll(text)')).map(matchValue)),
+            (re) => {
+              const text = expectStr(arg(a, 0), c, 'findAll(text)');
+              return list(allMatches(re, text).map((found) => matchValue(found, text)));
+            },
           ),
         ),
 

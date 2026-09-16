@@ -485,6 +485,21 @@ A match is a map with `text`, `at`, `groups` and `named`. A group that did not
 take part is `nil` rather than missing, so the list is the same length whichever
 branch of an alternation fired.
 
+`at` is a **code point** index, the same unit `std/str.slice`, `len` and `chars`
+use — so a match can be recovered from its own position, which is the one thing
+the field is for:
+
+```lumen
+match find(text, "\\d+").unwrapOr(None) {
+  Some(m) => slice(text, m.at, m.at + len(m.text)),   // == m.text, always
+  None    => "",
+}
+```
+
+The engine reports UTF-16 offsets, and those are converted. Handing the engine's
+number straight back made `at` point one place past the match for every astral
+character before it.
+
 Three named options rather than a flags string, because `multiline: true` says
 what it does and `"gm"` is a thing to look up — and because `help()` then lists
 them:

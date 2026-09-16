@@ -130,6 +130,29 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
     answered `["a", "b"]`, which looks like an answer and was an accident of
     which branch ran first. Refused now, with the reason.
 
+- **A regex match could not be found at the position it reported.** `std/regex`
+  handed back the engine's UTF-16 offset while every position in Lumen is a code
+  point, so `at` pointed one place past the match for every astral character
+  before it — and the field exists for exactly one purpose:
+
+  ```lumen
+  let text = "🎉 order 42 shipped"       // the `4` is code point 8
+  find(text, "\\d+")                     // said at = 9
+  slice(text, 9)                         // "2 shipped" — inside the match
+  slice(text, 9, 9 + len("42"))          // "2 " — not even the match itself
+  ```
+
+  A match whose own text cannot be recovered from its own reported position is
+  not a position. `findAll` was worse: on `"🎉a🎉b"` the positions landed on the
+  emoji and then past the end, so the last `slice` came back empty. Converted
+  now, and the fixture pins the property rather than the examples —
+  `slice(text, m.at, m.at + len(m.text)) == m.text` for every match.
+
+  This is the fourth place the same mistake was found — `std/str.indexOf`,
+  `padStart`, `padEnd`/`center`, and now this. The pattern is always the same: a
+  function that delegates to the host and passes the host's units through a
+  boundary where the units change.
+
 - **A symlink walked straight out of a served directory.** `std/web.file`
   blocked every textual escape — `../`, `%2e%2e%2f`, an absolute path, a NUL
   byte, a backslash — and then served `public/keys.txt -> /etc/secrets` with a
