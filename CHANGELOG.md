@@ -34,6 +34,31 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   from its type's table and never from scope, so `xs.groupBy(f)` works with no
   import at all and those imports really were dead. They are gone.
 
+- **The editor is now checked for agreeing with the compiler, over the whole
+  conformance corpus.** The language server's own header states the property —
+  *"an editor that disagrees with the compiler is worse than an editor with no
+  hover"* — and it had already been false once: `analyse` called `checkModule`
+  and discarded its return value, so every warning was invisible in an editor.
+
+  The test that existed could not have caught it. It asserted about one
+  hand-written program, and that program produced an *error*, which is raised
+  rather than returned. Adding `TY010` would have been the same story again:
+  a new warning, and nothing failing if the editor missed it.
+
+  So this is driven by the fixtures instead. Every fixture whose golden output
+  holds a rendered diagnostic — 60-odd of them, across the lexer, the parser,
+  the resolver and the checker — is analysed both ways, and the two lists of
+  codes must match exactly. A fixture added for a new diagnostic therefore
+  tests the editor too, with nobody remembering to write a second test.
+
+  Two guards keep it from passing vacuously: the corpus must not be empty, and
+  it must hold a fixture where a warning sits *alongside* something else, since
+  that is the precise case a server which only catches loses.
+
+  Writing it turned up its own instance of the same mistake. `parse` sat outside
+  the `try`, so a fixture in `lexer/` or `parser-errors/` threw instead of being
+  compared — and those are most of the corpus.
+
 - **`TY010`: a statement that does nothing.** `xs.sort()` is the first thing
   anyone arriving from Python or JavaScript writes, and it sorted nothing:
 
