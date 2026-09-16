@@ -1,0 +1,2 @@
+// `PA011`: something that is not a map key, where a key goes.
+print({ + : 1 })

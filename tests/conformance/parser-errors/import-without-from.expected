@@ -1,0 +1,7 @@
+error[PA004]: expected `from` after an import list
+ --> import-without-from.lm:7:18
+  |
+7 | import { upper } "std/str"
+  |                  ^^^^^^^^^ expected `from`
+  |
+  = note: imports look like: import { map } from "std/list"

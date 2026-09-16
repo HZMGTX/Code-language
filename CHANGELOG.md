@@ -73,6 +73,44 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   covered the day it exists. A list of things that exist goes stale exactly as
   fast as a count of them, which this repository has now learned three times.
 
+- **Nearly half the language's diagnostics had never been triggered by a test.**
+  `check-counts.mjs` fails on a code that is emitted and not *documented*; the
+  other half of the question had not been asked. **43 of 96** appeared in no
+  golden file and no test — a message nobody had read, in the part of the
+  language a person only meets when something has gone wrong.
+
+  Most of the gap was the interpreter's own guard layer. §6 promises it to a
+  host that skips the static passes — *"arity, field names and operand types are
+  also checked at run time, so a host embedding the interpreter without running
+  these passes is not left unguarded"* — and every ordinary test goes through
+  `checkModule` first and sees the static diagnostic instead. The run-time twin
+  of each check had quietly never run: the field checks, the struct checks, the
+  indexing checks, the argument checks.
+
+  `TY011` had made it worse the same afternoon. Asking the indexing question a
+  pass earlier is right, and it also took `RT021` and `RT023` out of every test
+  that had been reaching them by accident. A check that moves earlier removes
+  its run-time twin's only coverage, which is the argument for testing that
+  layer directly rather than through whatever happens to reach it.
+
+  Twenty-six guards are exercised now, through the `runUnchecked` seam that
+  already existed for the purpose, plus seven fixtures for parse and lexer
+  errors nobody had triggered. **92 of 96**, and none of them turned out to be
+  wrong: each is Lumen's own words, names what is wrong and points at it.
+
+  The last five are listed with a reason each rather than a count, because "5
+  uncovered" is a number and this has to be an argument. Each is a guard nothing
+  anybody tried can reach — `PA001` catches the `else` case first, a map literal
+  cannot express a non-`Str` key, `PA008` refuses an invalid assignment target
+  while parsing — and `RT034` looks superseded outright: the only positional-only
+  native is an enum constructor, which answers with `RT039` and a better
+  sentence. They are kept, because deleting a guard that turns out to be
+  reachable is the expensive mistake.
+
+  Writing the check, it passed on nothing: those five codes appear as string
+  literals in the file that excuses them, which lives under `tests/`, so each
+  looked exercised by its own excuse.
+
 - **The bundle is checked with more than a hello-world.** It is the artifact
   people are actually handed — a single file with a JavaScript runtime inside it
   — and it was verified by running `hello.lm` and answering one LSP

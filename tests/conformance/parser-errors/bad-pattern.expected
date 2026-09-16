@@ -1,0 +1,22 @@
+error[PA007]: expected a pattern, found `+`
+ --> bad-pattern.lm:4:3
+  |
+4 |   + => "plus",
+  |   ^ not a pattern
+  |
+  = note: patterns are `_`, a name, a literal, `Name(..)`, `Name { .. }`, or `[..]`
+
+error[PA003]: unexpected `=>` after statement
+ --> bad-pattern.lm:5:5
+  |
+5 |   _ => "other",
+  |     ^^ expected a line break or `;` here
+  |
+  = note: statements in Lumen end at the end of the line; semicolons are optional
+
+error[PA014]: unmatched `}`
+ --> bad-pattern.lm:6:1
+  |
+6 | }
+  | ^ no block is open here
+  |

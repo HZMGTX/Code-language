@@ -1,0 +1,5 @@
+// `PA006`: only a declaration can be exported.
+//
+// A module's exports are its declarations, so `export` in front of a statement
+// is a misunderstanding worth naming rather than a syntax error to puzzle over.
+export print(1)

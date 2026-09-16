@@ -1,0 +1,6 @@
+// `LX007`: `\u` without the `{` that must follow it.
+//
+// Lumen spells a code point `\u{1F389}` rather than `Ἰ9`, because the
+// braces make the length explicit — and somebody arriving from JavaScript or
+// Python will type the other one first.
+print("\u41")
