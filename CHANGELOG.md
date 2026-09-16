@@ -61,6 +61,27 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   program's output, which is also the better fixture: it shows the warning *and*
   that the statement really did nothing.
 
+- **`std/web.formAll`, because a repeated field lost all but the last.**
+  `?tag=a&tag=b&tag=c` reached a handler as `{tag: "c"}` — and a checkbox group
+  and a `<select multiple>` are exactly that shape, and are ordinary HTML. Three
+  tags went in and one came out, on the query path and the urlencoded-body path
+  alike.
+
+  A `Map` holds one value per key, so `form` could not have done otherwise. It
+  is additive rather than a change, the same way `std/http` answered the
+  identical question about `Set-Cookie`: the simple case keeps its simple shape,
+  and there is somewhere to go when it is not enough. Every field is a list in
+  `formAll`, including the ones that appeared once, because a type that changes
+  with the input is worse than one that is always the same.
+
+  A request carries `search` now — the query as it arrived — because `req.query`
+  has already dropped the repeats by the time a handler sees it, so there was
+  nothing left to recover them from. Both readers ask one shared question of the
+  request and differ only in what they do with a repeat.
+
+  The encodings were all already right, checked at the same time: `%F0%9F%8E%89`,
+  `a%2Bb` against `a+b`, an empty value and a name with no `=` at all.
+
 - **A string too large to hold is a diagnostic now, not a crash.** `range()` has
   turned an out-of-memory into an `RT035` since v0.1 — its comment says *"to
   turn OOM into an error"* — and the four functions that build a string of a

@@ -16,7 +16,7 @@ import { promises as fsp } from 'node:fs';
 import * as http from 'node:http';
 import * as path from 'node:path';
 
-import { NIL, bool, display, map, num, str, type Value } from '@lumen-lang/core';
+import { NIL, bool, type CallCtx, display, list, map, num, str, type Value } from '@lumen-lang/core';
 import { toJson } from './json.js';
 import { arg, expectFn, expectInt, expectList, expectStr, fn, moduleOf, withSignatures } from './support.js';
 
@@ -97,6 +97,10 @@ function requestToValue(
       ['method', str(req.method ?? 'GET')],
       ['path', str(url.pathname)],
       ['query', map(query)],
+      // The query as it arrived, because `query` cannot hold a repeated name:
+      // `?tag=a&tag=b` is an ordinary checkbox group and the map keeps only the
+      // last. `formAll` reads this to give them all back.
+      ['search', str(url.search)],
       ['headers', map(headers)],
       ['body', str(body)],
     ]),
@@ -221,6 +225,48 @@ function escapeHtml(input: string): string {
 }
 
 /**
+ * What a request submitted, as name/value pairs in the order they arrived.
+ *
+ * Both form readers ask the same question of a request and differ only in what
+ * they do with a repeated name, so the question is asked in one place. It reads
+ * the *raw* query rather than `req.query`, because that map has already lost
+ * every repeat by the time a handler sees it.
+ *
+ * `undefined` means "not a form", which is not the same as an empty one: only a
+ * urlencoded body counts, since guessing at any other content type would
+ * quietly return nonsense for a JSON post.
+ */
+function submittedBy(request: Value, ctx: CallCtx, who: string): URLSearchParams | undefined {
+  if (request.k !== 'map') {
+    return ctx.panic(who + '(req) needs a request map', ['got ' + display(request)]);
+  }
+  const method = request.entries.get('method');
+  const verb = method?.k === 'str' ? method.v.toUpperCase() : 'GET';
+
+  if (verb === 'GET' || verb === 'HEAD') {
+    const search = request.entries.get('search');
+    if (search?.k === 'str') return new URLSearchParams(search.v);
+    // A request somebody built by hand rather than one a server made. Its
+    // `query` map is all there is, and it cannot carry a repeat.
+    const query = request.entries.get('query');
+    if (query?.k !== 'map') return new URLSearchParams();
+    const pairs = new URLSearchParams();
+    for (const [key, value] of query.entries) {
+      if (value.k === 'str') pairs.append(key, value.v);
+    }
+    return pairs;
+  }
+
+  const headers = request.entries.get('headers');
+  const contentType = headers?.k === 'map' ? headers.entries.get('content-type') : undefined;
+  const kind = contentType?.k === 'str' ? contentType.v : '';
+  if (!kind.toLowerCase().startsWith('application/x-www-form-urlencoded')) return undefined;
+
+  const body = request.entries.get('body');
+  return body?.k === 'str' ? new URLSearchParams(body.v) : new URLSearchParams();
+}
+
+/**
  * The schemes a link may carry. Everything else is refused outright.
  *
  * An allow-list rather than a block-list, because the list of schemes that can
@@ -318,6 +364,7 @@ const SIGNATURES: Readonly<Record<string, string>> = {
   escape: '(text: Str) -> Str',
   url: '(link: Str) -> Str',
   form: '(req: Map) -> Map',
+  formAll: '(req: Map) -> Map',
   file: '(path: Str, root: Str = ".", type: Str = "") -> Map',
   page: '(title: Str, body: Str, style: Str = "") -> Map',
   serve: '(handler: fn(Map) -> Map, port: Num = 3000, host: Str = "127.0.0.1") -> Nil',
@@ -531,34 +578,41 @@ export function stdWeb(): Map<string, Value> {
      * still there to parse yourself.
      */
     fn('form', ['req'], (a, c) => {
-      const request = arg(a, 0);
-      if (request.k !== 'map') {
-        return c.panic('form(req) needs a request map', ['got ' + display(request)]);
-      }
-      const method = request.entries.get('method');
-      const verb = method?.k === 'str' ? method.v.toUpperCase() : 'GET';
-
-      if (verb === 'GET' || verb === 'HEAD') {
-        const query = request.entries.get('query');
-        return query !== undefined && query.k === 'map' ? query : map(new Map<string, Value>());
-      }
-
-      // Only a urlencoded body is a form. Guessing at any other content type
-      // would quietly return nonsense for a JSON post.
-      const headers = request.entries.get('headers');
-      const contentType =
-        headers?.k === 'map' ? headers.entries.get('content-type') : undefined;
-      const kind = contentType?.k === 'str' ? contentType.v : '';
-      if (!kind.toLowerCase().startsWith('application/x-www-form-urlencoded')) {
-        return map(new Map<string, Value>());
-      }
-
-      const body = request.entries.get('body');
+      const submitted = submittedBy(arg(a, 0), c, 'form');
+      if (submitted === undefined) return map(new Map<string, Value>());
+      // The last of a repeated name, which is what a Map can hold. `formAll`
+      // is the one to reach for when a name may appear more than once.
       const fields = new Map<string, Value>();
-      if (body?.k === 'str') {
-        for (const [key, value] of new URLSearchParams(body.v)) fields.set(key, str(value));
-      }
+      for (const [key, value] of submitted) fields.set(key, str(value));
       return map(fields);
+    }),
+
+    /**
+     * Every value a form submitted, as a list per field.
+     *
+     * `form` answers with a `Map` of single values, which is what almost every
+     * field is and what makes `fields["name"]` read well — and it therefore
+     * cannot hold `?tag=a&tag=b&tag=c`. A checkbox group and a
+     * `<select multiple>` are exactly that, and are ordinary HTML: three tags
+     * went in and one came out, silently.
+     *
+     * Additive rather than a change to `form`, the same way `std/http` answered
+     * the identical question about `Set-Cookie` — the simple case keeps its
+     * simple shape, and there is somewhere to go when it is not enough. Every
+     * field is a list here, including the ones that appeared once, because a
+     * type that changes with the input is worse than one that is always the
+     * same.
+     */
+    fn('formAll', ['req'], (a, c) => {
+      const submitted = submittedBy(arg(a, 0), c, 'formAll');
+      if (submitted === undefined) return map(new Map<string, Value>());
+      const fields = new Map<string, Value[]>();
+      for (const [key, value] of submitted) {
+        const bucket = fields.get(key);
+        if (bucket === undefined) fields.set(key, [str(value)]);
+        else bucket.push(str(value));
+      }
+      return map(new Map([...fields].map(([key, values]) => [key, list(values)])));
     }),
 
     /**

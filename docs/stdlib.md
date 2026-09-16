@@ -338,6 +338,15 @@ them: the query string for `method="get"`, the urlencoded body for
 request carrying anything else — JSON, a file upload — comes back empty with
 `req.body` still there to parse.
 
+**`formAll(req)` when a name can repeat.** A `Map` holds one value per key, so
+`?tag=a&tag=b&tag=c` reaches `form` as `{tag: "c"}` — and a checkbox group and a
+`<select multiple>` are exactly that shape, and are ordinary HTML. `formAll`
+answers with a list per field instead, including for the fields that appeared
+once, because a type that changes with the input is worse than one that is
+always the same. Both read the same request; only what they do with a repeat
+differs. `req.search` carries the query as it arrived, which is where `formAll`
+recovers the repeats `req.query` has already dropped.
+
 ```lumen
 fn handle(req) {
   let fields = form(req)
@@ -1016,6 +1025,7 @@ weekdayNames() -> List<Str>
 escape(text: Str) -> Str
 file(path: Str, root: Str = ..., type: Str = ...) -> Map
 form(req: Map) -> Map
+formAll(req: Map) -> Map
 html(body: Str, status: Num = ...) -> Map
 isServer() -> Bool
 json(value, status: Num = ...) -> Map

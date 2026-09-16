@@ -31,7 +31,7 @@ async function freePort(): Promise<number> {
 }
 
 const SERVER_SOURCE = (port: number, publicDir: string): string => `
-import { serve, page, json, notFound, escape, form, isServer, file } from "std/web"
+import { serve, page, json, notFound, escape, form, formAll, isServer, file } from "std/web"
 
 fn handle(req) {
   if req.path == "/" {
@@ -42,6 +42,8 @@ fn handle(req) {
     json({ body: req.body, name: req.query.name })
   } else if req.path == "/form" {
     json(form(req))
+  } else if req.path == "/form-all" {
+    json({ one: form(req), all: formAll(req) })
   } else if req.path.startsWith("/static/") {
     file(req.path.slice(7), root: "PUBLIC_DIR")
   } else if req.path == "/mode" {
@@ -196,6 +198,35 @@ describe('web server', () => {
       body: '{"name":"ada"}',
     });
     assert.deepEqual(await res.json(), {});
+  });
+
+  it('keeps every value of a repeated field, which a Map cannot', async () => {
+    // `?tag=a&tag=b&tag=c` is a checkbox group, and `<select multiple>` is the
+    // same shape — ordinary HTML. `form` answers with a Map of single values,
+    // which is what almost every field is and what makes `fields["name"]` read
+    // well, so three tags went in and one came out, silently.
+    //
+    // Additive rather than a change to `form`, the same way `std/http` answered
+    // the identical question about `Set-Cookie`.
+    for (const [how, init] of [
+      ['GET', undefined],
+      [
+        'POST',
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/x-www-form-urlencoded' },
+          body: 'tag=a&tag=b&tag=c&name=Ada',
+        },
+      ],
+    ] as const) {
+      const where = how === 'GET' ? '/form-all?tag=a&tag=b&tag=c&name=Ada' : '/form-all';
+      const res = await fetch(base + where, init);
+      assert.deepEqual(
+        await res.json(),
+        { one: { tag: 'c', name: 'Ada' }, all: { tag: ['a', 'b', 'c'], name: ['Ada'] } },
+        how + ' lost a repeated field',
+      );
+    }
   });
 
   it('reports that it is serving, not running', async () => {
