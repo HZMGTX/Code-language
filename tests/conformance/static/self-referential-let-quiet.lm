@@ -1,0 +1,26 @@
+// What must stay reported, and what must stay silent, around the same change.
+//
+// A recovery binding no longer counts as a declaration — so a real double
+// declaration still has to, and a typo still has to be reported once rather
+// than at every use.
+let total = 1
+print(total)
+
+// Shadowing in an inner scope is not a double declaration and never was.
+fn f() {
+  let total = 2
+  if true {
+    let total = 3
+    print(total)
+  }
+  print(total)
+}
+f()
+
+// `_` may be repeated freely: it is the conventional throwaway.
+let _ = 1
+let _ = 2
+
+// A built-in may be shadowed.
+let print2 = print
+print2("shadowing a built-in is allowed")

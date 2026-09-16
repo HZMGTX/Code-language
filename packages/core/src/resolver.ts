@@ -353,7 +353,22 @@ class Resolver {
     // `_` is the conventional throwaway and may be repeated freely.
     if (name !== '_') {
       const existing = this.scope.own(name);
-      if (existing !== undefined && existing.kind !== 'built-in') {
+      // `built-in` is shadowable, and `unresolved` is not a declaration at all:
+      // it is the recovery binding `use` invents for a name it has just
+      // reported as undefined, so that the same typo is not reported at every
+      // later use. Counting it as one made `let c = c` report *two* errors —
+      // the true `RS001` and a false `RS004` claiming `c` was declared twice,
+      // with a note citing the line of the **use** as "the earlier one". Across
+      // lines that note names a line which declares nothing at all.
+      //
+      // The two kinds are already paired this way where assignment checks
+      // mutability, a few hundred lines below; this is the same pairing for the
+      // same reason.
+      if (
+        existing !== undefined &&
+        existing.kind !== 'built-in' &&
+        existing.kind !== 'unresolved'
+      ) {
         this.report(
           'RS004',
           '`' + name + '` is already declared in this scope',

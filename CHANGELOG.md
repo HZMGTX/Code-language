@@ -130,6 +130,52 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
     answered `["a", "b"]`, which looks like an answer and was an accident of
     which branch ran first. Refused now, with the reason.
 
+- **The formatter was not a fixed point.** `lumen fmt` followed by
+  `lumen fmt --check` exited 1:
+
+  ```text
+  let m = [
+          [1,        ← 8 spaces
+           2],       ← 9 spaces, level with the `1`
+  ]
+  ```
+
+  One pass gave `   2],` at column 3, a second gave `    2],` at column 4, and a
+  third was finally stable. In a pre-commit hook that is a loop, and CI runs
+  `fmt --check` over every `.lm` file in the repository.
+
+  Alignment is detected against the *input* column and emitted at the *output*
+  column, so the first pass moved that line from column 9 to column 3 — at which
+  point it was no longer *past* its floor of 4, and a `>` in the alignment test
+  stopped calling it alignment and pulled it out to the floor. Whether an
+  alignment column is past the floor or short of it does not matter: it is still
+  the column the enclosing bracket's first element starts at, which is the whole
+  definition.
+
+  The invariant was **already asserted** — `format.test.ts` states it as
+  invariant 3 and checks it inside the mangling test — and passed throughout,
+  because `mangle` never produced the input that breaks it. Random mangling is
+  the wrong instrument: the interesting column is one specific number out of a
+  dozen and has to coincide with a bracket opened on another line. There is now
+  an exhaustive test instead — six templates, every indentation from 0 to 12 on
+  every varying line, about 9,000 inputs — plus the token stream compared over
+  the same inputs, because a fixed point is worth nothing if reaching it changed
+  the program.
+
+- **`let c = c` was reported as two mistakes.** The initialiser is resolved
+  before the name is declared, so the `c` on the right is genuinely undefined —
+  that `RS001` is right. But `use` declares the name as a **recovery binding**,
+  so the same typo is not reported at every later use, and `declare` then
+  mistook that for a real declaration and added a false `RS004` claiming `c` was
+  declared twice — with a note citing the line of the *use* as "the earlier
+  one". Across lines, that note named a line which declares nothing at all.
+
+  A recovery binding is not a declaration. The two kinds were already paired
+  this way where assignment checks mutability, a few hundred lines below in the
+  same file; `declare` now agrees. A real double declaration is still reported,
+  a typo is still reported once rather than at every use, and a `-quiet`
+  companion fixture pins both along with shadowing, `_` and built-ins.
+
 - **`std/http` lost two of three cookies.** `Set-Cookie` is the one header the
   Fetch API deliberately does not combine — a cookie value can contain a comma,
   as in `Expires=Wed, 09 Jun 2021`, so a joined form could not be split back —
