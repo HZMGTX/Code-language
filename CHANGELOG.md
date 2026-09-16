@@ -130,6 +130,36 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
     answered `["a", "b"]`, which looks like an answer and was an accident of
     which branch ran first. Refused now, with the reason.
 
+- **The formatter pushed a comment out of the statement it annotated.**
+
+  ```lumen
+  let n = xs
+    // keep only the even ones
+    .filter(fn(x) { x % 2 == 0 })
+  ```
+
+  came out with the comment flush left at column 0 — between two indented lines
+  of the statement it describes, reading as though it introduced the next
+  top-level statement. A comment line has no tokens, so it is never a
+  `continuation`, so it took the statement's floor instead of the continuation's
+  level.
+
+  A comment belongs to the code *below* it, and the bracket stack cannot change
+  across a comment, so borrowing the next code line's continuation is enough.
+  A top-level comment still sits at column 0, and a comment at the end of a file
+  has nothing to line up with and is left alone.
+
+- **`take` and `drop` read a negative count as an offset from the end.**
+  `take(xs, -2)` answered "all but the last two" and `drop(xs, -2)` answered
+  "only the last two" — the opposite of what each one documents ("the first `n`
+  elements", "everything after the first `n`") — because the number went
+  straight to `Array.prototype.slice`. `chunk` and `windows` in the same module
+  already refused one, so it was a disagreement inside the module too, and
+  `len(xs) - wanted` going negative is the ordinary way to arrive there. Refused
+  now, in the wording `str.repeat` already used. The fixture pins the property
+  that made it wrong rather than merely surprising: `take(xs, n) + drop(xs, n)`
+  is `xs`, for every `n`.
+
 - **Seven kinds of deeply nested source crashed with a bare `RangeError`.**
   `docs/spec.md` promises `PA016` past 250 levels, and the parser's own comment
   explains why it matters: *"The limit bounds every later walk of the tree as

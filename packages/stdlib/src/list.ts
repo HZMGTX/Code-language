@@ -215,13 +215,28 @@ export function stdList(): Map<string, Value> {
       return list(xs.items.slice(start, end));
     }),
 
-    fn('take', ['xs', 'n'], (a, c) =>
-      list(expectList(arg(a, 0), c, 'take(xs)').items.slice(0, expectInt(arg(a, 1), c, 'take n'))),
-    ),
+    // A negative count is refused, in the wording `str.repeat` already uses.
+    // Both passed the number straight to `Array.prototype.slice`, which reads a
+    // negative one as an offset from the *end* — so `take(xs, -2)` answered
+    // "all but the last two" and `drop(xs, -2)` answered "only the last two",
+    // which is the opposite of each function's own documentation ("the first n
+    // elements", "everything after the first n"). `chunk` and `windows` in this
+    // same module already refuse one, so this was also a disagreement inside
+    // the module. A count computed as `len(xs) - wanted` going negative is the
+    // ordinary way to arrive here.
+    fn('take', ['xs', 'n'], (a, c) => {
+      const xs = expectList(arg(a, 0), c, 'take(xs)');
+      const n = expectInt(arg(a, 1), c, 'take n');
+      if (n < 0) c.panic('take n must not be negative, got ' + n);
+      return list(xs.items.slice(0, n));
+    }),
 
-    fn('drop', ['xs', 'n'], (a, c) =>
-      list(expectList(arg(a, 0), c, 'drop(xs)').items.slice(expectInt(arg(a, 1), c, 'drop n'))),
-    ),
+    fn('drop', ['xs', 'n'], (a, c) => {
+      const xs = expectList(arg(a, 0), c, 'drop(xs)');
+      const n = expectInt(arg(a, 1), c, 'drop n');
+      if (n < 0) c.panic('drop n must not be negative, got ' + n);
+      return list(xs.items.slice(n));
+    }),
 
     fn('reverse', ['xs'], (a, c) => list([...expectList(arg(a, 0), c, 'reverse(xs)').items].reverse())),
 

@@ -108,8 +108,32 @@ interface LineShape {
   continuation: boolean;
   /** True when the line has no tokens or comments on it. */
   blank: boolean;
+  /**
+   * True when the line holds a comment and no code.
+   *
+   * Such a line has no tokens, so it is never a `continuation` — and that is
+   * what pushed a comment inside a method chain out to column 0, between two
+   * indented lines of the statement it was annotating.
+   */
+  commentOnly: boolean;
   /** True when the line begins inside a multi-line token and must not be touched. */
   verbatim: boolean;
+}
+
+/**
+ * The next line carrying code, for a comment that is describing it.
+ *
+ * Blank lines and further comments are skipped. Nothing found means the comment
+ * is the last thing in the file, and then there is nothing to line up with.
+ */
+function nextCode(shape: readonly LineShape[], from: number): LineShape | undefined {
+  for (let i = from + 1; i < shape.length; i += 1) {
+    const line = shape[i];
+    if (line === undefined) continue;
+    if (line.blank || line.commentOnly) continue;
+    return line;
+  }
+  return undefined;
 }
 
 /** What each line does to the bracket structure, read from tokens rather than text. */
@@ -120,6 +144,7 @@ function shapes(source: string, tokens: readonly Token[], comments: readonly Com
     leadingClosers: 0,
     continuation: false,
     blank: true,
+    commentOnly: false,
     verbatim: false,
   }));
 
@@ -147,7 +172,10 @@ function shapes(source: string, tokens: readonly Token[], comments: readonly Com
   for (const c of comments) {
     const from = c.span.start.line - 1;
     const shape = at(from);
-    if (shape !== undefined) shape.blank = false;
+    if (shape !== undefined) {
+      shape.blank = false;
+      shape.commentOnly = true;
+    }
     if (c.block) markSpanned(from, c.span.end.line - 1);
   }
 
@@ -156,6 +184,7 @@ function shapes(source: string, tokens: readonly Token[], comments: readonly Com
     if (token === undefined) continue;
     const line = token.span.start.line - 1;
     const shape = at(line);
+    if (shape !== undefined) shape.commentOnly = false;
     if (shape === undefined) continue;
 
     shape.blank = false;
@@ -246,7 +275,20 @@ export function format(source: string, file = '<input>'): string {
     // given it one. `print(s` / `|> len())` is inside the `(` and is indented
     // once, where `let x = foo` / `.bar()` has no bracket and would otherwise
     // sit flush against the line it continues.
-    const bump = s.continuation && structural <= previous ? 1 : 0;
+    // A comment-only line belongs to the code *below* it, not beside it. It has
+    // no tokens and so is never a `continuation`, which put
+    //
+    //     let n = xs
+    //       // keep only the even ones
+    //       .filter(…)
+    //
+    // at column 0 — flush left between two indented lines of the statement it
+    // describes, reading as though it introduced the next top-level statement.
+    // The bracket stack cannot change across a comment, so the next code line's
+    // `structural` is this line's, and borrowing its continuation is enough.
+    const annotates = s.commentOnly ? nextCode(shape, i) : undefined;
+    const continues = annotates?.continuation ?? s.continuation;
+    const bump = continues && structural <= previous ? 1 : 0;
     const level = structural + bump;
 
     // How far this line moved, so a line aligning under one of its brackets
