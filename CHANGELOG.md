@@ -61,6 +61,20 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   program's output, which is also the better fixture: it shows the warning *and*
   that the statement really did nothing.
 
+- **A golden file cannot record a program that did not run.** The companion to
+  the fix above, and the one that needs no maintenance: `npm run test:update`
+  writes down whatever happens, so a regression that stops programs running gets
+  *recorded as correct* the next time anybody regenerates.
+
+  A fixture whose only diagnostics are warnings, and which prints at its top
+  level, must now show what it printed. An `error` in the golden file excuses it
+  — a static error never runs and a run-time one stops where it is — but a
+  warning must never stop anything, which is the whole distinction.
+
+  Checked against the thing that fooled it: with the bug back *and the golden
+  files regenerated*, the byte comparison passes and this still fails. An audit
+  of all 179 fixtures found no second instance.
+
 - **A warning never stopping a program is a test now**, on every warning the
   language has — derived from `docs/spec.md`'s own table rather than listed, so
   a new warning code fails the suite until somebody shows a program carrying it
