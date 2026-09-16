@@ -34,6 +34,28 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   from its type's table and never from scope, so `xs.groupBy(f)` works with no
   import at all and those imports really were dead. They are gone.
 
+- **The REPL rejected working lines, because a session binding was checked as
+  the prelude name it shadows.**
+
+  ```text
+  lumen> let fixed = 1
+  lumen> fixed + 1
+  error[TY005]: cannot add fn(Num, Num) -> Str and Num
+  ```
+
+  `fixed` is `std/math.fixed`, whose signature the checker seeds its root scope
+  with. The session's own `fixed` was passed across as a *name* and nothing
+  more, so it resolved but carried no type, and the prelude's won — a false
+  positive against a line that works, which is the one thing these passes exist
+  to never do.
+
+  A session binding now drops the prelude's signature for that name, leaving it
+  `Any`, which is exactly what the session knows about it: the REPL carries no
+  type from one input to the next, and inventing one would be guessing. One
+  signature rather than all of them, so everything a session has *not* rebound
+  keeps being checked — and methods are untouched either way, because a method
+  comes from the receiver's type and never from scope.
+
 - **The two ends of a program disagreed about control flow, and the REPL lost.**
   There are four signals — `return`, `break`, `continue` and `?` — and the two
   places a program can end, `runModule` and `runStatements`, each decided for

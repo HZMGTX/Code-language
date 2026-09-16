@@ -18,6 +18,7 @@ import {
   lex,
   parse,
   typeName,
+  type ResolveOptions,
   type SourceUnit,
 } from '@lumen-lang/core';
 import { STD_MODULE_NAMES } from '@lumen-lang/stdlib';
@@ -70,6 +71,37 @@ const HELP = [
   'An unfinished line continues on the next one; a blank line abandons it.',
 ].join('\n');
 
+/**
+ * What the static passes are told about a session, rather than about a file.
+ *
+ * A name the session has bound **shadows** the prelude's, so the prelude's
+ * signature must stop applying to it — and it did not:
+ *
+ *     lumen> let fixed = 1
+ *     lumen> fixed + 1
+ *     error[TY005]: cannot add fn(Num, Num) -> Str and Num
+ *
+ * `fixed` is `std/math.fixed`, whose signature the checker seeds its root scope
+ * with. The session's own `fixed` was passed across as a *name* and nothing
+ * more, so it resolved but carried no type, and the prelude's won — rejecting a
+ * line that works, which is the one thing these passes must never do.
+ *
+ * Dropping the signature leaves the binding `Any`, which is what the session
+ * actually knows about it: the REPL carries no type from one input to the next,
+ * and inventing one here would be guessing. Methods are left alone, because a
+ * method comes from the receiver's type and never from scope — `"mine".len()`
+ * is `Str.len` whatever a session has bound `len` to.
+ */
+function sessionOptions(scope: Env): ResolveOptions {
+  const options = checkOptions(scope.visibleNames());
+  const bound = scope.ownNames();
+  if (bound.length === 0 || options.signatures === undefined) return options;
+
+  const signatures = new Map(options.signatures);
+  for (const name of bound) signatures.delete(name);
+  return { ...options, signatures };
+}
+
 export async function startRepl(): Promise<void> {
   const color = useColor();
   let interpreter: Interpreter = newInterpreter();
@@ -99,7 +131,7 @@ export async function startRepl(): Promise<void> {
     try {
       const module = parse(source, '<repl>');
       // Everything bound in the session so far counts as already in scope.
-      checkModule(module, source, checkOptions(scope.visibleNames()));
+      checkModule(module, source, sessionOptions(scope));
       const value = await interpreter.runStatements(module.stmts, scope, currentUnit);
       if (value.k !== 'nil') process.stdout.write(inspect(value) + '\n');
     } catch (error) {

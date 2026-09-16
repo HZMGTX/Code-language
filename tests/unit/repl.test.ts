@@ -93,6 +93,33 @@ describe('repl', () => {
     assert.match(out, /lumen> 6$/mu);
   });
 
+  it('does not check a session binding as the prelude name it shadows', async () => {
+    // `fixed` is `std/math.fixed`, whose signature the checker seeds its root
+    // scope with. A session binding of the same name was passed across as a
+    // *name* and nothing more, so it resolved but carried no type and the
+    // prelude's won:
+    //
+    //     lumen> let fixed = 1
+    //     lumen> fixed + 1
+    //     error[TY005]: cannot add fn(Num, Num) -> Str and Num
+    //
+    // Rejecting a line that works, which is the one thing these passes must
+    // never do.
+    const out = await repl(['let fixed = 1', 'fixed + 1']);
+    assert.doesNotMatch(out, /TY005|TY006|fn\(Num, Num\)/);
+    assert.match(out, /lumen> 2$/mu);
+  });
+
+  it('still checks a prelude name the session has not shadowed', async () => {
+    // The other direction, and the reason the fix drops one signature rather
+    // than all of them: the checker has to keep working on everything a session
+    // has *not* rebound, including methods, which come from the receiver's type
+    // and never from scope.
+    const out = await repl(['fixed("x")', '[1].take("two")']);
+    assert.match(out, /TY001.*`fixed` expects Num/u);
+    assert.match(out, /TY001.*`take` expects Num/u);
+  });
+
   it('answers :type', async () => {
     assert.match(await repl([':type "abc"']), /Str/);
   });
