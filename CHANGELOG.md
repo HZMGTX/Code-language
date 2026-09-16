@@ -130,6 +130,32 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
     answered `["a", "b"]`, which looks like an answer and was an accident of
     which branch ran first. Refused now, with the reason.
 
+- **A function ending in a local called `sum` was rejected.** This ordinary
+  program did not compile:
+
+  ```lumen
+  fn total(xs: List) -> Num {
+    var sum = 0
+    for x in xs { sum += x }
+    sum
+  }
+  ```
+
+  `error[TY002]: this function returns Num but is giving back fn(List) -> Num`.
+  The implicit-return check re-types the last statement, and ran *after* the
+  body's scope had been restored — so the `sum` on the last line resolved
+  outside the function and found the prelude's `sum`. Any function whose last
+  statement names a local that shadows a prelude name was rejected the same way,
+  and `sum`, `len`, `count`, `first`, `last`, `keys`, `min`, `max`, `join` and
+  `take` are all ordinary names for a local.
+
+  A false positive is the one thing `docs/philosophy.md` says gradual typing
+  must never produce, and this one rejected a shape people write constantly.
+  `block` now takes what has to see its bindings and runs it before throwing the
+  scope away. A real mismatch is still caught — `fn f() -> Num { "text" }` is
+  still `TY002` — and the fixture covers nine shadowed names plus a nested `if`,
+  because the same rule has to hold one level down.
+
 - **Four diagnostics that named the wrong thing.**
 
   - **A digit the radix does not admit ended the literal silently.**

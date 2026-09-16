@@ -424,11 +424,33 @@ class Checker {
     }
   }
 
-  private block(block: Block): void {
+  /**
+   * A block, and optionally something that has to see the block's own bindings.
+   *
+   * `inside` runs before the scope is thrown away, and exists because
+   * `checkImplicitReturn` did not. It re-types the last statement, and ran
+   * *after* this method had restored the enclosing scope — so every name in
+   * that statement resolved outside the function body. An ordinary program:
+   *
+   *     fn total(xs: List) -> Num {
+   *       var sum = 0
+   *       for x in xs { sum += x }
+   *       sum
+   *     }
+   *
+   * was rejected with "this function returns Num but is giving back
+   * fn(List) -> Num", because the `sum` on the last line found the prelude's
+   * `sum` instead of the local. Any function whose last statement names a local
+   * that shadows a prelude name was rejected the same way, and `sum`, `len`,
+   * `count`, `first`, `last`, `keys`, `min` and `max` are all ordinary names
+   * for a local.
+   */
+  private block(block: Block, inside?: () => void): void {
     const saved = this.scope;
     this.scope = new Scope(saved);
     this.hoist(block.stmts);
     for (const stmt of block.stmts) this.stmt(stmt);
+    inside?.();
     this.scope = saved;
   }
 
@@ -534,8 +556,8 @@ class Checker {
     this.scope = new Scope(savedScope);
     this.returnTy = this.toTy(ret);
     for (const param of params) this.scope.declare(param.name, this.toTy(param.type));
-    this.block(body);
-    this.checkImplicitReturn(body);
+    // Inside the body's scope, not after it: see `block`.
+    this.block(body, () => this.checkImplicitReturn(body));
     this.scope = savedScope;
     this.returnTy = savedReturn;
   }

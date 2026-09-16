@@ -1,0 +1,65 @@
+// A function's last statement is typed inside the function's own scope.
+//
+// It was typed after that scope had been thrown away, so every name in it
+// resolved *outside* the body — and this ordinary program was rejected:
+//
+//     fn total(xs: List) -> Num {
+//       var sum = 0
+//       for x in xs { sum += x }
+//       sum
+//     }
+//
+// with "this function returns Num but is giving back fn(List) -> Num", because
+// the `sum` on the last line found the prelude's `sum` instead of the local.
+// Any function whose last statement names a local shadowing a prelude name was
+// rejected the same way — and `sum`, `len`, `count`, `first`, `last`, `keys`,
+// `min` and `max` are all ordinary names for a local.
+//
+// A false positive is the one thing docs/philosophy.md says gradual typing must
+// never produce.
+fn total(xs: List) -> Num {
+  var sum = 0
+  for x in xs { sum += x }
+  sum
+}
+
+fn howMany(xs: List) -> Num {
+  let count = xs.len()
+  count
+}
+
+fn widest(words: List) -> Num {
+  var max = 0
+  for w in words { max = if w.len() > max { w.len() } else { max } }
+  max
+}
+
+fn label(parts: List) -> Str {
+  let join = parts.join("-")
+  join
+}
+
+fn firstTwo(xs: List) -> List {
+  let take = xs.take(2)
+  take
+}
+
+print(total([1, 2, 3]))
+print(howMany(["a", "b"]))
+print(widest(["ab", "abcd", "a"]))
+print(label(["x", "y"]))
+print(firstTwo([1, 2, 3]))
+
+// Nested blocks too: the value of an `if` is the value of its last statement,
+// and the same scope rule has to hold one level down.
+fn pick(flag: Bool) -> Num {
+  if flag {
+    let min = 1
+    min
+  } else {
+    let max = 2
+    max
+  }
+}
+print(pick(true))
+print(pick(false))
