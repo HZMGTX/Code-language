@@ -1,0 +1,60 @@
+error[TY009]: `Ok` can never match a Str
+  --> impossible-arm.lm:17:3
+   |
+17 |   Ok(text) => print(text)
+   |   ^^^^^^^^ this arm can never be taken
+   |
+   = note: `Ok` is a variant of Result
+   = note: the subject of the match is a Str
+
+error[TY009]: `Err` can never match a Str
+  --> impossible-arm.lm:18:3
+   |
+18 |   Err(why) => print(why)
+   |   ^^^^^^^^ this arm can never be taken
+   |
+   = note: `Err` is a variant of Result
+   = note: the subject of the match is a Str
+
+error[TY009]: `Some` can never match a Result
+  --> impossible-arm.lm:24:3
+   |
+24 |   Some(m) => print(m.text)
+   |   ^^^^^^^ this arm can never be taken
+   |
+   = note: `Some` is a variant of Option
+   = note: the subject of the match is a Result
+
+error[TY009]: `None` can never match a Result
+  --> impossible-arm.lm:25:3
+   |
+25 |   None    => print("none")
+   |   ^^^^ this arm can never be taken
+   |
+   = note: `None` is a variant of Option
+   = note: the subject of the match is a Result
+
+error[TY009]: a Num can never equal a Str
+  --> impossible-arm.lm:32:5
+   |
+32 |     1      => "one"
+   |     ^ this arm can never be taken
+   |
+   = note: the subject of the match is a Str
+
+error[TY009]: a list pattern can never match a Str
+  --> impossible-arm.lm:33:5
+   |
+33 |     [c]    => "one character"
+   |     ^^^ this arm can never be taken
+   |
+   = note: the subject of the match is a Str
+   = note: a Str is not a list of its characters — `chars(s)` is
+
+error[TY009]: `Point` can never match a Size
+  --> impossible-arm.lm:44:5
+   |
+44 |     Point { x, y } => x * y
+   |     ^^^^^^^^^^^^^^ this arm can never be taken
+   |
+   = note: the subject of the match is a Size

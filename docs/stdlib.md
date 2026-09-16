@@ -953,7 +953,7 @@ words(s: Str) -> List<Str>
 date(instant: Num) -> Str
 describe(milliseconds: Num) -> Str
 format(instant: Num, template: Str = ...) -> Str
-fromParts(year: Num, month: Num = ..., day: Num = ..., hour: Num = ..., minute: Num = ..., second: Num = ..., millisecond: Num = ...) -> Num
+fromParts(year, month: Num = ..., day: Num = ..., hour: Num = ..., minute: Num = ..., second: Num = ..., millisecond: Num = ...) -> Num
 iso(instant: Num) -> Str
 monthName(instant: Num) -> Str
 monthNames() -> List<Str>

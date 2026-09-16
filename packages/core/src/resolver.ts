@@ -38,6 +38,7 @@ import type {
   Pattern,
   Stmt,
 } from './ast.js';
+import { BUILT_IN_ENUMS } from './ast.js';
 import { type Diagnostic, type Note, type Severity, type Span, LumenError } from './diagnostics.js';
 import { checkTypes, type CheckOptions, type Ty } from './types.js';
 import { suggest } from './values.js';
@@ -256,8 +257,7 @@ class Resolver {
     }
     this.scope = new Scope(root);
     // Result and Option are always matchable, whatever the prelude holds.
-    this.enums.set('Result', ['Ok', 'Err']);
-    this.enums.set('Option', ['Some', 'None']);
+    for (const [name, variants] of BUILT_IN_ENUMS) this.enums.set(name, variants);
   }
 
   private report(

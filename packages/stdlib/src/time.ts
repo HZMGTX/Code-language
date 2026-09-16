@@ -42,8 +42,19 @@
  * it has no escaping rules to learn or to get wrong.
  */
 
-import { bool, list, map, num, str, truthy, type Value } from '@lumen-lang/core';
-import { Err, Ok, arg, expectInt, expectNum, expectStr, fn, moduleOf, withDocs, withSignatures } from './support.js';
+import { bool, type CallCtx, list, map, num, str, truthy, type Value } from '@lumen-lang/core';
+import {
+  Err,
+  Ok,
+  arg,
+  expectInt,
+  expectNum,
+  expectStr,
+  fn,
+  moduleOf,
+  withDocs,
+  withSignatures,
+} from './support.js';
 
 const MINUTE = 60000;
 const HOUR = 3600000;
@@ -130,6 +141,82 @@ function impossibleDay(text: string): boolean {
   return limit !== undefined && day > limit;
 }
 
+/** The seven pieces `fromParts` works from, in the order it declares them. */
+const PIECES = ['year', 'month', 'day', 'hour', 'minute', 'second', 'millisecond'] as const;
+
+/** Each piece's value when a Map leaves it out — the declared defaults. */
+const PIECE_DEFAULTS = [0, 1, 1, 0, 0, 0, 0] as const;
+
+/**
+ * What `parts` adds and `fromParts` cannot use. Both are *derived* from the
+ * others, so a caller cannot choose them — and ignoring exactly these two is
+ * what makes `fromParts(parts(t))` work rather than complain about keys `parts`
+ * put there itself.
+ */
+const DERIVED = ['weekday', 'dayOfYear'] as const;
+
+/** Year, month, day, hour, minute, second, millisecond — as given. */
+type Pieces = readonly [number, number, number, number, number, number, number];
+
+/**
+ * `fromParts`' pieces, from either spelling.
+ *
+ * A lone Map is read as `parts` wrote it, which is the whole point: `parts`
+ * answers with a Map, and until now the function named `fromParts` was the one
+ * thing that could not take parts. `fromParts(parts(t)) == t` holds now, and
+ * `min`'s "a list, or the values themselves" is the same idea.
+ *
+ * An unknown key is refused, because silently ignoring one would mean
+ * `fromParts({ yaer: 2026 })` quietly answering with the year 1. The two keys
+ * that *are* ignored are named above rather than being a blanket rule.
+ */
+function partsGiven(args: readonly Value[], ctx: CallCtx): Pieces {
+  // A Map in the first position, rather than `args.length === 1`: a call is
+  // padded out to seven with the declared defaults before it arrives, so the
+  // length is always seven and never told us anything. A Map is never a year,
+  // so the first argument's kind is the whole question.
+  const only = args[0];
+  const asMap = only?.k === 'map' ? only : undefined;
+  if (asMap !== undefined) {
+    // Both spellings at once is a mistake nothing else would catch: the pieces
+    // would be silently ignored in favour of the Map's.
+    const alsoGiven = PIECES.findIndex((_name, i) => {
+      if (i === 0) return false;
+      const given = args[i];
+      return given !== undefined && given.k === 'num' && given.v !== PIECE_DEFAULTS[i];
+    });
+    if (alsoGiven !== -1) {
+      ctx.panic('fromParts got a Map and a `' + PIECES[alsoGiven] + '` as well', [
+        'pass the pieces one by one, or a Map holding all of them — not both',
+      ]);
+    }
+  }
+
+  if (asMap !== undefined) {
+    for (const key of asMap.entries.keys()) {
+      if (!PIECES.includes(key as (typeof PIECES)[number]) && !DERIVED.includes(key as (typeof DERIVED)[number])) {
+        ctx.panic('fromParts got a piece it does not know: ' + key, [
+          'it reads ' + PIECES.join(', '),
+          'and ignores the two `parts` derives, ' + DERIVED.join(' and '),
+        ]);
+      }
+    }
+    if (!asMap.entries.has('year')) {
+      ctx.panic('fromParts needs a `year`', ['the Map `parts` answers with has one']);
+    }
+  }
+
+  const read = (index: number): number => {
+    const name = PIECES[index] ?? 'year';
+    if (asMap === undefined) return expectInt(arg(args, index), ctx, 'fromParts(' + name + ')');
+    const given = asMap.entries.get(name);
+    if (given === undefined) return PIECE_DEFAULTS[index] ?? 0;
+    return expectInt(given, ctx, 'fromParts(' + name + ')');
+  };
+
+  return [read(0), read(1), read(2), read(3), read(4), read(5), read(6)];
+}
+
 /**
  * An instant is a `Num` — milliseconds since the epoch, UTC throughout — which
  * is why so many of these take and give one. `parts` and `fromParts` are the
@@ -140,8 +227,12 @@ const SIGNATURES: Readonly<Record<string, string>> = {
   date: '(instant: Num) -> Str',
   time: '(instant: Num, seconds: Bool = true) -> Str',
   parts: '(instant: Num) -> Map',
+  // `year` declares no type because it also takes the Map `parts` returns, and
+  // there is no union to write. Declaring `Num` would make the inverse —
+  // `fromParts(parts(t))` — a TY001 on a call that works, which is the one kind
+  // of wrong answer this project will not ship.
   fromParts:
-    '(year: Num, month: Num = 1, day: Num = 1, hour: Num = 0, minute: Num = 0, second: Num = 0, millisecond: Num = 0) -> Num',
+    '(year, month: Num = 1, day: Num = 1, hour: Num = 0, minute: Num = 0, second: Num = 0, millisecond: Num = 0) -> Num',
   parseIso: '(text: Str) -> Result',
   plus:
     '(instant: Num, days: Num = 0, hours: Num = 0, minutes: Num = 0, seconds: Num = 0, milliseconds: Num = 0) -> Num',
@@ -218,6 +309,11 @@ export function stdTime(): Map<string, Value> {
        * Out-of-range pieces roll over rather than failing, which is what makes
        * arithmetic on dates work: month 13 is January of the next year, and day
        * 0 is the last day of the month before — the usual way to ask for it.
+       *
+       * Takes the Map `parts` answers with as well as the pieces one by one, so
+       * `fromParts(parts(t))` is `t`. The two are meant to be inverses and the
+       * name says so; without it the round-trip meant reading seven keys out by
+       * hand.
        */
       fn(
         'fromParts',
@@ -231,15 +327,8 @@ export function stdTime(): Map<string, Value> {
           { name: 'millisecond', defaultValue: num(0) },
         ],
         (a, c) => {
-          const y = expectInt(arg(a, 0), c, 'fromParts(year)');
-          const rest = [
-            expectInt(arg(a, 1), c, 'fromParts(month)') - 1,
-            expectInt(arg(a, 2), c, 'fromParts(day)'),
-            expectInt(arg(a, 3), c, 'fromParts(hour)'),
-            expectInt(arg(a, 4), c, 'fromParts(minute)'),
-            expectInt(arg(a, 5), c, 'fromParts(second)'),
-            expectInt(arg(a, 6), c, 'fromParts(millisecond)'),
-          ] as const;
+          const [y, month, day, hour, minute, second, millisecond] = partsGiven(a, c);
+          const rest = [month - 1, day, hour, minute, second, millisecond] as const;
 
           // Years 0 to 99 have to go the long way round. The host's `Date.UTC`
           // still carries a rule written for two-digit years in the nineties: it
@@ -454,7 +543,8 @@ export function stdTime(): Map<string, Value> {
       date: 'Just the date, in UTC: 2026-09-13.',
       time: 'Just the time, in UTC. Pass seconds: false to drop them.',
       parts: 'Every piece as a Map: year, month (1-12), day, hour, minute, second, millisecond, weekday (0-6), dayOfYear.',
-      fromParts: 'An instant from its pieces, all UTC. Out-of-range pieces roll over.',
+      fromParts:
+        'An instant from its pieces, all UTC — either named, or the Map `parts` gives. Out-of-range pieces roll over.',
       parseIso: 'Read a time from ISO 8601 text. Ok(instant), or Err(why). No zone means UTC.',
       plus: 'An instant shifted by days, hours, minutes, seconds or milliseconds.',
       startOfDay: 'Midnight UTC at the start of that day.',

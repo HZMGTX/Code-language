@@ -299,6 +299,20 @@ export interface BlockExpr extends NodeBase {
 
 // ---------------------------------------------------------------- patterns
 
+/**
+ * The enums a `PEnum` may name without anything declaring them.
+ *
+ * `Result` and `Option` are the language's, not the library's — `?` is built on
+ * them and `Ok(v)` is matchable in a file that declares and imports nothing. It
+ * lives here, beside `PEnum`, because both the resolver and the type checker
+ * need it and stating it twice is how the two passes come to disagree about
+ * what a program means.
+ */
+export const BUILT_IN_ENUMS: ReadonlyMap<string, readonly string[]> = new Map([
+  ['Result', ['Ok', 'Err']],
+  ['Option', ['Some', 'None']],
+]);
+
 export type Pattern = PWildcard | PBinding | PLiteral | PEnum | PStruct | PList;
 
 /** `_` — matches anything, binds nothing. */

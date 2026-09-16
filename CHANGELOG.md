@@ -34,6 +34,74 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   from its type's table and never from scope, so `xs.groupBy(f)` works with no
   import at all and those imports really were dead. They are gone.
 
+- **`TY009`: a `match` arm the subject's type can never produce.** The mistake
+  nobody makes twice and everybody makes once — misremembering whether a
+  function answers with a `Result`:
+
+  ```text
+  match stringify(v) {      ← `json.stringify` answers with a Str
+    Ok(text) => ...
+    Err(why) => ...
+  }
+  ```
+
+  Every arm is dead, so the match cannot succeed. It passed every static check
+  and then failed at run time as `RT020`, with the caret on the *subject* —
+  which is the one part that was right.
+
+  It was found by writing a probe against the library and getting it wrong in
+  exactly this way, twice in one sitting. `RS003` has always reported an arm
+  that can never be reached because an earlier one covers it; this is the same
+  defect for the reason only the type checker can see, so the two now cover the
+  structural case and the typed one between them.
+
+  Four restraints, the same no-false-positives rule as everywhere else: an
+  `Any` subject says nothing, so an unannotated program is silent; a variant
+  that cannot be traced to exactly *one* enum says nothing, which covers both an
+  unknown name and two enums declaring a variant alike; a payload's pattern is
+  not checked, only the shape it sits in; and **`nil` is never impossible**,
+  because it is the one value that legitimately turns up where a type says
+  otherwise, so guarding against it is defensive rather than wrong.
+
+  The two built-in enums used to be written out in the resolver and again in the
+  type checker. They are one table now, beside `PEnum` in the AST — stating them
+  twice is how two passes come to disagree about what a program means.
+
+- **Two functions were not the inverses their names promise.** Found by asking
+  one question of the whole library at once, which is the only way this class
+  shows up: each half is perfectly reasonable alone.
+
+  - `path.split` answers with a list and `path.join` took only loose strings, so
+    `join(split(p))` — the obvious way to put a path back together — was a
+    run-time error. Lumen has no spread at a call site, so there was no way
+    around it either. `join` takes a single list now, exactly as `min` takes
+    "a list, or the values themselves".
+  - `time.fromParts` took seven separate numbers while `time.parts` answers with
+    a Map, so the function whose *name* says it takes parts could not take them.
+    It reads the Map now, ignoring the two keys `parts` derives — `weekday` and
+    `dayOfYear` — while still refusing an unknown one, because silently ignoring
+    a key would mean `fromParts({ yaer: 2026 })` quietly answering with the year
+    1. Its `year` parameter had to give up its declared type to do it: there is
+    no union to write, and declaring `Num` would have made the inverse a `TY001`
+    on a call that works.
+
+  Fixing the first uncovered a second bug underneath it. `split` yields `"/"` as
+  its first piece for an absolute path, and `join` appended a separator without
+  looking at whether one was already there — so `join("/", "abs", "x.txt")`
+  built `//abs/x.txt`, which is not `/abs/x.txt` but the UNC share `x.txt` on
+  the server `abs`, and normalising it answered `//abs/x.txt/`. With two parts
+  `normalize` had been quietly rescuing it, which is why it had never shown up.
+
+- **Every inverse pair is now checked for being one**, and the pairs are
+  **derived from the library's own naming** rather than listed: a name beginning
+  `from` or `parse` is a promise about another function's output, and every such
+  promise must be kept *and* have a round-trip case — so adding `fromFoo` fails
+  the suite until somebody round-trips it. The pairs whose halves share no stem
+  (`split`/`join`, `stringify`/`parse`, `rows`/`write`, `escape`/`find`) are
+  listed separately, so it stays obvious which half of that file is a convention
+  being enforced and which is a judgement somebody made. A guessed list is what
+  let `sum([inf, -inf])` sit unnoticed in the NaN sweep.
+
 - **`from` and `as` are no longer keywords.** Each appears in exactly one
   position in the grammar — after the `}` of an import list, and between a name
   and its alias inside one — so the parser looks for the word where it means

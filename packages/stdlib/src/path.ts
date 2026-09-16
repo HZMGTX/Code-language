@@ -152,6 +152,12 @@ export function stdPath(): Map<string, Value> {
          *
          * Variadic, because the alternative is `a.join("/").join("/")` and a
          * careful reading of whether each part already ends in one.
+         *
+         * A single list works too, the same way `min` takes either — and here
+         * it is not a convenience but the inverse of `split`. `split` answers
+         * with a list, so without this there is no way to put a path back
+         * together: `join(split(p))` was a run-time error, and the language has
+         * no spread at a call site to work around it with.
          */
         {
           k: 'native',
@@ -159,7 +165,9 @@ export function stdPath(): Map<string, Value> {
           params: [],
           variadic: true,
           call: (args: readonly Value[], ctx) => {
-            const parts = args.map((part, i) => expectStr(part, ctx, 'join part ' + (i + 1)));
+            const only = args[0];
+            const given = args.length === 1 && only?.k === 'list' ? only.items : args;
+            const parts = given.map((part, i) => expectStr(part, ctx, 'join part ' + (i + 1)));
             // A part that is absolute starts again, the way every other path
             // library works: `join("/tmp", "/etc")` is `/etc`. Surprising in
             // isolation, unsurprising the moment a variable holds a path the
@@ -168,7 +176,12 @@ export function stdPath(): Map<string, Value> {
             for (const part of parts) {
               if (part === '') continue;
               if (out === '' || rootOf(part).absolute || rootOf(part).prefix !== '') out = part;
-              else out = out + '/' + part;
+              // Not `out + '/' + part`: when `out` is already a root that ends
+              // in one, that doubles it — and `//abs/x` is not `/abs/x`, it is
+              // the UNC share `x` on the server `abs`. So `join("/", "abs",
+              // "x.txt")` answered `//abs/x.txt/`, which is exactly what
+              // `join(split(p))` hits for any absolute path.
+              else out = out + (out.endsWith('/') ? '' : '/') + part;
             }
             return str(normalise(out));
           },

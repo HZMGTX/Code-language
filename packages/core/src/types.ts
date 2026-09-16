@@ -26,6 +26,7 @@
  *   TY006  a value assigned to an annotated binding does not match it
  *   TY007  more arguments than the function takes
  *   TY008  a required argument the call does not supply
+ *   TY009  a match arm the subject's type can never produce
  */
 
 import type {
@@ -39,6 +40,7 @@ import type {
   Stmt,
   TypeExpr,
 } from './ast.js';
+import { BUILT_IN_ENUMS } from './ast.js';
 import { type Diagnostic, type Note, type Span } from './diagnostics.js';
 import { parse } from './parser.js';
 
@@ -229,7 +231,8 @@ class Checker {
   /** Keys of diagnostics already recorded, so one problem is reported once. */
   private readonly reported = new Set<string>();
   private readonly structs = new Map<string, StructInfo>();
-  private readonly enums = new Set<string>();
+  /** Each enum's variants, so a bare `Ok(v)` can be traced back to `Result`. */
+  private readonly enums = new Map<string, readonly string[]>();
   /** `"Str.upper"` to the type of `x.upper`, with the receiver already removed. */
   private readonly methods: ReadonlyMap<string, Ty>;
   /** What each described module exports, so an imported name has a type. */
@@ -251,8 +254,8 @@ class Checker {
     for (const [name, ty] of options.signatures ?? []) root.declare(name, ty);
     this.scope = new Scope(root);
     // `Result` and `Option` are always matchable and always annotatable,
-    // whatever the module declares — the same two the resolver seeds.
-    this.enums.add('Result').add('Option');
+    // whatever the module declares — the same table the resolver seeds from.
+    for (const [name, variants] of BUILT_IN_ENUMS) this.enums.set(name, variants);
   }
 
   /**
@@ -404,7 +407,7 @@ class Checker {
   private collectTypes(stmts: readonly Stmt[]): void {
     for (const stmt of stmts) {
       const decl = stmt.kind === 'ExportDecl' ? stmt.declaration : stmt;
-      if (decl.kind === 'EnumDecl') this.enums.add(decl.name);
+      if (decl.kind === 'EnumDecl') this.enums.set(decl.name, decl.variants.map((v) => v.name));
     }
     for (const stmt of stmts) {
       const decl = stmt.kind === 'ExportDecl' ? stmt.declaration : stmt;
@@ -599,6 +602,109 @@ class Checker {
    * always safe: it is compatible in both directions, so it can produce no
    * diagnostic at all.
    */
+  /**
+   * `TY009`: an arm whose pattern the subject's type can never produce.
+   *
+   * The mistake this catches is one nobody makes twice and everybody makes
+   * once: misremembering whether a function answers with a `Result`.
+   *
+   *     match stringify(v) { Ok(text) => ..., Err(why) => ... }
+   *
+   * `stringify` answers with a `Str`. Every arm is dead, so the match cannot
+   * succeed — and it passed every static check, then failed at run time as
+   * `RT020` with the caret on the *subject*, which is the one part that was
+   * right. `RS003` has always reported an arm that can never be reached; this
+   * is the same defect for the reason only this pass can see.
+   *
+   * Three restraints, all the no-false-positives rule:
+   *
+   * - An `Any` subject says nothing, and a pattern whose own type cannot be
+   *   worked out says nothing.
+   * - A variant this pass cannot trace to an enum says nothing, so an enum
+   *   arriving through an unannotated import stays quiet.
+   * - `nil` is never impossible. It is the one value that legitimately turns up
+   *   where a type says otherwise, and a `match x { nil => ... }` guarding
+   *   against exactly that is defensive, not wrong.
+   */
+  private checkArmFits(subject: Ty, pattern: Pattern): void {
+    if (subject.k === 'any') return;
+    const shown = showTy(subject);
+    switch (pattern.kind) {
+      case 'PWildcard':
+      case 'PBinding':
+        return;
+
+      case 'PLiteral': {
+        const literal = this.typeOf(pattern.value);
+        if (literal.k === 'nil' || accepts(subject, literal)) return;
+        this.report(
+          'TY009',
+          'a ' + showTy(literal) + ' can never equal a ' + shown,
+          pattern.span,
+          'this arm can never be taken',
+          ['the subject of the match is a ' + shown],
+        );
+        return;
+      }
+
+      case 'PEnum': {
+        const owner = pattern.enumName ?? this.enumOfVariant(pattern.variant);
+        if (owner === undefined) return;
+        if (subject.k === 'enum' && subject.name === owner) return;
+        this.report(
+          'TY009',
+          '`' + pattern.variant + '` can never match a ' + shown,
+          pattern.span,
+          'this arm can never be taken',
+          [
+            '`' + pattern.variant + '` is a variant of ' + owner,
+            'the subject of the match is a ' + shown,
+          ],
+        );
+        return;
+      }
+
+      case 'PStruct': {
+        if (subject.k === 'struct' && subject.name === pattern.name) return;
+        if (!this.structs.has(pattern.name)) return;
+        this.report(
+          'TY009',
+          '`' + pattern.name + '` can never match a ' + shown,
+          pattern.span,
+          'this arm can never be taken',
+          ['the subject of the match is a ' + shown],
+        );
+        return;
+      }
+
+      case 'PList':
+        if (subject.k === 'list') return;
+        this.report(
+          'TY009',
+          'a list pattern can never match a ' + shown,
+          pattern.span,
+          'this arm can never be taken',
+          subject.k === 'str'
+            ? [
+                'the subject of the match is a ' + shown,
+                'a Str is not a list of its characters — `chars(s)` is',
+              ]
+            : ['the subject of the match is a ' + shown],
+        );
+        return;
+    }
+  }
+
+  /** The enum a bare variant name belongs to, when exactly one claims it. */
+  private enumOfVariant(variant: string): string | undefined {
+    const owners = [...this.enums]
+      .filter(([, variants]) => variants.includes(variant))
+      .map(([name]) => name);
+    // Two enums with a variant of the same name make a bare pattern ambiguous,
+    // and guessing which was meant is how a check starts rejecting good code.
+    return owners.length === 1 ? owners[0] : undefined;
+  }
+
   private declarePattern(pattern: Pattern, ty: Ty): void {
     switch (pattern.kind) {
       case 'PBinding':
@@ -779,8 +885,9 @@ class Checker {
         return ANY;
 
       case 'MatchExpr': {
-        this.typeOf(expr.subject);
+        const subject = this.typeOf(expr.subject);
         for (const arm of expr.arms) {
+          this.checkArmFits(subject, arm.pattern);
           const saved = this.scope;
           this.scope = new Scope(saved);
           // Every name the pattern binds, as Any: what a pattern narrows a value

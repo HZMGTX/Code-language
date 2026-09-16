@@ -597,6 +597,7 @@ Annotations are **checked where they are written**, before the program runs:
 | `TY006` | An assignment does not match the target's declared type |
 | `TY007` | A call passes more arguments than the function takes |
 | `TY008` | A call leaves out an argument the function requires |
+| `TY009` | A `match` arm names a pattern the subject's type can never produce |
 
 `TY005` speaks only when **both** operand types are known. `1 - "x"` is reported;
 `a - "x"` for an unannotated `a` is not, because `a` is `Any`. That restraint is
@@ -680,6 +681,25 @@ Num` annotation records no defaults, so a value of that type may well be
 the moment an argument is named, because the interpreter then has a better
 answer than a count: `greet(nmae: "Ada")` is a typo in `nmae`, not a missing
 `name`.
+
+`TY009` is `RS003` for the reason only this pass can see. `RS003` reports an arm
+unreachable because an earlier one already covers it; `TY009` reports one
+unreachable because the subject's type cannot produce it at all —
+`match stringify(v) { Ok(t) => ..., Err(e) => ... }`, where `stringify` answers
+with a `Str`. Every arm is dead, so the match cannot succeed, and it used to
+fail at run time as `RT020` with the caret on the subject, which is the one part
+that was right.
+
+Four restraints, the same no-false-positives rule as everywhere else:
+
+- An `Any` subject says nothing, so an unannotated program is silent.
+- A variant this pass cannot trace to exactly one enum says nothing, which
+  covers both an unknown name and two enums declaring a variant alike.
+- A payload's pattern is not checked, only the shape it sits in: `Ok(Some(x))`
+  against a `Result` is fine whatever the payload's type turns out to be.
+- **`nil` is never impossible.** It is the one value that legitimately turns up
+  where a type says otherwise, so `match n { nil => ..., _ => ... }` guarding
+  against exactly that is defensive rather than wrong.
 
 What is **not** checked in this pass: parameters and `var` bindings without
 annotations, anything requiring flow analysis, and generics — `map(xs, f)`
