@@ -18,7 +18,7 @@ import * as path from 'node:path';
 
 import { NIL, bool, type CallCtx, display, list, map, num, str, type Value } from '@lumen-lang/core';
 import { toJson } from './json.js';
-import { arg, expectFn, expectInt, expectList, expectStr, fn, moduleOf, withSignatures } from './support.js';
+import { arg, expectFn, expectInt, expectList, expectStr, fn, moduleOf, withDocs, withSignatures } from './support.js';
 
 /**
  * Whether this process was started as a server — `lumen serve` rather than
@@ -371,8 +371,28 @@ const SIGNATURES: Readonly<Record<string, string>> = {
   isServer: '() -> Bool',
 };
 
+/** One line each, for `help()` and the generated reference. */
+const DOCS: Readonly<Record<string, string>> = {
+  html: 'A response carrying HTML, with a status of 200 unless given.',
+  text: 'A response carrying plain text, with a status of 200 unless given.',
+  json: 'A response carrying a value as JSON, with a status of 200 unless given.',
+  notFound: 'A 404 response, with a body of "Not Found" unless given.',
+  redirect: 'A response sending the visitor to another location, with a status of 302 unless given.',
+  route: 'One route: methods, a path pattern with `:name` and `*rest` holes, and a handler.',
+  router: 'A handler for `serve` that tries routes in order, answering 404 or 405 for what none match.',
+  escape: 'Text made safe to put inside HTML: `<`, `&` and quotes become entities.',
+  url: "A visitor's link made safe for an `href`; an unlinkable scheme becomes `about:blank`.",
+  form: 'The fields a form submitted, as a Map of the last value under each name.',
+  formAll: 'Every value a form submitted, as a Map of lists, one per name.',
+  file: 'Serve a file from a directory, or a 404; nothing outside `root` or starting with a dot is served.',
+  page: 'Body HTML wrapped in a complete, responsive document with a title and optional style.',
+  serve: 'Start a web server handing every request to the handler, and keep serving until stopped.',
+  isServer: 'Whether the program was started with `lumen serve`.',
+};
+
 export function stdWeb(): Map<string, Value> {
   return withSignatures(
+    withDocs(
     moduleOf(
     fn('html', ['body', { name: 'status', defaultValue: num(200) }], (a, c) =>
       response(
@@ -840,6 +860,8 @@ export function stdWeb(): Map<string, Value> {
 
     /** True when started with `lumen serve`, false under `lumen run`. */
     fn('isServer', [], () => bool(serveMode)),
+    ),
+    DOCS,
     ),
     SIGNATURES,
   );

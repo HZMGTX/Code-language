@@ -17,7 +17,7 @@
  */
 
 import { NIL, list, num, str, type CallCtx, type Value } from '@lumen-lang/core';
-import { Err, Ok, arg, expectInt, expectList, expectStr, fn, moduleOf, withSignatures } from './support.js';
+import { Err, Ok, arg, expectInt, expectList, expectStr, fn, moduleOf, withDocs, withSignatures } from './support.js';
 
 type Provider = 'anthropic' | 'openai' | 'mock';
 
@@ -249,8 +249,18 @@ const SIGNATURES: Readonly<Record<string, string>> = {
   providers: '() -> List<Str>',
 };
 
+/** One line each, for `help()` and the generated reference. */
+const DOCS: Readonly<Record<string, string>> = {
+  chat: 'One question to a model: `Ok(reply)`, or `Err(message)` for no key, no network, or a refusal.',
+  converse: 'A multi-turn conversation from a list of `{ role, content }` messages, answering like `chat`.',
+  message: 'A `{ role, content }` message for `converse`.',
+  provider: 'Which provider will be used, from the environment: anthropic, openai or mock.',
+  providers: 'The providers this build knows about.',
+};
+
 export function stdAi(): Map<string, Value> {
   return withSignatures(
+    withDocs(
     moduleOf(
     /** One-shot question. Returns `Ok(reply)` or `Err(message)`. */
     fn('chat', ['prompt', ...COMMON_PARAMS], async (a, c) => {
@@ -291,6 +301,8 @@ export function stdAi(): Map<string, Value> {
 
     /** The providers this build knows about. */
     fn('providers', [], () => list([str('anthropic'), str('openai'), str('mock')])),
+    ),
+    DOCS,
     ),
     SIGNATURES,
   );

@@ -70,6 +70,11 @@ export const FOREIGN_NAMES: ReadonlyMap<string, string> = new Map([
   ['require', '`import { name } from "./file.lm"` brings in a local module'],
   ['raw_input', '`input(prompt)` reads a line'],
   ['xrange', '`range(n)` counts to n'],
+  // Lumen's own, deliberately outside the prelude: every value has them as a
+  // method, and the bare name is one import away.
+  ['inspect', 'every value has it as a method, `x.inspect()`; the bare name is `import { inspect } from "std/core"`'],
+  ['clone', 'every value has it as a method, `x.clone()`; the bare name is `import { clone } from "std/core"`'],
+  ['isNil', 'every value has it as a method, `x.isNil()`; the bare name is `import { isNil } from "std/core"`'],
 ]);
 
 /**

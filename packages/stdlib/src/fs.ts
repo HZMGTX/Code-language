@@ -9,7 +9,7 @@ import { promises as fsp } from 'node:fs';
 import * as path from 'node:path';
 
 import { NIL, bool, list, map, num, str, type Value } from '@lumen-lang/core';
-import { Err, Ok, arg, expectStr, fn, moduleOf, withSignatures } from './support.js';
+import { Err, Ok, arg, expectStr, fn, moduleOf, withDocs, withSignatures } from './support.js';
 
 /**
  * Turn a Node filesystem error into a message Lumen owns.
@@ -132,8 +132,26 @@ const SIGNATURES: Readonly<Record<string, string>> = {
   walk: '(path: Str) -> Result',
 };
 
+/** One line each, for `help()` and the generated reference. */
+const DOCS: Readonly<Record<string, string>> = {
+  read: 'The whole of a file as text: `Ok(text)`, or `Err(message)`.',
+  write: "Replace a file's contents, creating it and any parent directory it needs.",
+  append: 'Add to the end of a file, creating it and any parent directory it needs.',
+  exists: 'Whether anything is at a path.',
+  list: 'The names directly inside a directory, sorted.',
+  remove: 'Delete a file or a whole directory; a path that is already gone is not an error.',
+  stat: 'What is known about a path: a Map of `size`, `isDir`, `isFile` and `modified`.',
+  isDir: 'Whether a path is a directory.',
+  isFile: 'Whether a path is a file.',
+  copy: 'Copy a file or a whole directory, creating any parent directory the destination needs.',
+  rename: 'Move or rename, creating any parent directory the destination needs.',
+  makeDir: 'Create a directory and any parent it needs; one that already exists is fine.',
+  walk: 'Every file under a directory, recursively, as sorted paths relative to it.',
+};
+
 export function stdFs(): Map<string, Value> {
   return withSignatures(
+    withDocs(
     moduleOf(
     fn('read', ['path'], async (a, c) => {
       const target = expectStr(arg(a, 0), c, 'read(path)');
@@ -341,6 +359,8 @@ export function stdFs(): Map<string, Value> {
         return Err(str(messageOf(error, 'walk', root)));
       }
     }),
+    ),
+    DOCS,
     ),
     SIGNATURES,
   );

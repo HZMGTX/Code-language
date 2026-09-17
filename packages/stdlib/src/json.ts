@@ -1,7 +1,7 @@
 /** `std/json` — JSON encoding and decoding, mapped onto Lumen values. */
 
 import { NIL, bool, list, map, num, str, suggest, type Value, typeName } from '@lumen-lang/core';
-import { Err, Ok, arg, expectNum, expectStr, fn, moduleOf, withSignatures } from './support.js';
+import { Err, Ok, arg, expectNum, expectStr, fn, moduleOf, withDocs, withSignatures } from './support.js';
 
 /** Convert parsed JSON into Lumen values. */
 function fromJson(input: unknown): Value {
@@ -423,6 +423,7 @@ const SIGNATURES: Readonly<Record<string, string>> = {
 
 export function stdJson(): Map<string, Value> {
   return withSignatures(
+    withDocs(
     moduleOf(
     /** Returns `Ok(value)` or `Err(message)` — parsing is never a silent failure. */
     fn('parse', ['text'], (a, c) => {
@@ -469,6 +470,11 @@ export function stdJson(): Map<string, Value> {
       }
       return str(JSON.stringify(data, null, indent));
     }),
+    ),
+    {
+      parse: 'JSON text as a value: `Ok(value)`, or `Err(message)` saying where it went wrong.',
+      stringify: 'A value as JSON text, on one line unless an `indent` is given.',
+    },
     ),
     SIGNATURES,
   );

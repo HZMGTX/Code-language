@@ -8,7 +8,7 @@
  */
 
 import { NIL, bool, inspect, list, map, num, str, type Value } from '@lumen-lang/core';
-import { None, Some, arg, expectNum, expectStr, fn, moduleOf, withSignatures } from './support.js';
+import { None, Some, arg, expectNum, expectStr, fn, moduleOf, withDocs, withSignatures } from './support.js';
 
 /** Deep copy, so mutating the result cannot affect the original. */
 /**
@@ -88,8 +88,21 @@ const SIGNATURES: Readonly<Record<string, string>> = {
   isNil: '(value: Any) -> Bool',
 };
 
+/** One line each, for `help()` and the generated reference. */
+const DOCS: Readonly<Record<string, string>> = {
+  now: 'Milliseconds since the Unix epoch, the instant `std/time` works with.',
+  env: 'An environment variable as an Option: `Some(value)`, or `None` when it is unset.',
+  args: "The command-line arguments after the script's own name.",
+  exit: 'Stop the program with a status code, 0 unless given.',
+  sleep: 'Pause for a number of milliseconds.',
+  inspect: 'A value written the way source would write it, so a string keeps its quotes.',
+  clone: 'A deep copy, so changing the copy leaves the original alone.',
+  isNil: 'Whether a value is `nil`.',
+};
+
 export function stdCore(): Map<string, Value> {
   return withSignatures(
+    withDocs(
     moduleOf(
     /** Milliseconds since the Unix epoch. */
     fn('now', [], (_a, c) => num(c.host.now())),
@@ -146,6 +159,8 @@ export function stdCore(): Map<string, Value> {
     fn('clone', ['value'], (a) => clone(arg(a, 0))),
 
     fn('isNil', ['value'], (a) => bool(arg(a, 0).k === 'nil')),
+    ),
+    DOCS,
     ),
     SIGNATURES,
   );

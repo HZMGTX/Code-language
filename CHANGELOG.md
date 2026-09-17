@@ -773,6 +773,26 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
 
 ### Added
 
+- **Every library function now says what it does to `help()`.** `help(walk)`
+  printed a signature and nothing else, and so did `help(chat)`,
+  `help(stringify)` and seventy-two others — 75 of the library's 249
+  functions: all of `std/core`, `std/math`, `std/json`, `std/fs`, `std/http`,
+  `std/web` and `std/ai`, and `std/map.getOr`. Their authors had written the
+  explanation as a comment above the definition, which is exactly where a
+  person typing `help()` cannot see it, and `docs/stdlib.md` is generated from
+  the same docstrings, so a row there was a signature beside an empty cell.
+
+  Each has one line now, distilled from the implementation rather than the
+  comment where the two differed, and a test derived from the modules holds
+  every native to carrying one: a function added tomorrow without a docstring
+  fails the build on the day it is added. Found by writing a program against
+  those modules and reaching for `help()` the way a beginner would.
+
+- **`inspect`, `clone` and `isNil` say where they live.** They are outside the
+  prelude on purpose, and `inspect(x)` was a bare "not defined". The note now
+  says that every value has them as a method, `x.inspect()`, and that the bare
+  name is one import from `std/core` away.
+
 - **An unclosed bracket says where it opened.** "expected `}` to close this
   block, found end of file" pointed at the end of the file, and the mistake was
   a `{` two hundred lines up that nothing closed — the one line the message

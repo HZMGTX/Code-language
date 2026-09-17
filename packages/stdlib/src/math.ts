@@ -10,7 +10,7 @@ import {
   type NativeValue,
   type Value,
 } from '@lumen-lang/core';
-import { None, Some, arg, expectInt, expectList, expectNum, fn, moduleOf, withSignatures } from './support.js';
+import { None, Some, arg, expectInt, expectList, expectNum, fn, moduleOf, withDocs, withSignatures } from './support.js';
 
 /**
  * Reduce over either a single list or the arguments themselves, so that both
@@ -134,6 +134,38 @@ function mulberry32(seed: number): () => number {
 function nextRandom(): number {
   return generator === undefined ? Math.random() : generator();
 }
+
+/** One line each, for `help()` and the generated reference. */
+const DOCS: Readonly<Record<string, string>> = {
+  abs: 'The distance from zero: `abs(-3)` is 3.',
+  floor: 'Round down to the nearest whole number.',
+  ceil: 'Round up to the nearest whole number.',
+  round: 'Round to the nearest whole number; a half rounds up.',
+  trunc: 'Drop the fraction, toward zero: `trunc(-2.7)` is -2.',
+  sign: '`-1`, `0` or `1`, by the sign of a number.',
+  sin: 'The sine of an angle in radians.',
+  cos: 'The cosine of an angle in radians.',
+  tan: 'The tangent of an angle in radians.',
+  exp: '`E` raised to a power.',
+  asin: 'The angle in radians whose sine this is, for a number from -1 to 1.',
+  acos: 'The angle in radians whose cosine this is, for a number from -1 to 1.',
+  atan: 'The angle in radians whose tangent this is.',
+  cbrt: 'The cube root, which negative numbers have too.',
+  atan2: 'The angle in radians to the point (x, y), with the quadrant right.',
+  hypot: '`sqrt(a*a + b*b)`, without the overflow that spelling can hit.',
+  gcd: 'The greatest common divisor of two whole numbers, always positive.',
+  lcm: 'The least common multiple of two whole numbers; `lcm(n, 0)` is 0.',
+  sqrt: 'The square root; a negative number is an error rather than a NaN.',
+  log: 'The logarithm of `n`, natural unless a `base` is given.',
+  pow: '`base` raised to `exponent`; a negative base needs a whole-number exponent.',
+  clamp: 'Hold `n` within `low` and `high`.',
+  fixed: 'A number as text with exactly `places` decimals: `fixed(4.5)` is "4.50".',
+  random: 'A number from 0 up to, but not including, 1.',
+  seed: 'Make every later `random` reproducible from this seed.',
+  randomInt: 'A whole number from `low` to `high`, both included.',
+  shuffle: 'A shuffled copy of a list; the original is untouched.',
+  choice: 'One element of a list at random, or `None` for an empty list.',
+};
 
 export function stdMath(): Map<string, Value> {
   /**
@@ -369,5 +401,5 @@ export function stdMath(): Map<string, Value> {
   // Not a literal anyone can write: `1e400` is a lexer error, and this is the
   // only way to name the value that comparisons against "no limit" want.
   exports.set('INFINITY', num(Infinity));
-  return withSignatures(exports, SIGNATURES);
+  return withSignatures(withDocs(exports, DOCS), SIGNATURES);
 }

@@ -7,7 +7,7 @@
  */
 
 import { list, map, num, str, typeName, type CallCtx, type Value } from '@lumen-lang/core';
-import { Err, Ok, arg, expectMap, expectStr, fn, moduleOf, withSignatures } from './support.js';
+import { Err, Ok, arg, expectMap, expectStr, fn, moduleOf, withDocs, withSignatures } from './support.js';
 
 const NO_HEADERS: Value = map(new Map());
 
@@ -137,8 +137,16 @@ const SIGNATURES: Readonly<Record<string, string>> = {
   request: '(method: Str, url: Str, body: Any = nil, headers: Map = {}) -> Result',
 };
 
+/** One line each, for `help()` and the generated reference. */
+const DOCS: Readonly<Record<string, string>> = {
+  get: 'GET a URL: `Ok({status, ok, headers, cookies, body})`, or `Err(message)` when no request could be made.',
+  post: 'POST a body to a URL; the answer has the same shape as `get`.',
+  request: 'Any method against a URL, with an optional body; the answer has the same shape as `get`.',
+};
+
 export function stdHttp(): Map<string, Value> {
   return withSignatures(
+    withDocs(
     moduleOf(
     fn('get', ['url', { name: 'headers', defaultValue: NO_HEADERS }], async (a, c) =>
       await send(
@@ -174,6 +182,8 @@ export function stdHttp(): Map<string, Value> {
         );
       },
     ),
+    ),
+    DOCS,
     ),
     SIGNATURES,
   );

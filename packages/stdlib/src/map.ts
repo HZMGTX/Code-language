@@ -221,6 +221,7 @@ export function stdMap(): Map<string, Value> {
       values: 'The values, in insertion order.',
       entries: 'The pairs, as [[key, value], ...].',
       get: 'The value at a key. Some(v), or None if absent.',
+      getOr: 'The value at a key, or `fallback` when the key is absent.',
       has: 'True if the key is present.',
       set: 'A copy with one key set. The original is untouched.',
       remove: 'A copy with one key removed.',
