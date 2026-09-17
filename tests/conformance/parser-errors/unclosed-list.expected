@@ -1,0 +1,7 @@
+error[PA001]: expected `]` to close a list literal, found `}`
+ --> unclosed-list.lm:4:3
+  |
+4 |   }
+  |   ^ expected `]`
+  |
+  = note: it opened here (unclosed-list.lm:2:12)

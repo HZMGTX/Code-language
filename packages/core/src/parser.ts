@@ -211,12 +211,46 @@ export class Parser {
   private expect(kind: TokenKind, context?: string): Token {
     if (this.at(kind)) return this.advance();
     const where = context === undefined ? '' : ' ' + context;
+    const notes = [...(this.habitNotes(kind) ?? []), ...this.openerNote(kind)];
     return this.fail(
       'PA001',
       'expected ' + describe(kind) + where + ', found ' + this.found(this.cur()),
       'expected ' + describe(kind),
-      this.habitNotes(kind),
+      notes.length > 0 ? notes : undefined,
     );
+  }
+
+  /**
+   * Where the bracket a closer would close was opened, when that is on an
+   * earlier line.
+   *
+   * "expected `}` to close this block, found end of file" points at the end
+   * of the file, and the mistake is a `{` two hundred lines up that nothing
+   * closed — the one line the message did not name. Found by walking the
+   * tokens back from here with a depth count, which is exact for the thing it
+   * is used for and needs nothing from the grammar: the nearest unmatched
+   * opener before the cursor is the one this closer was going to close. On the
+   * same line the caret already shows it, and the note would be noise.
+   */
+  private openerNote(closer: TokenKind): Note[] {
+    const opener = closer === ')' ? '(' : closer === ']' ? '[' : closer === '}' ? '{' : undefined;
+    if (opener === undefined) return [];
+    let depth = 0;
+    for (let j = this.i - 1; j >= 0; j -= 1) {
+      const tok = this.tokens[j];
+      if (tok === undefined) break;
+      if (tok.kind === closer) {
+        depth += 1;
+      } else if (tok.kind === opener) {
+        if (depth > 0) {
+          depth -= 1;
+          continue;
+        }
+        if (tok.span.start.line >= this.cur().span.start.line) return [];
+        return [{ message: 'it opened here', span: tok.span }];
+      }
+    }
+    return [];
   }
 
   /**

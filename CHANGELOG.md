@@ -773,6 +773,16 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
 
 ### Added
 
+- **An unclosed bracket says where it opened.** "expected `}` to close this
+  block, found end of file" pointed at the end of the file, and the mistake was
+  a `{` two hundred lines up that nothing closed — the one line the message
+  did not name. `PA001` now carries a note, `it opened here`, with the line
+  and column, whenever the opener is on an earlier line; on the same line the
+  caret already shows it. The opener is found by walking the tokens back with
+  a depth count, which is exact for this and needs nothing from the grammar.
+  The renderer had documented exactly this note in its own example since v0.1,
+  and nothing had ever produced it.
+
 - **What Lumen says when your fingers type Python.** Sixty of the things a
   person arriving from Python writes on their first day were run through the
   language and what it said about each was read. Every one was an error, and

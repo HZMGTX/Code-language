@@ -938,8 +938,9 @@ Every diagnostic carries a stable code, a source span, a caret, and usually a
 note suggesting the fix. When the mistake is a habit from another language —
 `True`, `elif`, `def`, `xs.append(2)`, `f"…"`, `x in xs`, `xs[0:2]` — the note
 names Lumen's spelling of what was meant, and the code is the one the mistake
-always had: nothing becomes an error or stops being one. Codes are grouped by
-phase:
+always had: nothing becomes an error or stops being one. An unclosed `(`, `[`
+or `{` is reported where its closer was expected — often the end of the file —
+with a note pointing at the line where it opened. Codes are grouped by phase:
 
 | Prefix | Phase |
 |---|---|

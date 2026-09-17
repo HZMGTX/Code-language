@@ -4,3 +4,4 @@ error[PA001]: expected `}` to close this block, found end of file
 3 | 
   | ^ expected `}`
   |
+  = note: it opened here (missing-brace.lm:1:13)

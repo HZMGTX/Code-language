@@ -1,0 +1,8 @@
+// The `{` that nothing closes is on line 7. The error is found at the end of
+// the file, which is where every unclosed block is found, and the note says
+// where to look.
+fn b() {
+  print(2)
+}
+fn a() {
+  print(1)
