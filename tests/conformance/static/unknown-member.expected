@@ -4,7 +4,7 @@ error[TY012]: List has no method `append`
 5 | xs.append(3)
   | ^^^^^^^^^ not available here
   |
-  = note: available on List: all, any, at, choice, chunk, clone, concat, contains, count, drop, enumerate, filter, find, first, flatMap, flatten, groupBy, indexOf, insert, inspect, intersperse, isEmpty, isNil, join, last, len, map, maxBy, maximum, minBy, minimum, partition, pop, push, reduce, removeAt, reverse, reversed, scan, shuffle, slice, sort, sortBy, sorted, str, sum, take, type, unique, windows, zip
+  = note: did you mean `push`? `append` is what another language calls it
 
 error[TY012]: List has no method `lenght`
  --> unknown-member.lm:6:7
@@ -52,7 +52,7 @@ error[TY012]: Option has no method `unwrap`
 14 | print(Some(1).unwrap())
    |       ^^^^^^^^^^^^^^ not available here
    |
-   = note: did you mean `unwrapOr`?
+   = note: an Option is taken apart with `match`, or `unwrapOr(fallback)`, or `?` to pass `None` up
 
 error[TY012]: Result has no method `expect`
   --> unknown-member.lm:15:7
@@ -60,7 +60,7 @@ error[TY012]: Result has no method `expect`
 15 | print(Err("e").expect("a value"))
    |       ^^^^^^^^^^^^^^^ not available here
    |
-   = note: available on Result: andThen, clone, err, inspect, isErr, isNil, isOk, map, mapErr, ok, str, type, unwrapOr
+   = note: a Result is taken apart with `match`, or `unwrapOr(fallback)`, or `?` to pass the `Err` up
 
 error[TY012]: Nil has no method `foo`
   --> unknown-member.lm:16:7

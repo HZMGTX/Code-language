@@ -1,0 +1,15 @@
+// Methods another language has. `TY012` reports each before the program runs,
+// and the note names Lumen's spelling — or, where Lumen does the thing another
+// way, says which way.
+let xs = [1, 2, 3]
+print(xs.append(4))
+print(xs.length)
+xs.forEach(fn(x) { print(x) })
+let s = "  hi  "
+print(s.strip())
+print(s.toUpperCase())
+print(s.charAt(0))
+print("a" + 1)
+print("ab" * 3)
+print(Some(1).unwrap())
+print(Ok(1).expect("x"))

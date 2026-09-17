@@ -25,6 +25,7 @@
  *    A map literal in a header must be parenthesised. This mirrors Rust.
  */
 
+import { FOREIGN_KEYWORDS, STRING_PREFIXES } from './hints.js';
 import {
   type Diagnostic,
   type Note,
@@ -214,7 +215,62 @@ export class Parser {
       'PA001',
       'expected ' + describe(kind) + where + ', found ' + this.found(this.cur()),
       'expected ' + describe(kind),
+      this.habitNotes(kind),
     );
+  }
+
+  /**
+   * What the token in the way usually means when the fingers that typed it
+   * learned another language first; see `hints.ts`. The error is unchanged —
+   * `xs[0:2]` really is a `:` where `]` was expected — and gains the one line
+   * that says how Lumen spells it.
+   */
+  private habitNotes(expected: TokenKind): Note[] | undefined {
+    const tok = this.cur();
+    if (tok.kind === 'in') {
+      return [{ message: '`xs.contains(x)` asks whether a list holds a value; `in` only appears in `for x in xs`' }];
+    }
+    if (tok.kind === ':' && expected === ']') {
+      return [{ message: 'a slice is `xs.slice(from, to)`, on a list or a string' }];
+    }
+    if (tok.kind === ':' && expected === '{') {
+      return [{ message: 'a block starts with `{` and ends with `}`; Lumen does not use `:` and indentation' }];
+    }
+    // `f"hi {name}"`: a name pressed against a string, which is never Lumen.
+    const prev = this.tokens[this.i - 1];
+    if (
+      (tok.kind === 'string' || tok.kind === 'template') &&
+      prev !== undefined &&
+      prev.kind === 'ident' &&
+      STRING_PREFIXES.has(prev.text) &&
+      prev.span.end.offset === tok.span.start.offset
+    ) {
+      return [{ message: 'there is no `' + prev.text + '` prefix: every string interpolates, `"hi ${name}"`' }];
+    }
+    return undefined;
+  }
+
+  /**
+   * The same question after a whole statement, where the shape is a bare word
+   * and then a value on the same line: `def f(x):`, `print "hello"`, `try {`.
+   */
+  private habitAfterStatement(stmt: Stmt | undefined): Note[] | undefined {
+    const tok = this.cur();
+    if (tok.kind === 'ident' && tok.text === 'elif') return [{ message: '`elif` is spelled `else if`' }];
+    if (tok.kind === 'if') {
+      return [{ message: 'Lumen\'s `if` is an expression and comes first: `let x = if c { 1 } else { 2 }`' }];
+    }
+    const word = trailingName(stmt);
+    if (word === undefined) return undefined;
+    const foreign = FOREIGN_KEYWORDS.get(word);
+    if (foreign !== undefined) return [{ message: foreign }];
+    // `print "hello"`: a bare name as the whole statement, then a value.
+    const startsAValue =
+      tok.kind === 'string' || tok.kind === 'template' || tok.kind === 'number' || tok.kind === 'ident';
+    if (startsAValue && stmt?.kind === 'ExprStmt') {
+      return [{ message: 'to call `' + word + '`, put its arguments in parentheses: `' + word + '(…)`' }];
+    }
+    return undefined;
   }
 
   private skipNewlines(): void {
@@ -277,17 +333,40 @@ export class Parser {
     throw new ParseAbort();
   }
 
-  /** Skip tokens until something that plausibly starts a new statement. */
+  /**
+   * Skip tokens until something that plausibly starts a new statement.
+   *
+   * A `{ … }` opened past the error is part of what is being skipped. In
+   * `} elif x == 2 { print(2) }` the mistake is `elif`; the block after it is
+   * the body of the thing that failed, and used to be parsed on its own, so
+   * that its closing `}` was then reported as unmatched — a second error for
+   * one slip, and the wrong one to read first. A `}` at depth zero is the
+   * end of the block the error was in, and stays for whoever opened it.
+   */
   private synchronize(): void {
+    let depth = 0;
     // Always make progress, or a malformed token loops forever.
-    if (!this.atAny('newline', 'eof', '}')) this.advance();
+    if (!this.atAny('newline', 'eof', '}')) {
+      if (this.at('{')) depth += 1;
+      this.advance();
+    }
     for (;;) {
-      if (this.atAny('eof', '}')) return;
-      if (this.at('newline')) {
-        this.skipNewlines();
-        return;
+      if (this.at('eof')) return;
+      if (this.at('{')) depth += 1;
+      if (this.at('}')) {
+        if (depth === 0) return;
+        depth -= 1;
+        this.advance();
+        if (depth === 0) return;
+        continue;
       }
-      if (this.atAny(...STMT_START)) return;
+      if (depth === 0) {
+        if (this.at('newline')) {
+          this.skipNewlines();
+          return;
+        }
+        if (this.atAny(...STMT_START)) return;
+      }
       this.advance();
     }
   }
@@ -355,8 +434,9 @@ export class Parser {
       }
       const before = this.i;
       try {
-        stmts.push(this.parseStmt());
-        this.endStatement();
+        const stmt = this.parseStmt();
+        stmts.push(stmt);
+        this.endStatement(stmt);
       } catch (err) {
         if (!(err instanceof ParseAbort)) throw err;
         if (this.diagnostics.length >= MAX_ERRORS) break;
@@ -429,7 +509,7 @@ export class Parser {
   }
 
   /** A statement must be followed by a line break, `;`, `}`, or end of input. */
-  private endStatement(): void {
+  private endStatement(stmt?: Stmt): void {
     if (this.eat(';')) {
       this.skipNewlines();
       return;
@@ -454,7 +534,9 @@ export class Parser {
             { message: 'a `{` after `=>`, or at the start of a statement, opens a block' },
             { message: 'for a map literal there, put it in parentheses: `({ a: 1 })`' },
           ]
-        : [{ message: 'statements in Lumen end at the end of the line; semicolons are optional' }],
+        : (this.habitAfterStatement(stmt) ?? [
+            { message: 'statements in Lumen end at the end of the line; semicolons are optional' },
+          ]),
     );
   }
 
@@ -718,6 +800,15 @@ export class Parser {
 
   private parseImport(): Stmt {
     const start = this.advance(); // import
+    if (this.at('ident')) {
+      // `import math`: the shape of every other language's import.
+      this.fail(
+        'PA001',
+        'expected `{` to start an import list, found ' + this.found(this.cur()),
+        'expected `{`',
+        [{ message: 'an import names what it takes: `import { sqrt } from "std/math"`' }],
+      );
+    }
     this.expect('{', 'to start an import list');
     const specifiers: { name: string; alias: string | undefined; span: Span }[] = [];
     this.inBrackets(() => {
@@ -795,8 +886,9 @@ export class Parser {
       while (!this.at('}') && !this.at('eof')) {
         const before = this.i;
         try {
-          stmts.push(this.parseStmt());
-          this.endStatement();
+          const stmt = this.parseStmt();
+          stmts.push(stmt);
+          this.endStatement(stmt);
         } catch (err) {
           if (!(err instanceof ParseAbort)) throw err;
           if (this.diagnostics.length >= MAX_ERRORS) break;
@@ -1672,4 +1764,21 @@ export function parse(source: string, file = '<input>'): Module {
 export function parseExpression(source: string, file = '<input>'): Expr {
   const tokens = lex(source, file);
   return new Parser(tokens, file, source).parseExpressionEntry();
+}
+
+/**
+ * The bare name a statement ends in, if it ends in one: `def` in `def f(x):`,
+ * `lambda` in `let f = lambda x: x + 1`, `new` in `p = new Point()`.
+ */
+function trailingName(stmt: Stmt | undefined): string | undefined {
+  if (stmt === undefined) return undefined;
+  const expr =
+    stmt.kind === 'ExprStmt'
+      ? stmt.expr.kind === 'AssignExpr'
+        ? stmt.expr.value
+        : stmt.expr
+      : stmt.kind === 'LetDecl' || stmt.kind === 'ReturnStmt'
+        ? stmt.value
+        : undefined;
+  return expr?.kind === 'Ident' ? expr.name : undefined;
 }

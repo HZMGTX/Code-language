@@ -1156,6 +1156,7 @@ error[TY005]: cannot add Str and Num
   |
   = note: `+` joins two Nums, two Strs or two Lists
   = note: to build a string from mixed values use interpolation: "${a}${b}"
+  = note: or turn the other value into text first: `str(n)`
 ```
 
 The `RT016` is a stable code you can search for. When you are stuck, the note at

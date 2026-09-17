@@ -120,3 +120,11 @@ export {
   type ModuleResolver,
   type ResolvedModule,
 } from './interp.js';
+export {
+  FOREIGN_KEYWORDS,
+  FOREIGN_METHODS,
+  FOREIGN_NAMES,
+  STRING_PREFIXES,
+  methodHintNote,
+  type MethodHint,
+} from './hints.js';

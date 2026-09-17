@@ -6,6 +6,7 @@ error[TY005]: cannot add Num and Str
   |
   = note: `+` joins two Nums, two Strs or two Lists
   = note: to build a string from mixed values use interpolation: "${a}${b}"
+  = note: or turn the other value into text first: `str(n)`
 
 error[TY005]: cannot apply `*` to Num and Str
  --> operand-types.lm:9:7
@@ -14,6 +15,7 @@ error[TY005]: cannot apply `*` to Num and Str
   |       ^^^^^ mismatched operands
   |
   = note: `*` wants two Nums
+  = note: `"ab".repeat(3)` repeats a string
 
 error[TY005]: cannot apply `**` to Num and Str
   --> operand-types.lm:10:7

@@ -42,6 +42,7 @@ import type {
   Stmt,
 } from './ast.js';
 import { BUILT_IN_ENUMS } from './ast.js';
+import { FOREIGN_NAMES } from './hints.js';
 import { type Diagnostic, type Note, type Severity, type Span, LumenError } from './diagnostics.js';
 import { checkTypes, type CheckOptions, type Ty } from './types.js';
 import { suggest } from './values.js';
@@ -389,7 +390,7 @@ class Resolver {
     });
   }
 
-  private use(name: string, span: Span): void {
+  private use(name: string, span: Span, assigning = false): void {
     const found =
       this.deferred > 0 ? this.scope.lookupDeferred(name) : this.scope.lookup(name);
     if (found !== undefined) {
@@ -401,6 +402,11 @@ class Resolver {
       this.reference?.({ use: span, declaration: found.span, name, kind: found.kind });
       return;
     }
+    // A well-known word from another language first: `True` is not a slip of
+    // the fingers for anything in scope. Then the nearest name. Then, for a
+    // bare `x = 5`, the fact that a name has to be declared before it can be
+    // assigned to — the interpreter has always said so and this pass never had.
+    const foreign = FOREIGN_NAMES.get(name);
     const hint = suggest(
       name,
       this.deferred > 0 ? this.scope.visibleDeferred() : this.scope.visible(),
@@ -410,7 +416,13 @@ class Resolver {
       '`' + name + '` is not defined',
       span,
       'not found in this scope',
-      hint === undefined ? undefined : ['did you mean `' + hint + '`?'],
+      foreign !== undefined
+        ? [foreign]
+        : hint !== undefined
+          ? ['did you mean `' + hint + '`?']
+          : assigning
+            ? ['declare it first: `let ' + name + ' = …`, or `var ' + name + ' = …` if it will change']
+            : undefined,
     );
     // Declare it so the same typo is not reported at every later use.
     this.scope.declare(name, { mutable: true, span, kind: 'unresolved' });
@@ -1007,7 +1019,7 @@ class Resolver {
       const binding =
         this.deferred > 0 ? this.scope.lookupDeferred(target.name) : this.scope.lookup(target.name);
       if (binding === undefined) {
-        this.use(target.name, target.span);
+        this.use(target.name, target.span, true);
         return;
       }
       if (!binding.mutable && binding.kind !== 'unresolved' && binding.kind !== 'built-in') {

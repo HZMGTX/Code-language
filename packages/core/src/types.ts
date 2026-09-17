@@ -45,6 +45,7 @@ import type {
 } from './ast.js';
 import { BUILT_IN_ENUMS } from './ast.js';
 import { type Diagnostic, type Note, type Severity, type Span } from './diagnostics.js';
+import { FOREIGN_METHODS, methodHintNote } from './hints.js';
 import { parse } from './parser.js';
 import { suggest } from './values.js';
 
@@ -340,6 +341,7 @@ class Checker {
           ? [
               '`+` joins two Nums, two Strs or two Lists',
               'to build a string from mixed values use interpolation: "${a}${b}"',
+              'or turn the other value into text first: `str(n)`',
             ]
           : ['`+` joins two Nums, two Strs or two Lists'],
       );
@@ -348,12 +350,13 @@ class Checker {
 
     if (op === '-' || op === '*' || op === '/' || op === '%' || op === '**') {
       if (left.k === 'num' && right.k === 'num') return;
+      const repeats = op === '*' && ((left.k === 'str' && right.k === 'num') || (left.k === 'num' && right.k === 'str'));
       this.report(
         'TY005',
         'cannot apply `' + op + '` to ' + shown,
         span,
         'mismatched operands',
-        ['`' + op + '` wants two Nums'],
+        repeats ? ['`' + op + '` wants two Nums', '`"ab".repeat(3)` repeats a string'] : ['`' + op + '` wants two Nums'],
       );
       return;
     }
@@ -784,15 +787,20 @@ class Checker {
       return;
     }
 
+    // The same three answers `RT027` gives, in the same order: what another
+    // language calls it, the nearest name, or everything there is.
+    const foreign = FOREIGN_METHODS.get(typeName + '.' + expr.name);
     const hint = suggest(expr.name, available);
     this.report(
       'TY012',
       typeName + ' has no method `' + expr.name + '`',
       expr.span,
       'not available here',
-      hint !== undefined
-        ? ['did you mean `' + hint + '`?']
-        : ['available on ' + typeName + ': ' + available.sort().join(', ')],
+      foreign !== undefined
+        ? [methodHintNote(expr.name, foreign)]
+        : hint !== undefined
+          ? ['did you mean `' + hint + '`?']
+          : ['available on ' + typeName + ': ' + available.sort().join(', ')],
     );
   }
 

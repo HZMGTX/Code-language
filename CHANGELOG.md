@@ -773,6 +773,51 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
 
 ### Added
 
+- **What Lumen says when your fingers type Python.** Sixty of the things a
+  person arriving from Python writes on their first day were run through the
+  language and what it said about each was read. Every one was an error, and
+  every error was *correct* — `print "hello"` really is a string where a line
+  break was expected — and almost none of them said the one thing that person
+  needed, which is Lumen's spelling of what they meant:
+
+  ```text
+  print "hello"         ← to call `print`, put its arguments in parentheses: `print(…)`
+  def add(a, b):        ← functions are declared with `fn`: `fn name(args) { … }`
+  } elif x == 2 {       ← `elif` is spelled `else if`
+  if x == 1:            ← a block starts with `{` and ends with `}`; Lumen does not use `:`
+  f"hi {name}"          ← there is no `f` prefix: every string interpolates, `"hi ${name}"`
+  2 in xs               ← `xs.contains(x)` asks whether a list holds a value
+  xs[0:2]               ← a slice is `xs.slice(from, to)`
+  import math           ← an import names what it takes: `import { sqrt } from "std/math"`
+  let t = True          ← Lumen spells it `true`
+  let n = null          ← `nil` is the missing value
+  int("5")              ← `num(text)` parses a number from text
+  count = 1             ← declare it first: `let count = …`, or `var count = …` if it will change
+  xs.append(2)          ← did you mean `push`? `append` is what another language calls it
+  s.strip()             ← did you mean `trim`?
+  Some(1).unwrap()      ← an Option is taken apart with `match`, or `unwrapOr(fallback)`, or `?`
+  "a" + 1               ← or turn the other value into text first: `str(n)`
+  "ab" * 3              ← `"ab".repeat(3)` repeats a string
+  ```
+
+  Nothing became an error or stopped being one: each keeps the code it always
+  had, and gains one note. The tables live in one place (`hints.ts`) and are
+  consulted before the edit-distance guess, because `True` is not a slip of the
+  fingers for anything in scope — it is a word from somewhere else, and an
+  exact match on a well-known one beats a near match on a local name. A test
+  holds every note to naming only things that exist: every `std/…` module,
+  every name inside an `import { … }`, every prelude function, every method a
+  hint points at — derived from the library, so a renamed export fails the
+  build on the day it is renamed rather than a note three releases later.
+
+  Reading the fixture turned up a second error behind several of the first
+  ones. `} elif x == 2 { print(2) }` was reported twice: once for `elif`, and
+  once more for the `}` at the end, "unmatched", because recovery had skipped
+  to `print(2)` and parsed the block's tail on its own. A `{ … }` opened past
+  the error is now skipped as one unit, since it is the body of the thing that
+  failed. Two fixtures that had pinned the same cascade after a map literal in
+  a header lost it as well.
+
 - **The language server gained find-references, rename, document highlight and
   signature help.** All four work by **identity** rather than by name: the
   resolver says where each use was declared, so the set is exactly the uses

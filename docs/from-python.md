@@ -612,6 +612,53 @@ vanished because the last expression in a body is already the value.
 Nothing here was a rewrite. That is the usual experience: the shape of a Python
 script survives, and the edits are local.
 
+## What Lumen says when your fingers type Python
+
+You will type Python for a while. Every one of these is an error, and each
+error tells you Lumen's spelling of what you meant:
+
+```lumen
+let t = True
+```
+
+```
+error[RS001]: `True` is not defined
+ --> habits.lm:1:9
+  |
+1 | let t = True
+  |         ^^^^ not found in this scope
+  |
+  = note: Lumen spells it `true`
+```
+
+| You wrote | Lumen says |
+|---|---|
+| `print "hello"` | to call `print`, put its arguments in parentheses: `print(…)` |
+| `def add(a, b):` | functions are declared with `fn`: `fn name(args) { … }` |
+| `class Point:` | Lumen has structs instead of classes: `struct Name { field: Type }` |
+| `lambda x: x + 1` | an anonymous function is `fn(x) { x + 1 }` |
+| `if x == 1:` | a block starts with `{` and ends with `}`; Lumen does not use `:` and indentation |
+| `} elif x == 2 {` | `elif` is spelled `else if` |
+| `a if c else b` | Lumen's `if` is an expression and comes first: `let x = if c { 1 } else { 2 }` |
+| `try:` / `raise` | Lumen has no exceptions: a failure is a `Result` value, and `?` passes it up |
+| `f"hi {name}"` | there is no `f` prefix: every string interpolates, `"hi ${name}"` |
+| `2 in xs` | `xs.contains(x)` asks whether a list holds a value |
+| `xs[0:2]` | a slice is `xs.slice(from, to)`, on a list or a string |
+| `import math` | an import names what it takes: `import { sqrt } from "std/math"` |
+| `null` | `nil` is the missing value |
+| `int("5")` | `num(text)` parses a number from text |
+| `dict()`, `list()` | `{}` is an empty map; `[]` is an empty list |
+| `count = 1` before any `let` | declare it first: `let count = …`, or `var count = …` if it will change |
+| `xs.append(2)` | did you mean `push`? |
+| `s.strip()` | did you mean `trim`? |
+| `Some(1).unwrap()` | an Option is taken apart with `match`, or `unwrapOr(fallback)`, or `?` |
+| `"a" + 1` | turn the other value into text first: `str(n)` — or interpolate, `"a${n}"` |
+| `"ab" * 3` | `"ab".repeat(3)` repeats a string |
+
+None of these changed what is an error. `if x = 2 { … }` did: it used to run,
+assign, and take the branch every time, and is now `RS013` with "did you mean
+`==`?" — see §7.5 of the spec.
+
 ## Where next
 
 - [tour.md](tour.md) — the language in ten minutes, without the Python framing

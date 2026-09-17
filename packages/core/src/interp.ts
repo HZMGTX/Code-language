@@ -24,6 +24,7 @@ import type {
   Stmt,
 } from './ast.js';
 import { LumenError, type Diagnostic, type Note, type Span } from './diagnostics.js';
+import { FOREIGN_METHODS, FOREIGN_NAMES, methodHintNote } from './hints.js';
 import { parse } from './parser.js';
 import {
   codePointCount,
@@ -659,13 +660,14 @@ export class Interpreter {
   private lookupName(expr: Extract<Expr, { kind: 'Ident' }>, env: Env): Value {
     const slot = env.lookup(expr.name);
     if (slot === undefined) {
+      const foreign = FOREIGN_NAMES.get(expr.name);
       const hint = suggest(expr.name, env.visibleNames());
       this.fail(
         'RT005',
         '`' + expr.name + '` is not defined',
         expr.span,
         'not found in this scope',
-        hint === undefined ? undefined : ['did you mean `' + hint + '`?'],
+        foreign !== undefined ? [foreign] : hint === undefined ? undefined : ['did you mean `' + hint + '`?'],
       );
     }
     return slot.value;
@@ -1304,17 +1306,20 @@ export class Interpreter {
         const method = this.lookupMethod(typeName(target), name, target);
         if (method !== undefined) return method;
         const available = this.methodNames(typeName(target));
+        const foreign = FOREIGN_METHODS.get(typeName(target) + '.' + name);
         const hint = suggest(name, available);
         return this.fail(
           'RT027',
           typeName(target) + ' has no method `' + name + '`',
           span,
           'not available here',
-          hint !== undefined
-            ? ['did you mean `' + hint + '`?']
-            : available.length > 0
-              ? ['available on ' + typeName(target) + ': ' + available.sort().join(', ')]
-              : undefined,
+          foreign !== undefined
+            ? [methodHintNote(name, foreign)]
+            : hint !== undefined
+              ? ['did you mean `' + hint + '`?']
+              : available.length > 0
+                ? ['available on ' + typeName(target) + ': ' + available.sort().join(', ')]
+                : undefined,
         );
       }
     }
@@ -1413,13 +1418,18 @@ export class Interpreter {
     if (target.kind === 'Ident') {
       const slot = env.lookup(target.name);
       if (slot === undefined) {
+        const foreign = FOREIGN_NAMES.get(target.name);
         const hint = suggest(target.name, env.visibleNames());
         this.fail(
           'RT005',
           '`' + target.name + '` is not defined',
           target.span,
           'not found in this scope',
-          hint === undefined ? ['declare it first with `let` or `var`'] : ['did you mean `' + hint + '`?'],
+          foreign !== undefined
+            ? [foreign]
+            : hint === undefined
+              ? ['declare it first with `let` or `var`']
+              : ['did you mean `' + hint + '`?'],
         );
       }
       if (!slot.mutable) {

@@ -1,0 +1,79 @@
+error[RS001]: `True` is not defined
+ --> python-names.lm:3:9
+  |
+3 | let t = True
+  |         ^^^^ not found in this scope
+  |
+  = note: Lumen spells it `true`
+
+error[RS001]: `False` is not defined
+ --> python-names.lm:4:9
+  |
+4 | let f = False
+  |         ^^^^^ not found in this scope
+  |
+  = note: Lumen spells it `false`
+
+error[RS001]: `null` is not defined
+ --> python-names.lm:5:9
+  |
+5 | let n = null
+  |         ^^^^ not found in this scope
+  |
+  = note: `nil` is the missing value
+
+error[RS001]: `dict` is not defined
+ --> python-names.lm:6:9
+  |
+6 | let d = dict()
+  |         ^^^^ not found in this scope
+  |
+  = note: `{}` is an empty map, and `{ a: 1 }` a full one
+
+error[RS001]: `list` is not defined
+ --> python-names.lm:7:10
+  |
+7 | let xs = list()
+  |          ^^^^ not found in this scope
+  |
+  = note: `[]` is an empty list
+
+error[RS001]: `int` is not defined
+ --> python-names.lm:8:7
+  |
+8 | print(int("5"))
+  |       ^^^ not found in this scope
+  |
+  = note: `num(text)` parses a number from text; a Num needs no other conversion
+
+error[RS001]: `println` is not defined
+ --> python-names.lm:9:1
+  |
+9 | println("x")
+  | ^^^^^^^ not found in this scope
+  |
+  = note: `print(...)` writes a line
+
+error[RS001]: `count` is not defined
+  --> python-names.lm:10:1
+   |
+10 | count = 1
+   | ^^^^^ not found in this scope
+   |
+   = note: declare it first: `let count = …`, or `var count = …` if it will change
+
+error[RS001]: `pass` is not defined
+  --> python-names.lm:11:10
+   |
+11 | fn g() { pass }
+   |          ^^^^ not found in this scope
+   |
+   = note: an empty block is written `{ }`
+
+error[RS001]: `length` is not defined
+  --> python-names.lm:12:7
+   |
+12 | print(length("abc"))
+   |       ^^^^^^ not found in this scope
+   |
+   = note: `len(x)`, or `x.len()`

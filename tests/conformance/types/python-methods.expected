@@ -1,0 +1,82 @@
+error[TY012]: List has no method `append`
+ --> python-methods.lm:5:7
+  |
+5 | print(xs.append(4))
+  |       ^^^^^^^^^ not available here
+  |
+  = note: did you mean `push`? `append` is what another language calls it
+
+error[TY012]: List has no method `length`
+ --> python-methods.lm:6:7
+  |
+6 | print(xs.length)
+  |       ^^^^^^^^^ not available here
+  |
+  = note: did you mean `len`? `length` is what another language calls it
+
+error[TY012]: List has no method `forEach`
+ --> python-methods.lm:7:1
+  |
+7 | xs.forEach(fn(x) { print(x) })
+  | ^^^^^^^^^^ not available here
+  |
+  = note: loop instead: `for x in xs { … }`, or `xs.map(f)` for a new list
+
+error[TY012]: Str has no method `strip`
+ --> python-methods.lm:9:7
+  |
+9 | print(s.strip())
+  |       ^^^^^^^ not available here
+  |
+  = note: did you mean `trim`? `strip` is what another language calls it
+
+error[TY012]: Str has no method `toUpperCase`
+  --> python-methods.lm:10:7
+   |
+10 | print(s.toUpperCase())
+   |       ^^^^^^^^^^^^^ not available here
+   |
+   = note: did you mean `upper`? `toUpperCase` is what another language calls it
+
+error[TY012]: Str has no method `charAt`
+  --> python-methods.lm:11:7
+   |
+11 | print(s.charAt(0))
+   |       ^^^^^^^^ not available here
+   |
+   = note: index it: `s[i]`
+
+error[TY005]: cannot add Str and Num
+  --> python-methods.lm:12:7
+   |
+12 | print("a" + 1)
+   |       ^^^^^^^ mismatched operands
+   |
+   = note: `+` joins two Nums, two Strs or two Lists
+   = note: to build a string from mixed values use interpolation: "${a}${b}"
+   = note: or turn the other value into text first: `str(n)`
+
+error[TY005]: cannot apply `*` to Str and Num
+  --> python-methods.lm:13:7
+   |
+13 | print("ab" * 3)
+   |       ^^^^^^^^ mismatched operands
+   |
+   = note: `*` wants two Nums
+   = note: `"ab".repeat(3)` repeats a string
+
+error[TY012]: Option has no method `unwrap`
+  --> python-methods.lm:14:7
+   |
+14 | print(Some(1).unwrap())
+   |       ^^^^^^^^^^^^^^ not available here
+   |
+   = note: an Option is taken apart with `match`, or `unwrapOr(fallback)`, or `?` to pass `None` up
+
+error[TY012]: Result has no method `expect`
+  --> python-methods.lm:15:7
+   |
+15 | print(Ok(1).expect("x"))
+   |       ^^^^^^^^^^^^ not available here
+   |
+   = note: a Result is taken apart with `match`, or `unwrapOr(fallback)`, or `?` to pass the `Err` up
