@@ -1,4 +1,4 @@
-error[RT027]: Str has no method `nope`
+error[TY012]: Str has no method `nope`
  --> errors.lm:1:7
   |
 1 | print("abc".nope())

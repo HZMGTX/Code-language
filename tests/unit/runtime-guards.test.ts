@@ -20,7 +20,9 @@
  * runs — and it also means `RT021` and `RT023` can no longer be reached through
  * the CLI at all. A check that moves earlier takes its run-time twin out of
  * every test that covered it, which is an argument for testing the layer
- * directly rather than through whatever happens to reach it.
+ * directly rather than through whatever happens to reach it. `TY012` then did
+ * the same to `RT024` and `RT027`: every fixture that had reached them by
+ * running a typo stops at the checker now, and they are here instead.
  *
  * Nothing here found a defect. Each message is Lumen's own words, names the
  * thing that is wrong, and points at it. That is worth knowing and worth
@@ -66,6 +68,12 @@ const GUARDS: readonly Guard[] = [
     source: 'struct P { x: Num }\nlet p = P { x: 1 }\nprint(p.nope)',
     code: 'RT024',
     says: /`P` has no field `nope`/u,
+  },
+  {
+    what: 'a method the type does not have',
+    source: 'print([1].nope())',
+    code: 'RT027',
+    says: /List has no method `nope`/u,
   },
   {
     what: 'a struct literal for something that is not a struct',

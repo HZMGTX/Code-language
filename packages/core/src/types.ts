@@ -29,6 +29,7 @@
  *   TY009  a match arm the subject's type can never produce
  *   TY010  a statement whose only call answers with a value nothing takes
  *   TY011  an indexing that cannot work, when both sides are known
+ *   TY012  a member the receiver's type does not have
  */
 
 import type {
@@ -45,6 +46,7 @@ import type {
 import { BUILT_IN_ENUMS } from './ast.js';
 import { type Diagnostic, type Note, type Severity, type Span } from './diagnostics.js';
 import { parse } from './parser.js';
+import { suggest } from './values.js';
 
 // ------------------------------------------------------------------- types
 
@@ -243,6 +245,7 @@ class Checker {
   private readonly enums = new Map<string, readonly string[]>();
   /** `"Str.upper"` to the type of `x.upper`, with the receiver already removed. */
   private readonly methods: ReadonlyMap<string, Ty>;
+  private readonly methodNames: ReadonlyMap<string, ReadonlySet<string>> | undefined;
   /** What each described module exports, so an imported name has a type. */
   private readonly moduleExports: ReadonlyMap<string, ReadonlyMap<string, Ty>>;
   /** Where to send every type derived, when anybody wants them. */
@@ -264,6 +267,8 @@ class Checker {
 
   constructor(options: CheckOptions = {}) {
     this.methods = options.methods ?? new Map();
+    // Usable only when it says what every value has; see `CheckOptions`.
+    this.methodNames = options.methodNames?.has(UNIVERSAL) ? options.methodNames : undefined;
     this.moduleExports = options.moduleExports ?? new Map();
     this.record = options.record;
     this.effectful = options.effectful ?? new Set();
@@ -729,12 +734,81 @@ class Checker {
     }
   }
 
+  /**
+   * `TY012`: a member the receiver's type does not have.
+   *
+   * `RT024` and `RT027` have always said this at run time, and `RS001` has
+   * said the same of a bare name since the resolver existed — so a typo in
+   * `xs.pussh(2)` was the one kind of typo a program had to run to find, and
+   * the branch it sat on had to run. Now that the checker knows what `xs` is,
+   * the question is asked a pass earlier, with the same answer.
+   *
+   * Existence is asked of `methodNames` and never of `methods`: a method with
+   * no signature is absent from `methods` and works at run time. Without the
+   * tables this says nothing.
+   *
+   * What is mirrored is `readMember`, branch for branch, so the two can never
+   * disagree about what a value has. A struct's own field wins, then its
+   * type's table, then the methods every value has; every other type has only
+   * the tables. A `Map` is left alone, because a missing key reads as `nil` by
+   * design, and so is `x?.name` on a `nil`, which reads nothing at all.
+   */
+  private checkMember(target: Ty, expr: Extract<Expr, { kind: 'MemberExpr' }>): void {
+    const tables = this.methodNames;
+    if (tables === undefined) return;
+    if (target.k === 'any' || target.k === 'map') return;
+    if (expr.optional && target.k === 'nil') return;
+    const typeName = typeNameOf(target);
+    if (typeName === undefined) return;
+
+    const available = [...new Set([...(tables.get(typeName) ?? []), ...(tables.get(UNIVERSAL) ?? [])])];
+    if (available.includes(expr.name)) return;
+
+    if (target.k === 'struct') {
+      const info = this.structs.get(target.name);
+      // A struct this file did not declare has fields this pass cannot see.
+      if (info === undefined) return;
+      const fields = [...info.fields.keys()];
+      const hint = suggest(expr.name, [...fields, ...available]);
+      this.report(
+        'TY012',
+        '`' + target.name + '` has no field `' + expr.name + '`',
+        expr.span,
+        'unknown field',
+        hint !== undefined
+          ? ['did you mean `' + hint + '`?']
+          : fields.length > 0
+            ? ['its fields are: ' + fields.join(', ')]
+            : ['it has no fields'],
+      );
+      return;
+    }
+
+    const hint = suggest(expr.name, available);
+    this.report(
+      'TY012',
+      typeName + ' has no method `' + expr.name + '`',
+      expr.span,
+      'not available here',
+      hint !== undefined
+        ? ['did you mean `' + hint + '`?']
+        : ['available on ' + typeName + ': ' + available.sort().join(', ')],
+    );
+  }
+
   private fnBody(params: readonly Param[], ret: TypeExpr | undefined, body: Block): void {
     const savedScope = this.scope;
     const savedReturn = this.returnTy;
     this.scope = new Scope(savedScope);
     this.returnTy = this.toTy(ret);
-    for (const param of params) this.scope.declare(param.name, this.toTy(param.type));
+    // A rest parameter's annotation describes each argument it collects; the
+    // binding itself is always the list of them. Declared as `Str`, `..parts`
+    // was `Str` inside the body — so `parts.join(" ")` looked like a method
+    // `Str` does not have, which `TY012` was the first check to say out loud.
+    for (const param of params) {
+      const each = this.toTy(param.type);
+      this.scope.declare(param.name, param.rest ? { k: 'list', of: each } : each);
+    }
     // Inside the body's scope, not after it: see `block`.
     this.block(body, () => this.checkImplicitReturn(body));
     this.scope = savedScope;
@@ -1010,7 +1084,10 @@ class Checker {
           const field = info?.fields.get(expr.name);
           if (field !== undefined) return field;
         }
-        return this.methodTy(target, expr.name) ?? ANY;
+        const method = this.methodTy(target, expr.name);
+        if (method !== undefined) return method;
+        this.checkMember(target, expr);
+        return ANY;
       }
 
       case 'AssignExpr': {
@@ -1375,6 +1452,17 @@ export interface CheckOptions {
    * every value is keyed `"*.str"`.
    */
   readonly methods?: ReadonlyMap<string, Ty>;
+  /**
+   * Every method each type has, keyed by the same type name as `methods`, with
+   * the ones every value has under `UNIVERSAL`.
+   *
+   * `methods` cannot answer "does this method exist": a method nobody has
+   * written a signature for is absent from it and works at run time. So
+   * existence is asked of this map instead, which is the interpreter's own
+   * tables by another route. Without it, or without a `UNIVERSAL` entry,
+   * `TY012` says nothing — an incomplete table would call working code a typo.
+   */
+  readonly methodNames?: ReadonlyMap<string, ReadonlySet<string>>;
   /**
    * What each module exports and the type of each, keyed by module path.
    *

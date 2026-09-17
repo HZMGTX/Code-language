@@ -121,7 +121,7 @@ fn problems(root, moves) {
   // rename tool and a shredder.
   let leaving = of(moves.map(fn(m) { normalize(m.from) }))
   for move in moves {
-    if isFile(move.to) and !leaving.has(normalize(move.to)) {
+    if isFile(move.to) and !leaving.contains(normalize(move.to)) {
       found = found.push("${base(move.to)} already exists and is not being moved")
     }
   }

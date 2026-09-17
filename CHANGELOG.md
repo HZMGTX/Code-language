@@ -707,6 +707,70 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   expression, where a name could also begin, so they genuinely keep the grammar
   unambiguous.
 
+- **`RS013`: a condition that assigns instead of comparing.**
+
+  ```text
+  var x = 1
+  if x = 2 { print("always") }     ← error[RS013]: did you mean `==`?
+  ```
+
+  Assignment is an expression, so this was a legal program: it assigned, `2`
+  was truthy, and the branch ran every time. Nothing said a word. It was found
+  by writing sixty of the mistakes a person arriving from Python makes and
+  reading what Lumen said about each — most of the answers were right, and
+  this was the one that was silent.
+
+  An error rather than a warning for the reason `RS008` is one: the program
+  runs and does something certainly wrong. Only the condition itself is looked
+  at, seen through `not` and `and`/`or`, so `while (line = next()) != nil`
+  keeps its assignment inside a comparison and is left alone. The target is
+  then resolved as a *read* rather than an assignment, because a second
+  diagnostic — `RS005`, about a `let` the program never meant to assign to —
+  is the wrong one to act on.
+
+  Writing the fixture turned up that `if a and x = 4` is not this at all: `=`
+  binds loosest, so it is an assignment to `a and x`, which `PA008` refuses.
+  The parser knows when it is inside a control-flow header, so that note now
+  says `==` too.
+
+- **`TY012`: a member the receiver's type does not have, said a pass earlier.**
+
+  ```text
+  let xs = [1, 2]
+  xs.append(3)          ← error[TY012]: List has no method `append`
+  xs.pussh(3)           ← did you mean `push`?
+  Some(1).unwrap()      ← did you mean `unwrapOr`?
+  p.z                   ← `P` has no field `z` — did you mean `x`?
+  ```
+
+  Each was `RT027` or `RT024` at run time, with the same suggestion — and only
+  on the branch that ran. `RS001` has reported a misspelled *name* before the
+  program runs since the resolver existed; a misspelled *method* was the one
+  kind of typo a program still had to run to find. With the standard library
+  typed the checker knows what `xs` is, so it asks the same question of the
+  same tables.
+
+  The tables are the point. The checker's method map holds only the methods
+  somebody wrote a signature for, and `Num.max` has none and works — a check
+  that read existence off the signatures would have called `3.max(5)` a typo.
+  So the interpreter hands over its own tables as names, and the check mirrors
+  `readMember` branch for branch: a struct's field, then its type's table, then
+  the five every value has. A `Map` is left alone, because a missing key reads
+  as `nil` by design; anything `Any` — every `var`, every parameter — is
+  trusted, as always. A unit test walks every method on every table through
+  the checker and requires silence, so a table the checker cannot see fails
+  the build rather than a program.
+
+  Its first run over the repository found two things. A rest parameter was
+  bound inside its function as its annotation rather than as a list of it, so
+  `..parts: Str` made `parts.join(" ")` look like a method `Str` does not have
+  — a checker bug that had been there since rest parameters were typed, and
+  that nothing had been in a position to say out loud. And `examples/rename.lm`
+  called `has` on a list: a set from `std/set` *is* a `List`, whose method is
+  `contains`, and the branch that would have failed was one the demo never
+  took. The example ran clean every day and would have failed the first person
+  to rename a file onto another.
+
 ### Added
 
 - **The language server gained find-references, rename, document highlight and

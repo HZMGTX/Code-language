@@ -476,7 +476,8 @@ does have listed. A worse error is not worth the convenience.
 
 This is a calling convention, not an object model: there is no inheritance, no
 `self`, and no dynamic dispatch. A method that does not exist is `RT027`, with a
-suggestion when one is close.
+suggestion when one is close — or `TY012` before the program runs, when the
+checker knows what the receiver is.
 
 ### 4.8 Conditionals
 
@@ -612,6 +613,7 @@ Annotations are **checked where they are written**, before the program runs:
 | `TY009` | A `match` arm names a pattern the subject's type can never produce |
 | `TY010` | A statement's only call answers with a value nothing takes — a **warning** |
 | `TY011` | An index cannot be one, or the thing indexed cannot be |
+| `TY012` | A member the receiver's type does not have |
 
 `TY005` speaks only when **both** operand types are known. `1 - "x"` is reported;
 `a - "x"` for an unannotated `a` is not, because `a` is `Any`. That restraint is
@@ -639,6 +641,26 @@ A compound assignment is an operator *as well as* a store, so `total += "x"` on 
 `Num` is reported by `TY005` for the operands. An unannotated `var` is `Any`, so
 reassigning it to another type stays silent and stays legal — a `var` really can
 hold anything, and nothing about it promised otherwise.
+
+`TY012` is `RT027` and `RT024` asked a pass earlier. `xs.pussh(2)` on a `List`
+and `p.z` on a struct with no such field have always failed at run time, with a
+suggestion — but only on the branch that ran. When the checker knows the
+receiver's type it asks the same question of the same tables, and answers with
+the same suggestion:
+
+```text
+let xs = [1, 2]
+xs.append(3)        TY012: List has no method `append` — available on List: …
+xs.pussh(3)         TY012: List has no method `pussh` — did you mean `push`?
+```
+
+It mirrors what the interpreter does branch for branch, so the two can never
+disagree about what a value has: a struct's own field wins, then its type's
+table, then the five methods every value has, and every other type has only the
+tables. A `Map` is left alone, because a missing key reads as `nil` by design;
+so is anything `Any`, which is every `var` and every parameter. The tables are
+the interpreter's own, handed over as data, and a method with no signature is
+still on them — `3.max(5)` is not a typo.
 
 The checking is **gradual**, and one rule makes it so: anything the checker
 cannot determine has type `Any`, and `Any` is compatible with everything in
@@ -811,9 +833,22 @@ program uses can be resolved without running it.
 | `RS010` | An `import` names a module that does not exist |
 | `RS011` | A binding is never read — a **warning**, not an error |
 | `RS012` | A statement can never run — a **warning**, not an error |
+| `RS013` | A condition assigns instead of comparing |
 
 The value is that a mistake is reported whether or not execution reaches it: a
 typo on a branch that never runs is still a typo.
+
+`RS013` is `=` written where `==` was meant. Assignment is an expression, so
+`if x = 2 { … }` is a legal program: it assigns, `2` is truthy, and the branch
+runs every time. That is never what was meant — a test that wanted the
+assignment as well would be two lines — so it is an error for the reason
+`RS008` is one: the program runs and does something certainly wrong. Only the
+condition itself is looked at, seen through `not` and `and`/`or`, which are how
+a condition is built from smaller ones. `while (line = next()) != nil` keeps its
+assignment inside a comparison and is left alone. `if a and x = 4` is not this
+at all: `=` binds loosest, so it is an assignment to `a and x`, which `PA008`
+refuses — with the same suggestion, since the parser can tell it is inside a
+condition.
 
 `RS012` is that idea turned around: a statement the program can never reach at
 all. It is almost always a misplaced `return` or a leftover from an edit, and

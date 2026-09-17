@@ -19,6 +19,7 @@
  *   RS010  an import from a module that does not exist
  *   RS011  a binding that is never read — a **warning**, not an error
  *   RS012  a statement that can never run — a **warning**, not an error
+ *   RS013  an assignment written where a condition was expected
  *
  * The guiding rule is **no false positives**. A check that rejects a valid
  * program is worse than one that misses an invalid one, so anything the
@@ -29,6 +30,7 @@
  */
 
 import type {
+  AssignExpr,
   Block,
   EnumDecl,
   Expr,
@@ -414,6 +416,64 @@ class Resolver {
     this.scope.declare(name, { mutable: true, span, kind: 'unresolved' });
   }
 
+  /**
+   * `RS013`: a condition that assigns instead of comparing.
+   *
+   * `if x = 2 { … }` is a legal program — assignment is an expression, and `2`
+   * is truthy — so it runs, assigns, and takes the branch every time. That is
+   * never what was meant: a test that wanted the assignment as well would be
+   * written as two lines. Every language with both `=` and `==` has this
+   * trap, and the ones that closed it did so here, at the condition, rather
+   * than by taking the expression away.
+   *
+   * An error rather than a warning for the reason `RS008` is one: the program
+   * runs, and does something certainly wrong. Only the condition itself is
+   * looked at, seen through `not` and `and`/`or`, which are the ways a
+   * condition is built. `while (line = next()) != nil` keeps its assignment
+   * inside a comparison and is left alone.
+   */
+  private condition(expr: Expr): void {
+    const assigned = assignmentIn(expr);
+    if (assigned === undefined) {
+      this.expr(expr);
+      return;
+    }
+    this.report(
+      'RS013',
+      'this condition assigns instead of comparing',
+      assigned.span,
+      assigned.op === '=' ? '`=` assigns; `==` compares' : '`' + assigned.op + '` assigns',
+      assigned.op === '='
+        ? ['did you mean `==`?', 'to assign and then test the value, do it on two lines']
+        : ['a condition is a test; put the assignment on its own line'],
+    );
+    // Resolve what the condition reads, and read the target rather than assign
+    // to it: an `RS005` about a `let` the program never meant to assign to
+    // would be a second diagnostic for the one mistake, and the wrong one to
+    // act on.
+    this.conditionReads(expr);
+  }
+
+  /** `expr` as a test would read it: every assignment in it as a comparison. */
+  private conditionReads(expr: Expr): void {
+    switch (expr.kind) {
+      case 'AssignExpr':
+        this.expr(expr.target);
+        this.expr(expr.value);
+        return;
+      case 'Unary':
+        if (expr.op === '-') this.expr(expr);
+        else this.conditionReads(expr.operand);
+        return;
+      case 'Logical':
+        this.conditionReads(expr.left);
+        this.conditionReads(expr.right);
+        return;
+      default:
+        this.expr(expr);
+    }
+  }
+
   // ------------------------------------------------------------------ module
 
   resolveModule(module: Module): readonly Diagnostic[] {
@@ -704,7 +764,7 @@ class Resolver {
         return;
 
       case 'WhileStmt':
-        this.expr(stmt.condition);
+        this.condition(stmt.condition);
         this.loops += 1;
         this.block(stmt.body);
         this.loops -= 1;
@@ -901,7 +961,7 @@ class Resolver {
         return;
 
       case 'IfExpr':
-        this.expr(expr.condition);
+        this.condition(expr.condition);
         this.block(expr.then);
         if (expr.otherwise !== undefined) {
           if (expr.otherwise.kind === 'Block') this.block(expr.otherwise);
@@ -976,7 +1036,7 @@ class Resolver {
     arms.forEach((arm, index) => {
       this.pushScope();
       this.pattern(arm.pattern);
-      if (arm.guard !== undefined) this.expr(arm.guard);
+      if (arm.guard !== undefined) this.condition(arm.guard);
       this.expr(arm.body);
       this.popScope();
 
@@ -1175,4 +1235,26 @@ export function checkModule(
   // between the two: a warning must never stop a program that works. A caller
   // that ignores them behaves exactly as it did before they existed.
   return [...scopeProblems, ...typeProblems].filter((d) => d.severity !== 'error');
+}
+
+/**
+ * The assignment a condition is, if it is one, looking through the operators
+ * that build a condition out of smaller ones.
+ *
+ * `!` and `not` wrap a test; `and` and `or` join two. An assignment under any
+ * of those is still the whole of what is being tested on that side. Under a
+ * comparison it is not — `(x = f()) != nil` tests the comparison — so `Binary`
+ * is deliberately not looked through.
+ */
+function assignmentIn(expr: Expr): AssignExpr | undefined {
+  switch (expr.kind) {
+    case 'AssignExpr':
+      return expr;
+    case 'Unary':
+      return expr.op === '-' ? undefined : assignmentIn(expr.operand);
+    case 'Logical':
+      return assignmentIn(expr.left) ?? assignmentIn(expr.right);
+    default:
+      return undefined;
+  }
 }

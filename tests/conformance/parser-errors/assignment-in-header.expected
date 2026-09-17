@@ -1,0 +1,15 @@
+error[PA008]: cannot assign to this expression
+ --> assignment-in-header.lm:4:4
+  |
+4 | if x > 0 and x = 4 { print("always") }
+  |    ^^^^^^^^^^^ not a place that can hold a value
+  |
+  = note: did you mean `==`? `=` assigns, and takes everything before it as the target
+  = note: assignment targets are variables, fields, index expressions, or a list of those: `[a, b] = [b, a]`
+
+error[PA014]: unmatched `}`
+ --> assignment-in-header.lm:4:38
+  |
+4 | if x > 0 and x = 4 { print("always") }
+  |                                      ^ no block is open here
+  |

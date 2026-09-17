@@ -1,0 +1,52 @@
+error[RS013]: this condition assigns instead of comparing
+ --> assignment-in-condition.lm:5:4
+  |
+5 | if x = 2 { print("always") }
+  |    ^^^^^ `=` assigns; `==` compares
+  |
+  = note: did you mean `==`?
+  = note: to assign and then test the value, do it on two lines
+
+error[RS013]: this condition assigns instead of comparing
+ --> assignment-in-condition.lm:6:7
+  |
+6 | while x = 0 { break }
+  |       ^^^^^ `=` assigns; `==` compares
+  |
+  = note: did you mean `==`?
+  = note: to assign and then test the value, do it on two lines
+
+error[RS013]: this condition assigns instead of comparing
+ --> assignment-in-condition.lm:7:9
+  |
+7 | if not (x = 3) { print("never") }
+  |         ^^^^^ `=` assigns; `==` compares
+  |
+  = note: did you mean `==`?
+  = note: to assign and then test the value, do it on two lines
+
+error[RS013]: this condition assigns instead of comparing
+ --> assignment-in-condition.lm:8:15
+  |
+8 | if x > 0 and (x = 4) { print("always") }
+  |               ^^^^^ `=` assigns; `==` compares
+  |
+  = note: did you mean `==`?
+  = note: to assign and then test the value, do it on two lines
+
+error[RS013]: this condition assigns instead of comparing
+  --> assignment-in-condition.lm:11:8
+   |
+11 |   m if m = 5 => "always",
+   |        ^^^^^ `=` assigns; `==` compares
+   |
+   = note: did you mean `==`?
+   = note: to assign and then test the value, do it on two lines
+
+error[RS013]: this condition assigns instead of comparing
+  --> assignment-in-condition.lm:14:4
+   |
+14 | if x += 1 { print("still an assignment") }
+   |    ^^^^^^ `+=` assigns
+   |
+   = note: a condition is a test; put the assignment on its own line

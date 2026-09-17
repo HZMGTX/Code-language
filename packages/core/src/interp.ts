@@ -197,6 +197,21 @@ export class Interpreter {
     ];
   }
 
+  /**
+   * Every method table by type name, and the methods every value has, as
+   * names — the tables `readMember` consults, handed to the type checker so
+   * its `TY012` and this interpreter's `RT027` are one answer rather than two
+   * lists that agree until one of them changes.
+   */
+  methodTableNames(): {
+    readonly tables: ReadonlyMap<string, ReadonlySet<string>>;
+    readonly universal: ReadonlySet<string>;
+  } {
+    const tables = new Map<string, ReadonlySet<string>>();
+    for (const [typeName, table] of this.methodTables) tables.set(typeName, new Set(table.keys()));
+    return { tables, universal: new Set(this.universalMethods.keys()) };
+  }
+
   /** Look up `name` as a method on `receiver`, already bound to it. */
   private lookupMethod(typeOf: string, name: string, receiver: Value): Value | undefined {
     const found = this.methodTables.get(typeOf)?.get(name) ?? this.universalMethods.get(name);

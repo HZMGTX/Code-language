@@ -265,6 +265,25 @@ export function stdMethodSignatures(): ReadonlyMap<string, Ty> {
 }
 
 /**
+ * Every method each built-in type has, by the name `typeName` reports, with
+ * the five every value has under `UNIVERSAL` — read off a built interpreter,
+ * so they are the tables `RT027` consults and not a second statement of them.
+ *
+ * Separate from `stdMethodSignatures`, which holds only the methods somebody
+ * has written a signature for: `Num.max` has none and works, and a checker
+ * that read existence off the signatures would call it a typo. `TY012` asks
+ * this map instead.
+ */
+export function stdMethodNames(): ReadonlyMap<string, ReadonlySet<string>> {
+  if (methodNames !== undefined) return methodNames;
+  const { tables, universal } = createInterpreter().methodTableNames();
+  const built = new Map<string, ReadonlySet<string>>(tables);
+  built.set(UNIVERSAL, universal);
+  methodNames = built;
+  return built;
+}
+
+/**
  * Everything `checkModule` needs to know about the world outside the file:
  * what the prelude holds, what the standard modules export, and what any of it
  * means. One function, because four callers need exactly this and a check one
@@ -280,6 +299,7 @@ export function checkOptions(globals: readonly string[]): ResolveOptions {
     closedPrefixes: ['std/'],
     signatures: stdSignatures(),
     methods: stdMethodSignatures(),
+    methodNames: stdMethodNames(),
     effectful: effectfulFunctions(),
   };
 }
@@ -345,6 +365,7 @@ function effectfulFunctions(): ReadonlySet<Ty | string> {
 /** Both built once; parsing 200 signatures per checked file would be waste. */
 let globalSignatures: ReadonlyMap<string, Ty> | undefined;
 let methodSignatures: ReadonlyMap<string, Ty> | undefined;
+let methodNames: ReadonlyMap<string, ReadonlySet<string>> | undefined;
 
 /**
  * Build a fully-equipped interpreter: the language, the standard library's

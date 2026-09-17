@@ -1,0 +1,14 @@
+// `=` where `==` was meant. Assignment is an expression, so every one of
+// these is a legal program that assigns, gets a truthy value, and takes the
+// branch every time — which is never what was meant.
+var x = 1
+if x = 2 { print("always") }
+while x = 0 { break }
+if not (x = 3) { print("never") }
+if x > 0 and (x = 4) { print("always") }
+let n = 5
+print(match n {
+  m if m = 5 => "always",
+  _ => "never",
+})
+if x += 1 { print("still an assignment") }

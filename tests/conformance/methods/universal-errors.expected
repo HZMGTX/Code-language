@@ -1,4 +1,4 @@
-error[RT027]: List has no method `upper`
+error[TY012]: List has no method `upper`
  --> universal-errors.lm:3:7
   |
 3 | print([1, 2].upper())

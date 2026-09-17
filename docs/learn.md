@@ -547,6 +547,19 @@ stay inside
 There is no separate conditional operator to learn; the `if` you already know
 does that job.
 
+One slip worth knowing about before you make it: `=` assigns and `==` compares,
+and a condition wants the second. Lumen will not let the first through:
+
+```text
+var x = 1
+if x = 2 { print("always") }
+```
+
+```text
+error[RS013]: this condition assigns instead of comparing
+  = note: did you mean `==`?
+```
+
 ### The falsiness rule — read this one twice
 
 **Only `nil` and `false` are false. Everything else is true.**
@@ -1121,7 +1134,7 @@ print("hello".uper())
 ```
 
 ```
-error[RT027]: Str has no method `uper`
+error[TY012]: Str has no method `uper`
  --> hello.lm:1:7
   |
 1 | print("hello".uper())

@@ -1,0 +1,16 @@
+// A member the receiver's type does not have, reported before the program
+// runs. Each of these was RT027 or RT024 at run time — and only on the branch
+// that ran.
+let xs = [1, 2]
+xs.append(3)
+print(xs.lenght())
+let s = "abc"
+print(s.uppercase())
+print(1.floor().nope)
+struct P { x: Num, y: Num }
+let p = P { x: 1, y: 2 }
+print(p.z)
+print(p.helper())
+print(Some(1).unwrap())
+print(Err("e").expect("a value"))
+print(nil.foo)

@@ -133,6 +133,8 @@ export class Parser {
   private readonly diagnostics: Diagnostic[] = [];
   /** When > 0, `{` is a block, never a map or struct literal. */
   private noBraceLit = 0;
+  /** How many `if`/`while`/guard conditions enclose the current expression. */
+  private conditions = 0;
   /** Current parser recursion depth. See `nested`. */
   private depth = 0;
 
@@ -297,6 +299,21 @@ export class Parser {
       return parse();
     } finally {
       this.noBraceLit -= 1;
+    }
+  }
+
+  /**
+   * A condition: a header where `=` is almost always a mistyped `==`.
+   *
+   * Counted separately from `noBraceLit` because a `for` iterable and a
+   * `match` subject are headers too, and `==` is no answer in either.
+   */
+  private inCondition<T>(parse: () => T): T {
+    this.conditions += 1;
+    try {
+      return this.inHeader(parse);
+    } finally {
+      this.conditions -= 1;
     }
   }
 
@@ -682,7 +699,7 @@ export class Parser {
 
   private parseWhile(): Stmt {
     const start = this.advance(); // while
-    const condition = this.inHeader(() => this.parseExpr());
+    const condition = this.inCondition(() => this.parseExpr());
     this.skipNewlines();
     const body = this.parseBlock();
     return { kind: 'WhileStmt', condition, body, span: this.spanFrom(start) };
@@ -1055,6 +1072,11 @@ export class Parser {
       throw new ParseAbort();
     }
     if (!destructuring && left.kind !== 'Ident' && left.kind !== 'MemberExpr' && left.kind !== 'IndexExpr') {
+      // `if x > 0 and x = 4 {` is this: `=` binds loosest, so the target is
+      // `x > 0 and x`. In a control-flow header the mistake is almost always
+      // `==`, and the standing note about assignment targets, though true,
+      // would send somebody looking for a different place to store a value.
+      const inCondition = this.conditions > 0;
       this.report({
         severity: 'error',
         code: 'PA008',
@@ -1062,6 +1084,9 @@ export class Parser {
         span: left.span,
         label: 'not a place that can hold a value',
         notes: [
+          ...(inCondition
+            ? [{ message: 'did you mean `==`? `=` assigns, and takes everything before it as the target' }]
+            : []),
           {
             message:
               'assignment targets are variables, fields, index expressions, ' +
@@ -1517,7 +1542,7 @@ export class Parser {
 
   private parseIf(): Expr {
     const start = this.expect('if', 'to start a conditional');
-    const condition = this.inHeader(() => this.parseExpr());
+    const condition = this.inCondition(() => this.parseExpr());
     this.skipNewlines();
     const then = this.parseBlock();
 
@@ -1563,7 +1588,7 @@ export class Parser {
         let guard: Expr | undefined;
         if (this.eat('if')) {
           this.skipNewlines();
-          guard = this.inHeader(() => this.parseExpr());
+          guard = this.inCondition(() => this.parseExpr());
         }
         this.expect('=>', 'after a match pattern');
         this.skipNewlines();
