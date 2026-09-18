@@ -1,0 +1,11 @@
+// §7.1: "If a module *declares* `fn main()`, it is called after the module's
+// top-level statements have run." The word is "declares". Any binding named
+// `main` used to be called, so this program ran twice — once for the explicit
+// call and once for the auto-call — with nothing reported, while `RS008`, which
+// exists to catch exactly that, only ever knew about the declaration.
+let main = fn() { print("called once") }
+main()
+
+// A `var` and a plain value named `main` are not declarations either.
+var other = fn() { print("not called") }
+print(other != nil)

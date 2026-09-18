@@ -481,6 +481,18 @@ export interface ExprStmt extends NodeBase {
 export interface ImportSpecifier extends NodeBase {
   readonly name: string;
   readonly alias: string | undefined;
+  /** Just the exported name, where `span` covers `name as alias` entire. */
+  readonly nameSpan: Span;
+  /**
+   * Just the local name: the alias where there is one, else the exported name.
+   *
+   * This is the span a *binding* lives at, and what an editor renames. The two
+   * are the same text for an unaliased import, and that is the trap: renaming
+   * `import { round }` in place rewrites which export is being asked for, and
+   * the file stops compiling. Knowing they are the same span is what lets the
+   * language server write `round as rounded` instead.
+   */
+  readonly localSpan: Span;
 }
 
 export interface ImportDecl extends NodeBase {

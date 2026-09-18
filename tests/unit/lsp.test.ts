@@ -504,6 +504,93 @@ describe('language server: references, rename and signature help', () => {
     assert.ok(edits.every((e) => e.newText === 'n'));
   });
 
+  it('renames the left-hand side of an assignment too', async () => {
+    // `count = count + 1` has two occurrences of `count`, and only the one on
+    // the right was in the reference set — so a rename produced a file that no
+    // longer compiles: `var tally = 0` followed by `count = tally + 1`. An
+    // assignment target is a use of the binding as surely as a read is.
+    const source = ['var count = 0', 'count = count + 1', 'count += 2', 'print(count)', ''].join('\n');
+    const other = 'file:///tmp/lumen-lsp-test/assign.lm';
+    client.notify('textDocument/didOpen', {
+      textDocument: { uri: other, languageId: 'lumen', version: 1, text: source },
+    });
+    await client.notice('textDocument/publishDiagnostics');
+
+    const answered = await client.request('textDocument/rename', {
+      textDocument: { uri: other },
+      position: { line: 0, character: 4 },
+      newName: 'tally',
+    });
+    const edits = (answered.result as { changes: Record<string, { range: { start: { line: number; character: number }; end: { line: number; character: number } }; newText: string }[]> }).changes[other] ?? [];
+    // Declaration, the target and the read on line 2, the compound target on
+    // line 3, and the read on line 4.
+    assert.equal(edits.length, 5, JSON.stringify(edits));
+
+    // Apply them and require the result to still be the same program.
+    const lines = source.split('\n');
+    for (const e of [...edits].sort(
+      (a, b) => b.range.start.line - a.range.start.line || b.range.start.character - a.range.start.character,
+    )) {
+      const l = e.range.start.line;
+      lines[l] = (lines[l] ?? '').slice(0, e.range.start.character) + e.newText + (lines[l] ?? '').slice(e.range.end.character);
+    }
+    assert.equal(
+      lines.join('\n'),
+      ['var tally = 0', 'tally = tally + 1', 'tally += 2', 'print(tally)', ''].join('\n'),
+    );
+  });
+
+  it('renames an unaliased import by adding an alias', async () => {
+    // The local name and the exported name are the same span, so replacing it
+    // asked `std/math` for an export it does not have and the file stopped
+    // compiling. Lumen has aliases, and this is what they are for.
+    const source = ['import { round } from "std/math"', 'print(round(1.5))', ''].join('\n');
+    const other = 'file:///tmp/lumen-lsp-test/imported.lm';
+    client.notify('textDocument/didOpen', {
+      textDocument: { uri: other, languageId: 'lumen', version: 1, text: source },
+    });
+    await client.notice('textDocument/publishDiagnostics');
+
+    const answered = await client.request('textDocument/rename', {
+      textDocument: { uri: other },
+      position: { line: 0, character: 9 },
+      newName: 'rounded',
+    });
+    const edits = (answered.result as { changes: Record<string, { range: { start: { line: number; character: number }; end: { line: number; character: number } }; newText: string }[]> }).changes[other] ?? [];
+    assert.equal(edits.length, 2, JSON.stringify(edits));
+    const lines = source.split('\n');
+    for (const e of [...edits].sort(
+      (a, b) => b.range.start.line - a.range.start.line || b.range.start.character - a.range.start.character,
+    )) {
+      const l = e.range.start.line;
+      lines[l] = (lines[l] ?? '').slice(0, e.range.start.character) + e.newText + (lines[l] ?? '').slice(e.range.end.character);
+    }
+    assert.equal(
+      lines.join('\n'),
+      ['import { round as rounded } from "std/math"', 'print(rounded(1.5))', ''].join('\n'),
+    );
+  });
+
+  it('renames an already-aliased import in place', async () => {
+    // The other half: an alias is a local name of its own, and renaming it is
+    // an ordinary replacement that must not grow a second `as`.
+    const source = ['import { round as r } from "std/math"', 'print(r(1.5))', ''].join('\n');
+    const other = 'file:///tmp/lumen-lsp-test/aliased.lm';
+    client.notify('textDocument/didOpen', {
+      textDocument: { uri: other, languageId: 'lumen', version: 1, text: source },
+    });
+    await client.notice('textDocument/publishDiagnostics');
+
+    const answered = await client.request('textDocument/rename', {
+      textDocument: { uri: other },
+      position: { line: 0, character: 18 },
+      newName: 'rounded',
+    });
+    const edits = (answered.result as { changes: Record<string, { newText: string }[]> }).changes[other] ?? [];
+    assert.equal(edits.length, 2, JSON.stringify(edits));
+    assert.ok(edits.every((e) => e.newText === 'rounded'), JSON.stringify(edits));
+  });
+
   it('declines a new name that is not a name, and says why', async () => {
     // An editor sends whatever the person typed. Accepting `2 bad` would make a
     // file that does not parse, and silently breaking code is worse than

@@ -807,7 +807,10 @@ class Resolver {
       case 'ImportDecl':
         this.checkImport(stmt.from, stmt.specifiers, stmt.span);
         for (const spec of stmt.specifiers) {
-          this.declare(spec.alias ?? spec.name, spec.span, false, 'import');
+          // At the *local* name, which is the alias where there is one. The
+          // binding is what an editor renames, and `spec.span` covers `round as
+          // r` entire — so a rename replaced both halves with one word.
+          this.declare(spec.alias ?? spec.name, spec.localSpan, false, 'import');
         }
         return;
 
@@ -1022,6 +1025,12 @@ class Resolver {
         this.use(target.name, target.span, true);
         return;
       }
+      // Assigning to a name is using it as surely as reading it is, as far as
+      // an editor is concerned: `count = count + 1` has two occurrences of
+      // `count` and a rename that rewrote only the right-hand one produced a
+      // file that no longer compiles. Reported before the mutability check, so
+      // it is recorded whether or not the assignment turns out to be allowed.
+      this.reference?.({ use: target.span, declaration: binding.span, name: target.name, kind: binding.kind });
       if (!binding.mutable && binding.kind !== 'unresolved' && binding.kind !== 'built-in') {
         this.report(
           'RS005',

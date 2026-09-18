@@ -520,11 +520,20 @@ export class Server {
     }
     const binding = this.bindingAt(found.analysis, found.offset);
     if (binding === undefined) return null;
+    // An unaliased import declares its binding at the *exported* name, so the
+    // one edit that cannot be a plain replacement is the import itself:
+    // rewriting `import { round }` to `import { rounded }` asks `std/math` for
+    // an export it does not have, and the file stops compiling. Lumen has
+    // aliases, and this is what they are for.
+    const importedAs = unaliasedImportAt(found.analysis, binding.declaration);
     return {
       changes: {
         [found.analysis.uri]: [binding.declaration, ...binding.uses].map((span) => ({
           range: rangeOf(span),
-          newText: newName,
+          newText:
+            importedAs !== undefined && span.start.offset === binding.declaration.start.offset
+              ? importedAs + ' as ' + newName
+              : newName,
         })),
       },
     };
@@ -809,3 +818,23 @@ function describeTypeExpr(type: { kind: string; name?: string; args?: readonly u
 
 /** Kept so `Expr` is named in this file's imports for the reader's benefit. */
 export type { Expr };
+
+/**
+ * The exported name, when `declaration` is an import that was not aliased.
+ *
+ * `import { round } from "std/math"` binds `round` at the same span the export
+ * is named in, so the two cannot be told apart by position alone — the AST is
+ * asked instead. An aliased import already has a span of its own for the local
+ * name and needs nothing special.
+ */
+function unaliasedImportAt(analysis: Analysis, declaration: Span): string | undefined {
+  for (const stmt of analysis.module?.stmts ?? []) {
+    const decl = stmt.kind === 'ExportDecl' ? stmt.declaration : stmt;
+    if (decl.kind !== 'ImportDecl') continue;
+    for (const spec of decl.specifiers) {
+      if (spec.alias !== undefined) continue;
+      if (spec.localSpan.start.offset === declaration.start.offset) return spec.name;
+    }
+  }
+  return undefined;
+}

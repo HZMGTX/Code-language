@@ -254,9 +254,19 @@ export class Interpreter {
       for (const stmt of module.stmts) {
         await this.execStmt(stmt, env, unit);
       }
-      const main = env.lookup('main');
-      if (main !== undefined && (main.value.k === 'fn' || main.value.k === 'native')) {
-        await this.callValue(main.value, [], module.span);
+      // "If a module **declares** `fn main()`" — §7.1, and the word matters.
+      // Any binding named `main` used to be called, so `let main = fn() { … }`
+      // followed by `main()` ran the program twice with nothing reported, and
+      // an imported `main` was invoked by a module that had only borrowed the
+      // name — while `RS011` called that same import "never read" and advised
+      // deleting the line, which would have changed what the program did.
+      // `RS008` only ever knew about the declaration, so this is the spelling
+      // the rest of the language already agreed on.
+      if (declaresMain(module)) {
+        const main = env.lookup('main');
+        if (main !== undefined && (main.value.k === 'fn' || main.value.k === 'native')) {
+          await this.callValue(main.value, [], module.span);
+        }
       }
     } catch (error) {
       // A module has nowhere to put a returned value, so the answer is dropped.
@@ -2097,3 +2107,11 @@ const enumOk = (v: Value): EnumValue => enumValue('Result', 'Ok', [v]);
 const enumErr = (v: Value): EnumValue => enumValue('Result', 'Err', [v]);
 
 export type { ListValue, MapValue, StructValue, FnValue };
+
+/** Whether this module declares `fn main`, which is what §7.1 calls for. */
+function declaresMain(module: Module): boolean {
+  return module.stmts.some((stmt) => {
+    const decl = stmt.kind === 'ExportDecl' ? stmt.declaration : stmt;
+    return decl.kind === 'FnDecl' && decl.name === 'main';
+  });
+}

@@ -289,6 +289,11 @@ let double = fn(n) { n * 2 }
 
 If a module declares `fn main()`, it is called after the module's top-level
 statements have run — automatically, so writing `main()` as well is `RS008`.
+The word is *declares*: a `let main = fn() { … }`, and a `main` that arrives
+through an import, are ordinary bindings and are not called for you. Any
+binding named `main` used to be, so `let main = …` followed by `main()` ran the
+program twice with nothing reported, and `RS011` called an imported `main`
+"never read" while the interpreter was reading and calling it.
 
 ### 3.3 Structs
 

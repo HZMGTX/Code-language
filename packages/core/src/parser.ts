@@ -45,6 +45,7 @@ import type {
   ExportDecl,
   FieldInit,
   FnDecl,
+  ImportSpecifier,
   MapEntry,
   MatchArm,
   Module,
@@ -844,17 +845,26 @@ export class Parser {
       );
     }
     this.expect('{', 'to start an import list');
-    const specifiers: { name: string; alias: string | undefined; span: Span }[] = [];
+    const specifiers: ImportSpecifier[] = [];
     this.inBrackets(() => {
       this.skipNewlines();
       while (!this.at('}') && !this.at('eof')) {
         const nameTok = this.expectName('as an imported name');
         let alias: string | undefined;
+        let aliasSpan: Span | undefined;
         if (this.at('ident') && this.cur().text === 'as') {
           this.advance();
-          alias = this.expectName('after `as`').text;
+          const aliasTok = this.expectName('after `as`');
+          alias = aliasTok.text;
+          aliasSpan = aliasTok.span;
         }
-        specifiers.push({ name: nameTok.text, alias, span: this.spanFrom(nameTok) });
+        specifiers.push({
+          name: nameTok.text,
+          alias,
+          nameSpan: nameTok.span,
+          localSpan: aliasSpan ?? nameTok.span,
+          span: this.spanFrom(nameTok),
+        });
         this.skipNewlines();
         if (!this.eat(',')) break;
         this.skipNewlines();

@@ -773,6 +773,39 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
 
 ### Fixed
 
+- **Renaming in an editor produced a file that no longer compiles, two ways.**
+
+  Renaming a reassigned `var` rewrote every *read* and left the assignment
+  alone, because the resolver reported a reference for a name it read and not
+  for one it wrote:
+
+  ```text
+  var count = 0        rename `count` → `tally`      var tally = 0
+  count = count + 1                                  count = tally + 1   ← RS001
+  print(count)                                       print(tally)
+  ```
+
+  An assignment target is a use of the binding as surely as a read is, and
+  `references`, `documentHighlight` and go-to-definition were missing it for the
+  same reason. They all come from the one callback, so they are all fixed by the
+  one line.
+
+  Renaming an unaliased import rewrote which export was being asked for:
+  `import { round }` became `import { rounded }`, and `std/math` has no
+  `rounded`. The local name and the exported name are the same span there, which
+  is the whole trap — so import specifiers now carry a span for each, and the
+  rename writes `import { round as rounded }`. Lumen has aliases, and this is
+  what they are for. An already-aliased import renames in place, as it did.
+
+- **`main` was called for you whether or not you declared it.** §7.1 says "if a
+  module *declares* `fn main()`", and the interpreter called any binding of that
+  name — so `let main = fn() { … }` followed by `main()` ran the program twice
+  with nothing reported, while `RS008`, which exists to catch exactly that, only
+  ever knew about the declaration. An imported `main` was invoked by a module
+  that had merely borrowed the name, and `RS011` called that same import "never
+  read" and advised deleting the line, which would have changed what the program
+  did. Both checks were right and the interpreter was not.
+
 - **Five ways a program could end in a Node stack trace instead of a Lumen
   diagnostic.** Each is ordinary use, and each took the whole process down:
 
