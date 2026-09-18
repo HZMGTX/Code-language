@@ -186,16 +186,24 @@ describe('the inverse pairs whose names do not say so', () => {
         "", " ", "plain", "with,comma", "with\\"quote", "with\\nnewline",
         "  padded  ", "\\"quoted\\"", "🎉", "; semi", "\\\\back",
       ]
+      var grids = []
       for value in awkward {
-        let row = [value, "after"]
+        grids.push([value, "after"])
+        // A row of one field as well. A row that is one empty field is the
+        // shape that did not survive: written plainly it is a blank line, and
+        // a blank line reads back as no row at all — so a two-row table came
+        // back with one, through the module's own writer.
+        grids.push([value])
+      }
+      for row in grids {
         match write([row]) {
           Ok(text) => {
             match rows(text) {
-              Ok(back) => { if back != [row] { print("FAILED \${value}: \${text} -> \${back}") } }
-              Err(why) => print("FAILED read \${value}: \${why}")
+              Ok(back) => { if back != [row] { print("FAILED \${row}: \${text} -> \${back}") } }
+              Err(why) => print("FAILED read \${row}: \${why}")
             }
           }
-          Err(why) => print("FAILED write \${value}: \${why}")
+          Err(why) => print("FAILED write \${row}: \${why}")
         }
       }
       print("ok")

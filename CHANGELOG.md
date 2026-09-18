@@ -773,6 +773,49 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
 
 ### Fixed
 
+- **Five ways a program could end in a Node stack trace instead of a Lumen
+  diagnostic.** Each is ordinary use, and each took the whole process down:
+
+  - `lumen run count.lm | head -2` — the reader closes the pipe, the next
+    `print` raises `EPIPE` on a stream with no handler, and Node rethrows it.
+    Twenty-five lines of V8 stack trace naming files inside `dist/`, for the
+    commonest idiom in the shell. It stops quietly now, as `head` expects.
+  - `run("head", ["-n", "1"], input: …)` with more than a pipe buffer of input —
+    the child takes its line and stops reading, and the same unhandled `EPIPE`
+    killed the program that had already earned its `Ok(...)`.
+  - A request body past Node's maximum string length killed `lumen serve`
+    outright: the decode was the one step outside the `try` that exists so "a
+    broken page never silently hangs the connection". It answers 413 now and
+    keeps serving.
+  - A header value carrying a line break — response splitting, correctly
+    refused by Node — surfaced as a raw `TypeError [ERR_INVALID_CHAR]` both on
+    the operator's stderr and in the body served to whoever sent it. It is a
+    Lumen sentence now, naming the header.
+  - `pow(1, INFINITY)` answered a `NaN`, which §4.2 says cannot exist in a
+    Lumen program. The operator spelling already refused it (`RT046`), so the
+    two spellings of one expression disagreed. `pow`'s guard had been written
+    for `pow(-8, 0.5)` and enumerated its inputs; it asks about the *result*
+    now, which cannot miss the next indeterminate form.
+
+    The derived NaN sweep that was supposed to catch this made every argument
+    infinite at once, and `pow(INFINITY, INFINITY)` is `Infinity`. It now
+    varies one argument at a time with ordinary numbers beside it — the shape
+    `failure-policy.test.ts` already used — and fails without the guard.
+
+- **`lumen check a.lm b.lm` never opened `b.lm`.** It printed "no problems" and
+  exited 0, from the command README.md sends people to for a pre-commit hook
+  and a CI. `check`, `fmt` and `test` took the first positional argument and
+  dropped the rest in silence; they take every path now, and `lumen check
+  src/*.lm` means what it looks like.
+
+- **`std/csv` lost a row that was a single empty field.** `""` on a line of its
+  own is not a blank line — the quotes are how CSV writes "one field, and it is
+  empty" — and `records` could not tell them apart, so it skipped a row that
+  `rows` had just reported. The writer had the mirror of the same bug, writing
+  that row as a blank line, so `records(write(grid))` lost data that had
+  survived the writer. The parser now says which rows were blank lines, and the
+  writer quotes the one shape that cannot survive being written plainly.
+
 - **`lumen fmt` was deleting the contents of a multi-line string.** The line a
   multi-line string opens on ends *inside* the string, so what looks like
   trailing whitespace there is the string's value — and the formatter ran

@@ -50,6 +50,13 @@ fn handle(req) {
     json({ serving: isServer() })
   } else if req.path == "/boom" {
     panic("deliberate failure")
+  } else if req.path == "/split" {
+    // A header value carrying what a visitor sent, which is how response
+    // splitting is attempted. Refusing it is right; the refusal used to be a
+    // raw Node TypeError, on the operator's stderr and in the served body.
+    { status: 200, headers: { "x-echo": req.query.v }, body: "ok" }
+  } else if req.path == "/size" {
+    json({ got: req.body.len() })
   } else {
     notFound("<p>no \${escape(req.path)}</p>")
   }
@@ -341,5 +348,25 @@ describe('web server', () => {
   it('is still serving after a handler failed', async () => {
     const res = await fetch(base + '/json');
     assert.equal(res.status, 200);
+  });
+
+  it('refuses a header value carrying a line break, in its own words', async () => {
+    // Response splitting: a value a visitor supplied, put into a header. Node
+    // refuses it, and used to do so as `TypeError [ERR_INVALID_CHAR]` written
+    // to the operator's stderr *and* served to whoever sent the request.
+    const res = await fetch(base + '/split?v=' + encodeURIComponent('a\r\nSet-Cookie: p=1'));
+    assert.equal(res.status, 500);
+    assert.equal(res.headers.get('set-cookie'), null, 'the injected header was sent');
+    assert.match(await res.text(), /header cannot contain a line break/u);
+  });
+
+  it('serves an ordinary header value beside it', async () => {
+    const res = await fetch(base + '/split?v=plain');
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('x-echo'), 'plain');
+  });
+
+  it('is still serving after both', async () => {
+    assert.equal((await fetch(base + '/json')).status, 200);
   });
 });

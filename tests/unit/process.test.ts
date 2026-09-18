@@ -174,6 +174,26 @@ describe('std/process', () => {
     assert.equal(text, 'cannot run `sleep`: a timeout cannot be negative, got -1');
   });
 
+  it('survives a child that stops reading its input', async () => {
+    // `head -n 1` takes its line and closes the pipe. The write that is still
+    // in flight then raises `EPIPE` on a stream with no `error` listener, and
+    // Node rethrows an unhandled stream error — so the whole Lumen process
+    // died with a V8 stack trace instead of the `Ok(...)` the child had
+    // already earned. More than a pipe buffer (64 KiB on Linux) is needed to
+    // reach it, which is why an ordinary-sized input never showed it.
+    const result = await runSource(
+      IMPORT +
+        'let lines = "hello\\n".repeat(200000)\n' +
+        'match run("head", ["-n", "1"], input: lines) {\n' +
+        '  Ok(r)    => print("ok ${r.status} ${r.out.trim()}"),\n' +
+        '  Err(why) => print("ERR ${why}"),\n' +
+        '}',
+    );
+    assert.equal(result.failed, false, result.output);
+    assert.doesNotMatch(result.output, /EPIPE|node:internal|Unhandled/u, result.output);
+    assert.equal(result.output.trim(), 'ok 0 hello');
+  });
+
   it('checks the type of what it is given, like everything else', async () => {
     const result = await runSource(IMPORT + 'print(run("echo", ["a", 1]))');
     assert.equal(result.failed, true);

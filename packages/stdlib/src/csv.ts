@@ -49,11 +49,28 @@ import {
  * loop rather than as a regular expression — the expression that does this
  * correctly is longer than the loop and nobody can read it.
  */
-function parseRows(text: string, delimiter: string): string[][] | string {
+/**
+ * A parsed file: the rows, and which of them were blank lines.
+ *
+ * `records` has to tell a blank line from a line reading `""`, and the rows
+ * alone cannot: both arrive as one empty field. They are not the same thing —
+ * the quotes are CSV's way of writing "one field, and it is empty" — and
+ * treating the second as the first silently dropped a row that `rows` had
+ * reported, so a two-row table came back with one and `records(write(grid))`
+ * lost data that had survived the writer.
+ */
+interface Parsed {
+  readonly rows: string[][];
+  /** True where the row came from a line with nothing on it at all. */
+  readonly blank: boolean[];
+}
+
+function parseRows(text: string, delimiter: string): Parsed | string {
   const wrong = badDelimiter(delimiter);
   if (wrong !== undefined) return wrong;
 
   const rows: string[][] = [];
+  const blank: boolean[] = [];
   let row: string[] = [];
   let field = '';
   let quoted = false;
@@ -66,8 +83,13 @@ function parseRows(text: string, delimiter: string): string[][] | string {
     started = true;
   };
   const endRow = (): void => {
+    // Read before `endField`, which sets it: a row nothing was seen on is the
+    // blank line, and `""` is not one — the quote sets `started` as surely as
+    // a letter does.
+    const empty = !started && row.length === 0;
     endField();
     rows.push(row);
+    blank.push(empty);
     row = [];
     started = false;
   };
@@ -120,7 +142,7 @@ function parseRows(text: string, delimiter: string): string[][] | string {
   // One that does not must still yield its last row, which is what `started`
   // and a non-empty field distinguish.
   if (started || field !== '' || row.length > 0) endRow();
-  return rows;
+  return { rows, blank };
 }
 
 /**
@@ -176,7 +198,7 @@ export function stdCsv(): Map<string, Value> {
             expectStr(arg(a, 1), c, 'rows(delimiter)'),
           );
           if (typeof parsed === 'string') return Err(str(parsed));
-          return Ok(list(parsed.map((row) => list(row.map((field) => str(field))))));
+          return Ok(list(parsed.rows.map((row) => list(row.map((field) => str(field))))));
         }),
 
         /**
@@ -199,7 +221,7 @@ export function stdCsv(): Map<string, Value> {
             expectStr(arg(a, 1), c, 'records(delimiter)'),
           );
           if (typeof parsed === 'string') return Err(str(parsed));
-          const header = parsed[0];
+          const header = parsed.rows[0];
           if (header === undefined) return Ok(list([]));
 
           const seen = new Set<string>();
@@ -209,14 +231,20 @@ export function stdCsv(): Map<string, Value> {
           }
 
           const out: Value[] = [];
-          for (const [i, row] of parsed.slice(1).entries()) {
+          for (const [i, row] of parsed.rows.slice(1).entries()) {
             // A completely empty line is no data, not misaligned data. Real
             // files have them — a trailing one, a blank between sections — and
             // rejecting them as ragged rows is a rule that is right on paper
             // and wrong on every file anybody actually has. It cannot be
             // confused with data: a genuine one-field row in a four-column file
             // is still short, and still reported.
-            if (row.length === 1 && row[0] === '') continue;
+            //
+            // Asked of the parser rather than of the row, because a line
+            // reading `""` arrives here looking identical — one empty field —
+            // and is the opposite thing: the quotes are how CSV writes "one
+            // field, and it is empty". Skipping it dropped a row `rows` had
+            // just reported, and lost data through the module's own writer.
+            if (parsed.blank[i + 1] === true) continue;
             if (row.length !== header.length) {
               const fields = (n: number): string => String(n) + (n === 1 ? ' field' : ' fields');
               return Err(
@@ -247,16 +275,20 @@ export function stdCsv(): Map<string, Value> {
           const lines: string[] = [];
           for (const [i, row] of given.items.entries()) {
             const fields = expectList(row, c, 'write row ' + String(i + 1));
-            lines.push(
-              fields.items
-                .map((field, j) =>
-                  writeField(
-                    expectStr(field, c, 'write row ' + String(i + 1) + ' field ' + String(j + 1)),
-                    delimiter,
-                  ),
-                )
-                .join(delimiter),
-            );
+            const written = fields.items
+              .map((field, j) =>
+                writeField(
+                  expectStr(field, c, 'write row ' + String(i + 1) + ' field ' + String(j + 1)),
+                  delimiter,
+                ),
+              )
+              .join(delimiter);
+            // A row of one empty field is the one shape that does not survive
+            // being written plainly: it comes out as a blank line, and a blank
+            // line reads back as no row at all. The quotes are how CSV says
+            // "one field, and it is empty", and they are what makes
+            // `records(write(grid))` give back the grid it was handed.
+            lines.push(written === '' ? '""' : written);
           }
           return Ok(str(lines.length === 0 ? '' : lines.join('\n') + '\n'));
         }),
@@ -320,7 +352,7 @@ export function stdCsv(): Map<string, Value> {
       ),
       {
         rows: 'The raw grid: a list of rows, each a list of fields. No header.',
-        records: 'The first row as column names, every later row as a Map.',
+        records: 'The first row as column names, every later row as a Map; blank lines are skipped.',
         write: 'A grid as CSV text, quoting only the fields that need it.',
         writeRecords: 'Maps as CSV with a header row. Columns from the first record, or named.',
       },

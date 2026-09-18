@@ -12,12 +12,13 @@ import * as path from 'node:path';
 import { LumenError, checkModule, parse } from '@lumen-lang/core';
 import { checkOptions, collectFiles, displayPath, newInterpreter, useColor } from '../support.js';
 
-export async function runTests(target: string): Promise<void> {
-  const root = path.resolve(target);
-  const files = await collectFiles(root, '_test.lm');
+export async function runTests(targets: string | readonly string[]): Promise<void> {
+  const roots = (typeof targets === 'string' ? [targets] : targets).map((t) => path.resolve(t));
+  const where = roots.length === 1 ? roots[0] : roots.length + ' paths';
+  const files = await collectFiles(roots, '_test.lm');
 
   if (files.length === 0) {
-    process.stdout.write('no `*_test.lm` files found under ' + root + '\n');
+    process.stdout.write('no `*_test.lm` files found under ' + where + '\n');
     process.exit(1);
   }
 

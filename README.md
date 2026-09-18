@@ -28,7 +28,7 @@ in [ROADMAP.md](ROADMAP.md); the largest item is that type checking is **gradual
 and shallow**: annotations are enforced where you write them, and a program that
 writes none is never type-checked at all.
 
-- **1404 tests**, 201 conformance fixtures, 22 example programs, 19 standard
+- **1410 tests**, 201 conformance fixtures, 22 example programs, 19 standard
   modules. `npm run ci` runs all fifteen checks locally, which is how they are
   verified today — GitHub Actions is configured for Node 20/22/24 on Linux, macOS
   and Windows but has never been able to start a run on this repository, so no
@@ -195,9 +195,9 @@ lumen run <file.lm>      run a program
 lumen serve <file.lm>    run a program that starts a web server
 lumen repl               start an interactive session
 lumen lsp                speak the Language Server Protocol (for editors)
-lumen check [path]       check every .lm under path without running it
-lumen fmt [path]         normalise indentation in place (--check to only ask)
-lumen test [path]        run every *_test.lm under path
+lumen check [path...]    check every .lm under each path without running it
+lumen fmt [path...]      normalise indentation in place (--check to only ask)
+lumen test [path...]     run every *_test.lm under each path
 lumen tokens <file.lm>   show the token stream
 lumen ast <file.lm>      show the parsed syntax tree
 ```

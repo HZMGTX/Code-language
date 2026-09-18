@@ -78,7 +78,10 @@ export function reportWarnings(
  * A `target` that does not exist yields nothing rather than raising, so each
  * command words its own "nothing found" message.
  */
-export async function collectFiles(target: string, suffix: string): Promise<string[]> {
+export async function collectFiles(
+  targets: string | readonly string[],
+  suffix: string,
+): Promise<string[]> {
   const found: string[] = [];
   const walk = async (at: string): Promise<void> => {
     let stat;
@@ -98,8 +101,12 @@ export async function collectFiles(target: string, suffix: string): Promise<stri
       await walk(path.join(at, entry.name));
     }
   };
-  await walk(path.resolve(target));
-  return found;
+  for (const target of typeof targets === 'string' ? [targets] : targets) {
+    await walk(path.resolve(target));
+  }
+  // A file named twice — `lumen check src src/app.lm` — is one file, and the
+  // order is the walk's, which is already sorted per target.
+  return [...new Set(found)];
 }
 
 export async function readSource(file: string): Promise<{ file: string; source: string }> {

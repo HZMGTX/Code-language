@@ -22,12 +22,16 @@ import { format } from '@lumen-lang/core';
 
 import { collectFiles, displayPath } from '../support.js';
 
-export async function formatFiles(target: string, checkOnly: boolean): Promise<void> {
-  const root = path.resolve(target);
-  const files = await collectFiles(root, '.lm');
+export async function formatFiles(
+  targets: string | readonly string[],
+  checkOnly: boolean,
+): Promise<void> {
+  const roots = (typeof targets === 'string' ? [targets] : targets).map((t) => path.resolve(t));
+  const where = roots.length === 1 ? roots[0] : roots.length + ' paths';
+  const files = await collectFiles(roots, '.lm');
 
   if (files.length === 0) {
-    process.stdout.write('no `.lm` files found under ' + root + '\n');
+    process.stdout.write('no `.lm` files found under ' + where + '\n');
     process.exit(1);
   }
 
@@ -52,7 +56,7 @@ export async function formatFiles(target: string, checkOnly: boolean): Promise<v
   }
   if (checkOnly) {
     const verb = touched.length === 1 ? ' needs' : ' need';
-    process.stdout.write(plural(touched.length) + verb + ' formatting — run `lumen fmt ' + target + '`\n');
+    process.stdout.write(plural(touched.length) + verb + ' formatting — run `lumen fmt ' + roots.join(' ') + '`\n');
     process.exit(1);
   }
   process.stdout.write(plural(touched.length) + ' reformatted\n');

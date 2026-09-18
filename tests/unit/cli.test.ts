@@ -293,6 +293,62 @@ describe('the lumen command', () => {
     assert.doesNotMatch(out, /Hello/);
   });
 
+  it('checks every path it is given, not just the first', async () => {
+    // `lumen check src/*.lm` is what a shell hands over. Taking `rest[0]` and
+    // dropping the rest meant `lumen check good.lm broken.lm` printed "no
+    // problems" and exited 0 without opening the second file — a false clean
+    // bill of health from the command the README sends people to for a
+    // pre-commit hook and a CI.
+    const box = mkdtempSync(path.join(os.tmpdir(), 'lumen-paths-'));
+    try {
+      writeFileSync(path.join(box, 'good.lm'), 'print("ok")\n', 'utf8');
+      writeFileSync(path.join(box, 'broken.lm'), 'print(nope)\n', 'utf8');
+      const both = await run(['check', path.join(box, 'good.lm'), path.join(box, 'broken.lm')]);
+      assert.equal(both.code, 1, both.out);
+      assert.match(both.out, /RS001/u, both.out);
+      assert.match(both.out, /1 of 2 files/u, both.out);
+
+      // The same for `fmt` and `test`, which dropped them the same way.
+      const fmt = await run(['fmt', '--check', path.join(box, 'good.lm'), path.join(box, 'broken.lm')]);
+      assert.match(fmt.out, /2 files/u, fmt.out);
+
+      // One path still behaves as it did.
+      const one = await run(['check', path.join(box, 'good.lm')]);
+      assert.equal(one.code, 0, one.out);
+      assert.match(one.out, /1 file checked/u, one.out);
+    } finally {
+      rmSync(box, { recursive: true, force: true });
+    }
+  });
+
+  it('stops quietly when the reader of its output leaves', async () => {
+    // `lumen run count.lm | head -2` closes the pipe after two lines, and the
+    // next `print` raised `EPIPE` on a stream with no handler — which Node
+    // rethrows, so an ordinary shell idiom ended in twenty-five lines of V8
+    // stack trace naming files inside `dist/`.
+    const box = mkdtempSync(path.join(os.tmpdir(), 'lumen-pipe-'));
+    try {
+      const file = path.join(box, 'count.lm');
+      writeFileSync(file, 'for i in 1..2000 { print(i) }\n', 'utf8');
+      const { code, out } = await new Promise<{ code: number; out: string }>((resolve, reject) => {
+        const child = spawn('/bin/sh', ['-c', `"${process.execPath}" "${CLI}" run "${file}" 2>&1 | head -2`], {
+          env: { ...process.env, NO_COLOR: '1' },
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        let text = '';
+        child.stdout.on('data', (c: Buffer) => (text += c.toString('utf8')));
+        child.stderr.on('data', (c: Buffer) => (text += c.toString('utf8')));
+        child.on('error', reject);
+        child.on('exit', (status) => resolve({ code: status ?? 0, out: text }));
+      });
+      assert.equal(code, 0, out);
+      assert.equal(out, '1\n2\n', out);
+      assert.doesNotMatch(out, /EPIPE|node:internal|Unhandled/u, out);
+    } finally {
+      rmSync(box, { recursive: true, force: true });
+    }
+  });
+
   it('reports a static error from check, and exits non-zero', async () => {
     const bad = fileURLToPath(
       new URL('../../../tests/conformance/static/unreached-typo.lm', import.meta.url),

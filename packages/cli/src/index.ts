@@ -27,9 +27,9 @@ Usage
   lumen serve <file.lm>    run a program that starts a web server
   lumen repl               start an interactive session
   lumen lsp                speak the Language Server Protocol (for editors)
-  lumen check [path]       check every .lm under path without running it
-  lumen fmt [path]         normalise indentation in place (--check to only ask)
-  lumen test [path]        run every *_test.lm under path (default: .)
+  lumen check [path...]    check every .lm under each path without running it
+  lumen fmt [path...]      normalise indentation in place (--check to only ask)
+  lumen test [path...]     run every *_test.lm under each path (default: .)
   lumen tokens <file.lm>   show the token stream
   lumen ast <file.lm>      show the parsed syntax tree
 
@@ -44,9 +44,33 @@ Environment
   NO_COLOR                 disable coloured diagnostics
 `;
 
+/**
+ * A reader that stops early is not an error.
+ *
+ * `lumen run count.lm | head -2` closes the pipe once it has its two lines,
+ * and the next `print` raises `EPIPE` on a stream with no `error` listener —
+ * which Node rethrows, so an ordinary shell idiom ended in twenty-five lines
+ * of V8 stack trace naming files inside `dist/`. `head`, `less` quit early and
+ * `grep -q` all do this; the conventional answer is to stop, quietly.
+ */
+function quitWhenTheReaderLeaves(): void {
+  for (const stream of [process.stdout, process.stderr]) {
+    stream.on('error', (error: NodeJS.ErrnoException) => {
+      if (error.code === 'EPIPE') process.exit(0);
+      throw error;
+    });
+  }
+}
+
 function usageError(message: string): never {
   process.stderr.write('lumen: ' + message + '\n\n' + USAGE);
   process.exit(2);
+}
+
+/** The paths a command was given, or the current directory when it was given none. */
+function paths(rest: readonly string[]): readonly string[] {
+  const given = rest.filter((a) => !a.startsWith('-'));
+  return given.length === 0 ? ['.'] : given;
 }
 
 /** Every word `lumen` accepts in the first position. */
@@ -130,25 +154,28 @@ async function main(argv: readonly string[]): Promise<void> {
       return;
     }
 
+    // Every path, not the first one. `lumen check src/*.lm` is what a shell
+    // hands over and what a person means, and taking `rest[0]` dropped the
+    // rest in silence: `lumen check good.lm broken.lm` said "no problems" and
+    // exited 0 without ever opening the second file — a false clean bill of
+    // health from the command the README sends people to for a pre-commit hook
+    // and a CI.
     case 'check':
       rejectOptions('check', rest);
-      await checkFiles(rest[0] ?? '.');
+      await checkFiles(paths(rest));
       return;
 
     case 'fmt': {
       // `--check` may come before or after the path: both orders are things
       // people type, and rejecting one of them teaches nothing.
       rejectOptions('fmt', rest, ['--check']);
-      await formatFiles(
-        rest.find((a) => !a.startsWith('-')) ?? '.',
-        rest.includes('--check'),
-      );
+      await formatFiles(paths(rest), rest.includes('--check'));
       return;
     }
 
     case 'test':
       rejectOptions('test', rest);
-      await runTests(rest[0] ?? '.');
+      await runTests(paths(rest));
       return;
 
     case 'tokens':
@@ -184,4 +211,5 @@ async function main(argv: readonly string[]): Promise<void> {
   }
 }
 
+quitWhenTheReaderLeaves();
 await main(process.argv.slice(2)).catch(reportError);

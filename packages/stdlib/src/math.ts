@@ -287,7 +287,21 @@ export function stdMath(): Map<string, Value> {
           ['a negative base needs a whole-number exponent'],
         );
       }
-      return num(Math.pow(base, exponent));
+      const raised = Math.pow(base, exponent);
+      // Structural rather than a second enumerated case. The guard above was
+      // written for `pow(-8, 0.5)` and missed `pow(1, INFINITY)`, which IEEE
+      // 754 also calls NaN — an indeterminate form, not a number — and which
+      // reached a program as a `Num` that compares false against everything
+      // including itself. The operator spelling already refused it (`RT046`),
+      // so the two spellings of one expression disagreed. Asking the result
+      // instead of listing the inputs cannot miss the next one.
+      if (Number.isNaN(raised)) {
+        return c.panic('pow(' + base + ', ' + exponent + ') has no answer', [
+          'it is an indeterminate form: there is no single number it could be',
+          'a number with no value is equal to nothing, including itself — see `RT046`',
+        ]);
+      }
+      return num(raised);
     }),
 
     // `min` and `max` are the prelude's, which the prelude takes from here —

@@ -142,6 +142,15 @@ async function execute(
       });
     });
 
+    // A child that stops reading — `head -n 1`, a program that exits early —
+    // closes the pipe while we are still writing, and the `EPIPE` that raises
+    // has nowhere to go: an unhandled `error` on a stream is rethrown by Node,
+    // so the whole Lumen process died with a V8 stack trace instead of the
+    // `Ok(...)` the child had already earned. It is not a failure at all; the
+    // child got what it wanted and stopped listening.
+    child.stdin?.on('error', () => {
+      /* the child closed its input: normal, and not this program's business */
+    });
     if (input !== '') child.stdin?.write(input);
     child.stdin?.end();
   });

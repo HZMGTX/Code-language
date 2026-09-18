@@ -66,26 +66,50 @@ function tyName(ty: Ty | undefined): string {
  */
 function argumentShapes(params: readonly { optional?: boolean; ty?: Ty }[]): readonly string[] {
   const required = params.filter((p) => !p.optional);
-  const shapes = [`[${INF}, (0 - 1e308 * 10)]`, `[${INF}, 0]`].map((listArg) =>
-    required
-      .map((p) => {
-        switch (tyName(p.ty)) {
-          case 'Str':
-            return '"x"';
-          case 'Bool':
-            return 'true';
-          case 'Map':
-            return '{ a: 1 }';
-          case 'List':
-            return listArg;
-          case 'Fn':
-            return 'fn(a, b) { a + b }';
-          default:
-            return INF;
-        }
-      })
-      .join(', '),
-  );
+  /** A value of the right shape, for a parameter this call is not varying. */
+  const filler = (p: { ty?: Ty }, listArg: string, num: string): string => {
+    switch (tyName(p.ty)) {
+      case 'Str':
+        return '"x"';
+      case 'Bool':
+        return 'true';
+      case 'Map':
+        return '{ a: 1 }';
+      case 'List':
+        return listArg;
+      case 'Fn':
+        return 'fn(a, b) { a + b }';
+      default:
+        return num;
+    }
+  };
+
+  const shapes: string[] = [];
+  const lists = [`[${INF}, (0 - 1e308 * 10)]`, `[${INF}, 0]`];
+
+  // Everything extreme at once, which is where this sweep started.
+  for (const listArg of lists) {
+    shapes.push(required.map((p) => filler(p, listArg, INF)).join(', '));
+  }
+
+  // And one extreme argument at a time, with ordinary numbers beside it —
+  // the shape `failure-policy.test.ts` already sweeps in, and the shape that
+  // was missing here. Every indeterminate form needs exactly this: `pow(1,
+  // INFINITY)` and `pow(-1, INFINITY)` are NaN in IEEE 754 and `pow(INFINITY,
+  // INFINITY)` is not, so a sweep that only ever made every argument infinite
+  // could not reach them. It did not, and `pow` answered a NaN for a year.
+  for (const [i, varied] of required.entries()) {
+    if (tyName(varied.ty) !== 'Num' && tyName(varied.ty) !== 'Any') continue;
+    for (const extreme of [INF, `(0 - ${INF})`]) {
+      for (const beside of ['1', '0', '(0 - 1)']) {
+        shapes.push(
+          required
+            .map((p, j) => (j === i ? extreme : filler(p, lists[0] as string, beside)))
+            .join(', '),
+        );
+      }
+    }
+  }
   return [...new Set(shapes)];
 }
 

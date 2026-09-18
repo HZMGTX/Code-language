@@ -15,12 +15,13 @@ import { LumenError, checkModule, formatDiagnostic, parse } from '@lumen-lang/co
 
 import { checkOptions, collectFiles, displayPath, newInterpreter, useColor } from '../support.js';
 
-export async function checkFiles(target: string): Promise<void> {
-  const root = path.resolve(target);
-  const files = await collectFiles(root, '.lm');
+export async function checkFiles(targets: string | readonly string[]): Promise<void> {
+  const roots = (typeof targets === 'string' ? [targets] : targets).map((t) => path.resolve(t));
+  const where = roots.length === 1 ? roots[0] : roots.length + ' paths';
+  const files = await collectFiles(roots, '.lm');
 
   if (files.length === 0) {
-    process.stdout.write('no `.lm` files found under ' + root + '\n');
+    process.stdout.write('no `.lm` files found under ' + where + '\n');
     process.exit(1);
   }
 

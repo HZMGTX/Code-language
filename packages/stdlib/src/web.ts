@@ -787,11 +787,38 @@ export function stdWeb(): Map<string, Value> {
           const chunks: Buffer[] = [];
           req.on('data', (chunk: Buffer) => chunks.push(chunk));
           req.on('end', () => {
-            const body = Buffer.concat(chunks).toString('utf8');
             void (async () => {
               try {
+                // Inside the try, not above it. Decoding is the one step that
+                // can fail on input the caller chose — a body past Node's
+                // maximum string length threw `Cannot create a string longer
+                // than 0x1fffffe8 characters` out of the `end` handler, where
+                // nothing was catching it, and took the whole server down. A
+                // server that a request can stop is not a server.
+                let body: string;
+                try {
+                  body = Buffer.concat(chunks).toString('utf8');
+                } catch {
+                  res.writeHead(413, { 'content-type': 'text/plain; charset=utf-8' });
+                  res.end('Payload Too Large\n');
+                  return;
+                }
                 const result = await c.call(handler, [requestToValue(req, body)]);
                 const { status, headers, body: out } = normalize(result);
+                // A header value carrying a line break is a response-splitting
+                // attempt, and refusing it is right — Node refuses it too. What
+                // was wrong is what the refusal looked like: a raw
+                // `TypeError [ERR_INVALID_CHAR]` on the operator's stderr and
+                // in the body served to whoever sent it. This says it in
+                // Lumen's own words instead, and names the header.
+                for (const [name, value] of Object.entries(headers)) {
+                  if (/[\r\n]/u.test(String(value))) {
+                    throw new Error(
+                      'the `' + name + '` header cannot contain a line break — a value that does ' +
+                        'would let whoever supplied it write headers of their own',
+                    );
+                  }
+                }
                 res.writeHead(status, headers);
                 // A Lumen Str is a sequence of code points, so a PNG read byte
                 // for byte arrives here as one character per byte. Writing that
