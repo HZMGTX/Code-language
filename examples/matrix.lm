@@ -1,0 +1,90 @@
+// Matrices as lists of lists: a matrix is a list of rows, each row a list of
+// numbers, and m[i][j] is the entry in row i, column j.
+//
+//   lumen run examples/matrix.lm
+//
+// There is no matrix type here and none is needed — what follows is the
+// arithmetic you would do on paper, written as loops over those two indices.
+
+// Every row of a well-formed matrix has the same length, so the first row is
+// enough to count the columns by. An empty matrix has none.
+fn rows(m) { len(m) }
+fn cols(m) { if m.isEmpty() { 0 } else { len(m[0]) } }
+fn shape(m) { "${rows(m)}x${cols(m)}" }
+
+// One width for the whole matrix rather than one per column, and padding on
+// the left so the digits that matter line up: 7 sits above 154, not beside it.
+fn show(name, m) {
+  let width = max(m.flatten().map(fn(x) { len(str(x)) }))
+  print("${name}  ${shape(m)}")
+  for row in m {
+    print("  " + row.map(fn(x) { str(x).padStart(width) }).join("  "))
+  }
+  print("")
+}
+
+// Row j of the transpose is column j of the original, which is all the swapped
+// indices say. No accumulator, so map reads better here than a pair of loops.
+fn transpose(m) {
+  range(cols(m)).map(fn(j) { range(rows(m)).map(fn(i) { m[i][j] }) })
+}
+
+// Ones where the row and column indices meet, zeroes everywhere else.
+fn identity(n) {
+  range(n).map(fn(i) { range(n).map(fn(j) { if i == j { 1 } else { 0 } }) })
+}
+
+// Entry (i, j) of the product is row i of a set against column j of b,
+// multiplied term by term and summed — hence three nested loops, one per
+// index. The pairing only works when a has as many columns as b has rows, so a
+// mismatch comes back as an Err. Letting it through instead would read past
+// the end of a row, and produce a wrong answer nobody thought to question.
+fn multiply(a, b) {
+  if cols(a) != rows(b) {
+    return Err("cannot multiply ${shape(a)} by ${shape(b)}: ${cols(a)} columns against ${rows(b)} rows")
+  }
+  var product = []
+  for i in range(rows(a)) {
+    var row = []
+    for j in range(cols(b)) {
+      var total = 0
+      for k in range(cols(a)) { total += a[i][k] * b[k][j] }
+      row.push(total)
+    }
+    product.push(row)
+  }
+  Ok(product)
+}
+
+fn main() {
+  let a = [[1, 2, 3],
+           [4, 5, 6]]
+  let b = [[7,   8],
+           [9,  10],
+           [11, 12]]
+
+  print("Matrices as lists of lists\n")
+  show("A", a)
+  show("A transposed", transpose(a))
+  show("B", b)
+
+  match multiply(a, b) {
+    Ok(ab)   => show("A x B", ab),
+    Err(why) => print("${why}\n"),
+  }
+
+  show("I(3)", identity(3))
+
+  // The identity is the one multiplication whose answer is known in advance,
+  // which makes it the cheapest possible test of the loops above.
+  match multiply(a, identity(3)) {
+    Ok(same) => print("A x I(3) gives A back: ${same == a}"),
+    Err(why) => print("A x I(3): ${why}"),
+  }
+
+  // And the guard earns its keep: A is 2x3, so A x A never had an answer.
+  match multiply(a, a) {
+    Ok(_)    => print("A x A: this should not have been possible"),
+    Err(why) => print("A x A: ${why}"),
+  }
+}

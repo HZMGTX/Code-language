@@ -25,6 +25,7 @@
  *    A map literal in a header must be parenthesised. This mirrors Rust.
  */
 
+import { FOREIGN_KEYWORDS, STRING_PREFIXES } from './hints.js';
 import {
   type Diagnostic,
   type Note,
@@ -34,15 +35,17 @@ import {
   span,
 } from './diagnostics.js';
 import { lex } from './lexer.js';
-import { describe, describeToken, type Token, type TokenKind } from './token.js';
+import { KEYWORDS, describe, describeToken, type Token, type TokenKind } from './token.js';
 import type {
   Arg,
+  BinaryOp,
   Block,
   EnumVariant,
   Expr,
   ExportDecl,
   FieldInit,
   FnDecl,
+  ImportSpecifier,
   MapEntry,
   MatchArm,
   Module,
@@ -75,7 +78,18 @@ const PRECEDENCE: Partial<Record<TokenKind, number>> = {
   '*': 9,
   '/': 9,
   '%': 9,
+  '**': 10,
 };
+
+/**
+ * Operators that group to the right, so `2 ** 3 ** 2` is `2 ** (3 ** 2)`.
+ *
+ * Exponentiation is the only one. It is the convention in mathematics and in
+ * every language that has the operator, and the left-associative reading is
+ * never what anybody means: `(2 ** 3) ** 2` is `2 ** 6`, and is spelled that
+ * way instead.
+ */
+const RIGHT_ASSOCIATIVE: readonly TokenKind[] = ['**'];
 
 const ASSIGN_OPS: readonly TokenKind[] = ['=', '+=', '-=', '*=', '/='];
 
@@ -90,17 +104,77 @@ const STMT_START: readonly TokenKind[] = [
 
 const MAX_ERRORS = 25;
 
+/** Whether an expression names a place a value can be put. */
+function isAssignTarget(expr: Expr): boolean {
+  switch (expr.kind) {
+    case 'Ident':
+    case 'MemberExpr':
+    case 'IndexExpr':
+      return true;
+    case 'ListLit':
+      // Empty would assign nothing, which is a typo rather than an intention.
+      return expr.items.length > 0 && expr.items.every(isAssignTarget);
+    default:
+      return false;
+  }
+}
+
+/**
+ * Whether a token could be a field or key name — which includes every keyword,
+ * since a keyword before a `:` inside braces cannot be anything else.
+ */
+function isNameLike(tok: Token): boolean {
+  return tok.kind === 'ident' || tok.kind === 'string' || KEYWORDS.has(tok.text);
+}
+
+/** The deepest the parser will recurse before reporting `PA016`. */
+const MAX_NESTING = 250;
+
 export class Parser {
   private i = 0;
   private readonly diagnostics: Diagnostic[] = [];
   /** When > 0, `{` is a block, never a map or struct literal. */
   private noBraceLit = 0;
+  /** How many `if`/`while`/guard conditions enclose the current expression. */
+  private conditions = 0;
+  /** Current parser recursion depth. See `nested`. */
+  private depth = 0;
 
   constructor(
     private readonly tokens: readonly Token[],
     private readonly file: string,
     private readonly source: string,
-  ) {}
+    /**
+     * Where this parser's nesting budget starts.
+     *
+     * Each `${…}` is parsed by a *new* `Parser`, so a nested interpolation used
+     * to reset the budget to zero and recurse as far as the host's stack
+     * allowed. Passing the depth in makes one budget span the whole file,
+     * however many sub-parsers it takes to read it.
+     */
+    depth = 0,
+    /**
+     * What this parser is reading, for the "found the end of …" half of a
+     * message.
+     *
+     * Each `${…}` is parsed by its own `Parser` over the fragment's source, so
+     * its `eof` is the end of the *fragment* — and a parse error inside one
+     * said "expected an expression, found end of file" pointing at line 2 of a
+     * ten-line file. Every other position in the diagnostic was right, which
+     * made the one wrong word harder to disbelieve.
+     */
+    private readonly reading: 'file' | 'interpolation' = 'file',
+  ) {
+    this.depth = depth;
+  }
+
+  /** `describeToken`, with this parser's idea of where its input ends. */
+  private found(tok: Token): string {
+    if (tok.kind === 'eof' && this.reading === 'interpolation') {
+      return 'the end of the interpolation';
+    }
+    return describeToken(tok);
+  }
 
   // ------------------------------------------------------------- navigation
 
@@ -138,11 +212,100 @@ export class Parser {
   private expect(kind: TokenKind, context?: string): Token {
     if (this.at(kind)) return this.advance();
     const where = context === undefined ? '' : ' ' + context;
+    const notes = [...(this.habitNotes(kind) ?? []), ...this.openerNote(kind)];
     return this.fail(
       'PA001',
-      'expected ' + describe(kind) + where + ', found ' + describeToken(this.cur()),
+      'expected ' + describe(kind) + where + ', found ' + this.found(this.cur()),
       'expected ' + describe(kind),
+      notes.length > 0 ? notes : undefined,
     );
+  }
+
+  /**
+   * Where the bracket a closer would close was opened, when that is on an
+   * earlier line.
+   *
+   * "expected `}` to close this block, found end of file" points at the end
+   * of the file, and the mistake is a `{` two hundred lines up that nothing
+   * closed — the one line the message did not name. Found by walking the
+   * tokens back from here with a depth count, which is exact for the thing it
+   * is used for and needs nothing from the grammar: the nearest unmatched
+   * opener before the cursor is the one this closer was going to close. On the
+   * same line the caret already shows it, and the note would be noise.
+   */
+  private openerNote(closer: TokenKind): Note[] {
+    const opener = closer === ')' ? '(' : closer === ']' ? '[' : closer === '}' ? '{' : undefined;
+    if (opener === undefined) return [];
+    let depth = 0;
+    for (let j = this.i - 1; j >= 0; j -= 1) {
+      const tok = this.tokens[j];
+      if (tok === undefined) break;
+      if (tok.kind === closer) {
+        depth += 1;
+      } else if (tok.kind === opener) {
+        if (depth > 0) {
+          depth -= 1;
+          continue;
+        }
+        if (tok.span.start.line >= this.cur().span.start.line) return [];
+        return [{ message: 'it opened here', span: tok.span }];
+      }
+    }
+    return [];
+  }
+
+  /**
+   * What the token in the way usually means when the fingers that typed it
+   * learned another language first; see `hints.ts`. The error is unchanged —
+   * `xs[0:2]` really is a `:` where `]` was expected — and gains the one line
+   * that says how Lumen spells it.
+   */
+  private habitNotes(expected: TokenKind): Note[] | undefined {
+    const tok = this.cur();
+    if (tok.kind === 'in') {
+      return [{ message: '`xs.contains(x)` asks whether a list holds a value; `in` only appears in `for x in xs`' }];
+    }
+    if (tok.kind === ':' && expected === ']') {
+      return [{ message: 'a slice is `xs.slice(from, to)`, on a list or a string' }];
+    }
+    if (tok.kind === ':' && expected === '{') {
+      return [{ message: 'a block starts with `{` and ends with `}`; Lumen does not use `:` and indentation' }];
+    }
+    // `f"hi {name}"`: a name pressed against a string, which is never Lumen.
+    const prev = this.tokens[this.i - 1];
+    if (
+      (tok.kind === 'string' || tok.kind === 'template') &&
+      prev !== undefined &&
+      prev.kind === 'ident' &&
+      STRING_PREFIXES.has(prev.text) &&
+      prev.span.end.offset === tok.span.start.offset
+    ) {
+      return [{ message: 'there is no `' + prev.text + '` prefix: every string interpolates, `"hi ${name}"`' }];
+    }
+    return undefined;
+  }
+
+  /**
+   * The same question after a whole statement, where the shape is a bare word
+   * and then a value on the same line: `def f(x):`, `print "hello"`, `try {`.
+   */
+  private habitAfterStatement(stmt: Stmt | undefined): Note[] | undefined {
+    const tok = this.cur();
+    if (tok.kind === 'ident' && tok.text === 'elif') return [{ message: '`elif` is spelled `else if`' }];
+    if (tok.kind === 'if') {
+      return [{ message: 'Lumen\'s `if` is an expression and comes first: `let x = if c { 1 } else { 2 }`' }];
+    }
+    const word = trailingName(stmt);
+    if (word === undefined) return undefined;
+    const foreign = FOREIGN_KEYWORDS.get(word);
+    if (foreign !== undefined) return [{ message: foreign }];
+    // `print "hello"`: a bare name as the whole statement, then a value.
+    const startsAValue =
+      tok.kind === 'string' || tok.kind === 'template' || tok.kind === 'number' || tok.kind === 'ident';
+    if (startsAValue && stmt?.kind === 'ExprStmt') {
+      return [{ message: 'to call `' + word + '`, put its arguments in parentheses: `' + word + '(…)`' }];
+    }
+    return undefined;
   }
 
   private skipNewlines(): void {
@@ -174,6 +337,25 @@ export class Parser {
     this.diagnostics.push(d);
   }
 
+  /**
+   * A name, in a position where only a name can appear.
+   *
+   * A keyword is only a keyword where a statement or an expression could
+   * start. After a `.`, before the `:` of a map entry, as a struct field or an
+   * import alias, there is nothing else it could be — so `{ if: 1 }` and
+   * `m.for` and a JSON object with a key called `match` all have to work.
+   * `parse('{"true": 1}')` produces exactly that, and before this there was no
+   * way to write it or to reach it with a dot.
+   */
+  private expectName(context: string): Token {
+    const tok = this.cur();
+    if (tok.kind === 'ident' || KEYWORDS.has(tok.text)) {
+      this.advance();
+      return tok;
+    }
+    return this.expect('ident', context);
+  }
+
   private fail(code: string, message: string, label?: string, notes?: readonly Note[]): never {
     this.report({
       severity: 'error',
@@ -186,17 +368,40 @@ export class Parser {
     throw new ParseAbort();
   }
 
-  /** Skip tokens until something that plausibly starts a new statement. */
+  /**
+   * Skip tokens until something that plausibly starts a new statement.
+   *
+   * A `{ … }` opened past the error is part of what is being skipped. In
+   * `} elif x == 2 { print(2) }` the mistake is `elif`; the block after it is
+   * the body of the thing that failed, and used to be parsed on its own, so
+   * that its closing `}` was then reported as unmatched — a second error for
+   * one slip, and the wrong one to read first. A `}` at depth zero is the
+   * end of the block the error was in, and stays for whoever opened it.
+   */
   private synchronize(): void {
+    let depth = 0;
     // Always make progress, or a malformed token loops forever.
-    if (!this.atAny('newline', 'eof', '}')) this.advance();
+    if (!this.atAny('newline', 'eof', '}')) {
+      if (this.at('{')) depth += 1;
+      this.advance();
+    }
     for (;;) {
-      if (this.atAny('eof', '}')) return;
-      if (this.at('newline')) {
-        this.skipNewlines();
-        return;
+      if (this.at('eof')) return;
+      if (this.at('{')) depth += 1;
+      if (this.at('}')) {
+        if (depth === 0) return;
+        depth -= 1;
+        this.advance();
+        if (depth === 0) return;
+        continue;
       }
-      if (this.atAny(...STMT_START)) return;
+      if (depth === 0) {
+        if (this.at('newline')) {
+          this.skipNewlines();
+          return;
+        }
+        if (this.atAny(...STMT_START)) return;
+      }
       this.advance();
     }
   }
@@ -208,6 +413,41 @@ export class Parser {
       return parse();
     } finally {
       this.noBraceLit -= 1;
+    }
+  }
+
+  /**
+   * A condition: a header where `=` is almost always a mistyped `==`.
+   *
+   * Counted separately from `noBraceLit` because a `for` iterable and a
+   * `match` subject are headers too, and `==` is no answer in either.
+   */
+  private inCondition<T>(parse: () => T): T {
+    this.conditions += 1;
+    try {
+      return this.inHeader(parse);
+    } finally {
+      this.conditions -= 1;
+    }
+  }
+
+  /**
+   * A match guard: a condition, but with no body brace to be ambiguous with.
+   *
+   * `RS013` still wants to know it is a condition — `m if m = 5` is the same
+   * mistake there as anywhere — while brace literals stay legal, because
+   * `parseMatch` requires `=>` next and there is nothing a `{` could be but a
+   * value.
+   */
+  private inGuard<T>(parse: () => T): T {
+    this.conditions += 1;
+    const saved = this.noBraceLit;
+    this.noBraceLit = 0;
+    try {
+      return parse();
+    } finally {
+      this.noBraceLit = saved;
+      this.conditions -= 1;
     }
   }
 
@@ -249,8 +489,9 @@ export class Parser {
       }
       const before = this.i;
       try {
-        stmts.push(this.parseStmt());
-        this.endStatement();
+        const stmt = this.parseStmt();
+        stmts.push(stmt);
+        this.endStatement(stmt);
       } catch (err) {
         if (!(err instanceof ParseAbort)) throw err;
         if (this.diagnostics.length >= MAX_ERRORS) break;
@@ -264,19 +505,55 @@ export class Parser {
     return { kind: 'Module', file: this.file, stmts, span: this.spanFrom(first) };
   }
 
-  /** Parse exactly one expression — used for the REPL and for interpolations. */
+  /**
+   * Parse exactly one expression, and nothing after it.
+   *
+   * Used for the text inside an interpolation, and by `parseExpression` for a
+   * host that wants a single expression.
+   *
+   * `fail` unwinds with a `ParseAbort`, which every other entry point catches —
+   * `parseModule` catches it to recover onto the next statement. This one did
+   * not, so a bad expression escaped as an internal exception instead of the
+   * `LumenError` the signature promises, and a caller had no way to render it.
+   * There is nothing to recover *onto* here, so the catch is bare: collect the
+   * diagnostic and let `finish` raise it properly.
+   */
   parseExpressionEntry(): Expr {
-    this.skipNewlines();
-    const expr = this.parseExpr();
-    this.skipNewlines();
-    if (!this.at('eof')) {
-      this.fail(
-        'PA002',
-        'unexpected ' + describeToken(this.cur()) + ' after expression',
-        'not part of the expression',
-      );
+    let expr: Expr | undefined;
+    try {
+      this.skipNewlines();
+      expr = this.parseExpr();
+      this.skipNewlines();
+      if (!this.at('eof')) {
+        this.fail(
+          'PA002',
+          'unexpected ' + this.found(this.cur()) + ' after expression',
+          'not part of the expression',
+        );
+      }
+    } catch (err) {
+      if (!(err instanceof ParseAbort)) throw err;
     }
     this.finish();
+    if (expr === undefined) {
+      // `finish` raises whenever a diagnostic was recorded, and `fail` always
+      // records one before aborting, so this is unreachable — but an entry
+      // point that can return `undefined` typed as `Expr` is worse than a
+      // check that never fires.
+      throw new LumenError(
+        [
+          {
+            severity: 'error',
+            code: 'PA002',
+            message: 'expected an expression',
+            span: this.cur().span,
+            label: 'nothing to parse',
+          },
+        ],
+        this.file,
+        this.source,
+      );
+    }
     return expr;
   }
 
@@ -287,7 +564,7 @@ export class Parser {
   }
 
   /** A statement must be followed by a line break, `;`, `}`, or end of input. */
-  private endStatement(): void {
+  private endStatement(stmt?: Stmt): void {
     if (this.eat(';')) {
       this.skipNewlines();
       return;
@@ -297,11 +574,24 @@ export class Parser {
       return;
     }
     if (this.atAny('}', 'eof')) return;
+    // A `:` here almost always means a map literal was written where a `{`
+    // opened a block. `1 => { a: 1 }` reads as an arm whose body is a block
+    // containing the statement `a`, and then the `:` has nowhere to go — so the
+    // standing advice, "expected a line break or `;` here", is advice that
+    // cannot be followed: no line break makes that a map. Parentheses do.
+    const looksLikeAMap = this.at(':');
     this.fail(
       'PA003',
-      'unexpected ' + describeToken(this.cur()) + ' after statement',
+      'unexpected ' + this.found(this.cur()) + ' after statement',
       'expected a line break or `;` here',
-      [{ message: 'statements in Lumen end at the end of the line; semicolons are optional' }],
+      looksLikeAMap
+        ? [
+            { message: 'a `{` after `=>`, or at the start of a statement, opens a block' },
+            { message: 'for a map literal there, put it in parentheses: `({ a: 1 })`' },
+          ]
+        : (this.habitAfterStatement(stmt) ?? [
+            { message: 'statements in Lumen end at the end of the line; semicolons are optional' },
+          ]),
     );
   }
 
@@ -355,6 +645,23 @@ export class Parser {
   private parseLet(): Stmt {
     const start = this.advance(); // let | var
     const mutable = start.kind === 'var';
+
+    // `let [a, b] = pair` takes the pattern that `match` and `for` already
+    // use, so returning two things needs no special machinery.
+    if (this.at('[')) {
+      const pattern = this.parsePattern();
+      this.expect('=', 'in a `' + start.kind + '` declaration');
+      this.skipNewlines();
+      const value = this.parseExpr();
+      return {
+        kind: 'DestructureDecl',
+        pattern,
+        mutable,
+        value,
+        span: this.spanFrom(start),
+      };
+    }
+
     const name = this.expect('ident', 'after `' + start.kind + '`');
     let type: TypeExpr | undefined;
     if (this.eat(':')) type = this.parseTypeExpr();
@@ -364,6 +671,7 @@ export class Parser {
     return {
       kind: 'LetDecl',
       name: name.text,
+      nameSpan: name.span,
       mutable,
       type,
       value,
@@ -382,15 +690,26 @@ export class Parser {
     }
     this.skipNewlines();
     const body = this.parseBlock();
-    return { kind: 'FnDecl', name: name.text, params, ret, body, span: this.spanFrom(start) };
+    return {
+      kind: 'FnDecl',
+      name: name.text,
+      nameSpan: name.span,
+      params,
+      ret,
+      body,
+      span: this.spanFrom(start),
+    };
   }
 
   private parseParamList(): Param[] {
     this.expect('(', 'to start a parameter list');
     const params: Param[] = [];
+    let reportedTrailingRest = false;
     this.inBrackets(() => {
       this.skipNewlines();
       while (!this.at(')') && !this.at('eof')) {
+        const restStart = this.cur();
+        const rest = this.eat('..');
         const pStart = this.expect('ident', 'as a parameter name');
         let type: TypeExpr | undefined;
         if (this.eat(':')) type = this.parseTypeExpr();
@@ -399,11 +718,44 @@ export class Parser {
           this.skipNewlines();
           defaultValue = this.parseExpr();
         }
+
+        // A `..` parameter takes everything left over, so nothing can follow it
+        // and a default could never be reached.
+        if (rest && defaultValue !== undefined) {
+          this.report({
+            severity: 'error',
+            code: 'PA017',
+            message: '`..' + pStart.text + '` cannot have a default value',
+            span: this.spanFrom(restStart),
+            label: 'a `..` parameter is always given a list, possibly empty',
+            notes: [{ message: 'drop the `= ...`; it can never be reached' }],
+          });
+          defaultValue = undefined;
+        }
+        // Once, however many parameters follow. `fn f(..a, b, c, …)` is one
+        // mistake, and reporting it per later parameter turned it into sixty
+        // identical diagnostics — a cascade, which is exactly what the 25-error
+        // bound exists to contain and could not, because that bound is only
+        // consulted where a diagnostic aborts the parse.
+        if (params.some((p) => p.rest) && !reportedTrailingRest) {
+          reportedTrailingRest = true;
+          this.report({
+            severity: 'error',
+            code: 'PA017',
+            message: 'a `..` parameter must be the last one',
+            span: this.spanFrom(restStart),
+            label: 'nothing can follow it',
+            notes: [{ message: 'it takes every remaining argument, so there are none left' }],
+          });
+        }
+
         params.push({
           name: pStart.text,
+          nameSpan: pStart.span,
           type,
           defaultValue,
-          span: this.spanFrom(pStart),
+          rest,
+          span: this.spanFrom(restStart),
         });
         this.skipNewlines();
         if (!this.eat(',')) break;
@@ -424,7 +776,7 @@ export class Parser {
     this.inBrackets(() => {
       this.skipNewlines();
       while (!this.at('}') && !this.at('eof')) {
-        const fStart = this.expect('ident', 'as a field name');
+        const fStart = this.expectName('as a field name');
         let type: TypeExpr | undefined;
         if (this.eat(':')) type = this.parseTypeExpr();
         fields.push({ name: fStart.text, type, span: this.spanFrom(fStart) });
@@ -435,7 +787,13 @@ export class Parser {
       this.skipNewlines();
     });
     this.expect('}', 'to close the struct body');
-    return { kind: 'StructDecl', name: name.text, fields, span: this.spanFrom(start) };
+    return {
+      kind: 'StructDecl',
+      name: name.text,
+      nameSpan: name.span,
+      fields,
+      span: this.spanFrom(start),
+    };
   }
 
   private parseEnum(): Stmt {
@@ -467,7 +825,13 @@ export class Parser {
       this.skipNewlines();
     });
     this.expect('}', 'to close the enum body');
-    return { kind: 'EnumDecl', name: name.text, variants, span: this.spanFrom(start) };
+    return {
+      kind: 'EnumDecl',
+      name: name.text,
+      nameSpan: name.span,
+      variants,
+      span: this.spanFrom(start),
+    };
   }
 
   private parseReturn(): Stmt {
@@ -479,7 +843,7 @@ export class Parser {
 
   private parseWhile(): Stmt {
     const start = this.advance(); // while
-    const condition = this.inHeader(() => this.parseExpr());
+    const condition = this.inCondition(() => this.parseExpr());
     this.skipNewlines();
     const body = this.parseBlock();
     return { kind: 'WhileStmt', condition, body, span: this.spanFrom(start) };
@@ -498,18 +862,36 @@ export class Parser {
 
   private parseImport(): Stmt {
     const start = this.advance(); // import
+    if (this.at('ident')) {
+      // `import math`: the shape of every other language's import.
+      this.fail(
+        'PA001',
+        'expected `{` to start an import list, found ' + this.found(this.cur()),
+        'expected `{`',
+        [{ message: 'an import names what it takes: `import { sqrt } from "std/math"`' }],
+      );
+    }
     this.expect('{', 'to start an import list');
-    const specifiers: { name: string; alias: string | undefined; span: Span }[] = [];
+    const specifiers: ImportSpecifier[] = [];
     this.inBrackets(() => {
       this.skipNewlines();
       while (!this.at('}') && !this.at('eof')) {
-        const nameTok = this.expect('ident', 'as an imported name');
+        const nameTok = this.expectName('as an imported name');
         let alias: string | undefined;
+        let aliasSpan: Span | undefined;
         if (this.at('ident') && this.cur().text === 'as') {
           this.advance();
-          alias = this.expect('ident', 'after `as`').text;
+          const aliasTok = this.expectName('after `as`');
+          alias = aliasTok.text;
+          aliasSpan = aliasTok.span;
         }
-        specifiers.push({ name: nameTok.text, alias, span: this.spanFrom(nameTok) });
+        specifiers.push({
+          name: nameTok.text,
+          alias,
+          nameSpan: nameTok.span,
+          localSpan: aliasSpan ?? nameTok.span,
+          span: this.spanFrom(nameTok),
+        });
         this.skipNewlines();
         if (!this.eat(',')) break;
         this.skipNewlines();
@@ -517,7 +899,12 @@ export class Parser {
       this.skipNewlines();
     });
     this.expect('}', 'to close the import list');
-    if (!this.eat('from')) {
+    // `from` is a word here rather than a keyword, exactly like `as` above: it
+    // means something in this one position and is an ordinary name everywhere
+    // else, so `let from = ...` and `fn replace(s, from, to)` are programs a
+    // person can write. See `KEYWORDS` for why it is worth the two lines.
+    if (this.at('ident') && this.cur().text === 'from') this.advance();
+    else {
       this.fail('PA004', 'expected `from` after an import list', 'expected `from`', [
         { message: 'imports look like: import { map } from "std/list"' },
       ]);
@@ -557,6 +944,10 @@ export class Parser {
   }
 
   private parseBlock(): Block {
+    return this.nested(() => this.parseBlockInner());
+  }
+
+  private parseBlockInner(): Block {
     const start = this.expect('{', 'to start a block');
     const stmts: Stmt[] = [];
     const saved = this.noBraceLit;
@@ -566,8 +957,9 @@ export class Parser {
       while (!this.at('}') && !this.at('eof')) {
         const before = this.i;
         try {
-          stmts.push(this.parseStmt());
-          this.endStatement();
+          const stmt = this.parseStmt();
+          stmts.push(stmt);
+          this.endStatement(stmt);
         } catch (err) {
           if (!(err instanceof ParseAbort)) throw err;
           if (this.diagnostics.length >= MAX_ERRORS) break;
@@ -586,6 +978,10 @@ export class Parser {
   // ------------------------------------------------------------------ types
 
   private parseTypeExpr(): TypeExpr {
+    return this.nested(() => this.parseTypeExprInner());
+  }
+
+  private parseTypeExprInner(): TypeExpr {
     this.skipNewlines();
     const start = this.cur();
     if (this.at('fn')) {
@@ -628,6 +1024,10 @@ export class Parser {
   // --------------------------------------------------------------- patterns
 
   private parsePattern(): Pattern {
+    return this.nested(() => this.parsePatternInner());
+  }
+
+  private parsePatternInner(): Pattern {
     const start = this.cur();
 
     if (this.at('ident') && start.text === '_') {
@@ -699,7 +1099,7 @@ export class Parser {
         this.inBrackets(() => {
           this.skipNewlines();
           while (!this.at('}') && !this.at('eof')) {
-            const fName = this.expect('ident', 'as a field name in a struct pattern');
+            const fName = this.expectName('as a field name in a struct pattern');
             let pattern: Pattern;
             if (this.eat(':')) {
               pattern = this.parsePattern();
@@ -735,7 +1135,7 @@ export class Parser {
 
     return this.fail(
       'PA007',
-      'expected a pattern, found ' + describeToken(this.cur()),
+      'expected a pattern, found ' + this.found(this.cur()),
       'not a pattern',
       [{ message: 'patterns are `_`, a name, a literal, `Name(..)`, `Name { .. }`, or `[..]`' }],
     );
@@ -762,7 +1162,51 @@ export class Parser {
   // ------------------------------------------------------------ expressions
 
   private parseExpr(): Expr {
-    return this.parseAssign();
+    return this.nested(() => this.parseAssign());
+  }
+
+  /**
+   * Bound how deeply the parser may recurse.
+   *
+   * Without this, source nested a thousand levels deep exhausted the host's
+   * stack, and what the user saw was a bare "stack overflow — a function is
+   * probably recursing without a base case": not what happened, and nothing
+   * they could act on. A parser should not need the host's stack to still be
+   * standing in order to report an error.
+   *
+   * The limit bounds every later walk of the tree as well — the resolver, the
+   * type checker, `display`, equality — since none of them can meet a tree
+   * deeper than the parser was willing to build.
+   *
+   * 250 is far past anything written by hand and well short of where the
+   * stack gives out, which is somewhere between 500 and 1000.
+   */
+  /**
+   * `PA016`, wherever the limit is reached.
+   *
+   * `what` names the thing there is too much of, because the two shapes that
+   * get here are not the same shape: one is genuinely nested, the other is a
+   * flat chain of operators that nests only in the tree it produces.
+   */
+  private tooDeep(what: string): never {
+    return this.fail(
+      'PA016',
+      'nested too deeply',
+      'more than ' + String(MAX_NESTING) + ' ' + what + ' here',
+      [{ message: 'this is usually generated source; break it into named parts' }],
+    );
+  }
+
+  private nested<T>(parse: () => T): T {
+    if (this.depth >= MAX_NESTING) {
+      return this.tooDeep('levels');
+    }
+    this.depth += 1;
+    try {
+      return parse();
+    } finally {
+      this.depth -= 1;
+    }
   }
 
   private parseAssign(): Expr {
@@ -772,15 +1216,46 @@ export class Parser {
 
     const opTok = this.advance();
     this.skipNewlines();
-    const value = this.parseAssign(); // right-associative
-    if (left.kind !== 'Ident' && left.kind !== 'MemberExpr' && left.kind !== 'IndexExpr') {
+    // Right-associative, and so recursive: `x = x = x = …` is a deep tree.
+    const value = this.nested(() => this.parseAssign());
+    // `[a, b] = [b, a]` assigns positionally, so a swap is one line. Only
+    // plain `=`: `[a, b] += ...` has no sensible meaning.
+    const destructuring = left.kind === 'ListLit' && opTok.kind === '=';
+    if (destructuring && !isAssignTarget(left)) {
+      this.report({
+        severity: 'error',
+        code: 'PA008',
+        message: 'cannot assign to this expression',
+        span: left.span,
+        label: 'not every element is a place that can hold a value',
+        notes: [
+          { message: 'each element must be a variable, a field, or an index expression' },
+        ],
+      });
+      throw new ParseAbort();
+    }
+    if (!destructuring && left.kind !== 'Ident' && left.kind !== 'MemberExpr' && left.kind !== 'IndexExpr') {
+      // `if x > 0 and x = 4 {` is this: `=` binds loosest, so the target is
+      // `x > 0 and x`. In a control-flow header the mistake is almost always
+      // `==`, and the standing note about assignment targets, though true,
+      // would send somebody looking for a different place to store a value.
+      const inCondition = this.conditions > 0;
       this.report({
         severity: 'error',
         code: 'PA008',
         message: 'cannot assign to this expression',
         span: left.span,
         label: 'not a place that can hold a value',
-        notes: [{ message: 'assignment targets are variables, fields, or index expressions' }],
+        notes: [
+          ...(inCondition
+            ? [{ message: 'did you mean `==`? `=` assigns, and takes everything before it as the target' }]
+            : []),
+          {
+            message:
+              'assignment targets are variables, fields, index expressions, ' +
+              'or a list of those: `[a, b] = [b, a]`',
+          },
+        ],
       });
       throw new ParseAbort();
     }
@@ -796,6 +1271,14 @@ export class Parser {
   private parseBinary(minPrec: number): Expr {
     const start = this.cur();
     let left = this.parseUnary();
+    // Every operator chained at this level adds a level to the tree, even
+    // though the parser is looping rather than recursing — and every later walk
+    // of that tree *does* recurse. `nested`'s comment claims the limit "bounds
+    // every later walk of the tree as well, since none of them can meet a tree
+    // deeper than the parser was willing to build", and for a flat chain that
+    // was not true: `1 + 1 + ...` three thousand times parsed at depth 1 and
+    // then took the type checker's stack out with a bare `RangeError`.
+    let chained = 0;
 
     for (;;) {
       this.skipNewlinesBeforeContinuation();
@@ -803,9 +1286,20 @@ export class Parser {
       const prec = PRECEDENCE[tok.kind];
       if (prec === undefined || prec < minPrec) break;
 
+      chained += 1;
+      if (this.depth + chained >= MAX_NESTING) return this.tooDeep('chained operators');
+
       this.advance();
       this.skipNewlines();
-      const right = this.parseBinary(prec + 1);
+      // A right-associative operator re-enters at its own level, so the next
+      // one of the same kind lands in the right operand rather than closing
+      // this one.
+      // Counted: a right-associative operator re-enters at its own level, so a
+      // chain of `**` recurses here rather than looping above, and the
+      // `chained` counter never sees it.
+      const right = this.nested(() =>
+        this.parseBinary(RIGHT_ASSOCIATIVE.includes(tok.kind) ? prec : prec + 1),
+      );
       const nodeSpan = this.spanFrom(start);
 
       switch (tok.kind) {
@@ -826,7 +1320,7 @@ export class Parser {
         default:
           left = {
             kind: 'Binary',
-            op: tok.kind as '+' | '-' | '*' | '/' | '%' | '==' | '!=' | '<' | '<=' | '>' | '>=',
+            op: tok.kind as BinaryOp,
             left,
             right,
             span: nodeSpan,
@@ -841,7 +1335,33 @@ export class Parser {
     if (this.atAny('-', '!', 'not')) {
       const op = this.advance();
       this.skipNewlines();
-      const operand = this.parseUnary();
+      // Counted, because this recursion is the parser's own stack: `nested`
+      // wraps a whole expression once, so three thousand `-` in a row all sat
+      // at depth 1 and overflowed before any limit was consulted.
+      const operand = this.nested(() => this.parseUnary());
+
+      // `-2 ** 2` is refused rather than answered. Both readings are defensible
+      // — Python reads it as `-(2 ** 2)`, which is -4, and binding the unary
+      // first gives `(-2) ** 2`, which is 4 — and a reader coming from either
+      // language is entitled to assume theirs. Choosing one silently means
+      // somebody's arithmetic is wrong with nothing to show them why, so the
+      // parentheses are required. JavaScript made the same call.
+      if (this.at('**')) {
+        const unary = op.kind === 'not' ? 'not' : op.text;
+        this.fail(
+          'PA018',
+          'ambiguous `' + unary + '` before `**`',
+          'add parentheses to say which comes first',
+          [
+            { message: 'write `' + unary + '(… ** …)` to raise first, then apply `' + unary + '`' },
+            { message: 'write `(' + unary + ' …) ** …` to apply `' + unary + '` first, then raise' },
+            ...(op.kind === '-'
+              ? [{ message: 'Python reads `-2 ** 2` as the first, which is -4; Lumen will not guess' }]
+              : []),
+          ],
+        );
+      }
+
       return {
         kind: 'Unary',
         op: op.kind === 'not' ? 'not' : (op.kind as '-' | '!'),
@@ -852,8 +1372,25 @@ export class Parser {
     if (this.at('await')) {
       this.advance();
       this.skipNewlines();
-      const operand = this.parseUnary();
+      // Through `nested`, like the `-`/`!`/`not` branch above: the budget is
+      // the depth of the tree being built, and a recursion that skips it is a
+      // shape the limit cannot see.
+      const operand = this.nested(() => this.parseUnary());
       return { kind: 'AwaitExpr', operand, span: this.spanFrom(start) };
+    }
+    // `return`, `break` and `continue` are also expressions. They produce no
+    // value, so this is not about composing them — it is so a `match` arm or
+    // an `if` branch can leave, which is where wanting them is common.
+    if (this.atAny('return', 'break', 'continue')) {
+      const word = this.advance();
+      const jump = word.kind as 'return' | 'break' | 'continue';
+      // A value binds as loosely as possible: `return a + b` returns the sum.
+      // Everything that can close an expression ends it instead.
+      const value =
+        jump === 'return' && !this.atAny('newline', ';', ',', ')', ']', '}', 'eof')
+          ? this.parseExpr()
+          : undefined;
+      return { kind: 'JumpExpr', jump, value, span: this.spanFrom(start) };
     }
     return this.parsePostfix();
   }
@@ -861,9 +1398,21 @@ export class Parser {
   private parsePostfix(): Expr {
     const start = this.cur();
     let expr = this.parsePrimary();
+    // One level of tree per suffix, the same as a chained binary operator:
+    // `a[0][0][0]…` and `m.a.a.a…` are loops here and a deep spine afterwards.
+    let suffixes = 0;
 
     for (;;) {
       this.skipNewlinesBeforeContinuation();
+      // `?.` as well as `.`: the branch below handles both spellings, and
+      // leaving its token out here meant `a?.b?.b…` built an unbounded spine
+      // that `PA016` never saw — and then the *checker* walked it and died
+      // with a host `RangeError`, which is the one outcome the limit exists to
+      // prevent.
+      if (this.atAny('(', '[', '.', '?.', '?')) {
+        suffixes += 1;
+        if (this.depth + suffixes >= MAX_NESTING) return this.tooDeep('chained suffixes');
+      }
 
       if (this.at('(')) {
         this.advance();
@@ -886,7 +1435,7 @@ export class Parser {
       if (this.atAny('.', '?.')) {
         const opTok = this.advance();
         this.skipNewlines();
-        const name = this.expect('ident', 'after `' + opTok.kind + '`');
+        const name = this.expectName('after `' + opTok.kind + '`');
         expr = {
           kind: 'MemberExpr',
           target: expr,
@@ -914,7 +1463,10 @@ export class Parser {
         let name: string | undefined;
         // A named argument is `ident :` — unambiguous, since Lumen has no
         // ternary operator competing for the colon.
-        if (this.at('ident') && this.tokens[this.i + 1]?.kind === ':') {
+        if (
+          (this.at('ident') || KEYWORDS.has(this.cur().text)) &&
+          this.tokens[this.i + 1]?.kind === ':'
+        ) {
           name = this.advance().text;
           this.advance(); // ':'
           this.skipNewlines();
@@ -938,7 +1490,23 @@ export class Parser {
     const first = this.tokens[j];
     if (first === undefined) return false;
     if (first.kind === '}') return true; // `{}` is an empty map / empty struct
-    if (first.kind !== 'ident' && first.kind !== 'string') return false;
+    if (!isNameLike(first)) return false;
+    return this.tokens[j + 1]?.kind === ':';
+  }
+
+  /**
+   * As above, but for deciding whether to *complain* rather than to parse.
+   *
+   * `{}` is excluded: in a header it is far more likely an empty body — `if
+   * ready {}` — than an empty struct, and a false accusation is worse than the
+   * cascade it would have prevented.
+   */
+  private looksLikeStructLitInHeader(): boolean {
+    let j = this.i + 1; // past '{'
+    while (this.tokens[j]?.kind === 'newline') j += 1;
+    const first = this.tokens[j];
+    if (first === undefined) return false;
+    if (!isNameLike(first)) return false;
     return this.tokens[j + 1]?.kind === ':';
   }
 
@@ -1035,14 +1603,42 @@ export class Parser {
 
       case 'ident': {
         this.advance();
+        // In a header the `{` belongs to the body, so a struct literal there is
+        // ambiguous. Say so once, rather than letting the body be parsed as
+        // field syntax and reporting nine errors about the wreckage.
+        const ambiguousHeaderStruct =
+          this.noBraceLit > 0 && this.at('{') && this.looksLikeStructLitInHeader();
+        if (ambiguousHeaderStruct) {
+          this.report({
+            severity: 'error',
+            code: 'PA015',
+            message: 'a struct literal cannot appear here',
+            span: this.cur().span,
+            label: 'unexpected `{`',
+            notes: [
+              {
+                message:
+                  'inside an `if`, `while`, `for` or `match` header a `{` starts the body; ' +
+                  'wrap the struct in parentheses if you meant a value: `(' +
+                  tok.text +
+                  ' { ... })`',
+              },
+            ],
+          });
+          // Then parse it as the struct literal it plainly is, so the rest of
+          // the line still makes sense and this is the only error reported.
+        }
         // `Name { field: value }` — a struct literal, unless we are in a header.
-        if (this.at('{') && this.noBraceLit === 0 && this.looksLikeBraceLiteral()) {
+        if (
+          this.at('{') &&
+          (ambiguousHeaderStruct || (this.noBraceLit === 0 && this.looksLikeBraceLiteral()))
+        ) {
           this.advance();
           const fields: FieldInit[] = [];
           this.inBrackets(() => {
             this.skipNewlines();
             while (!this.at('}') && !this.at('eof')) {
-              const fName = this.expect('ident', 'as a field name');
+              const fName = this.expectName('as a field name');
               this.expect(':', 'after a field name');
               this.skipNewlines();
               const value = this.parseExpr();
@@ -1054,7 +1650,13 @@ export class Parser {
             this.skipNewlines();
           });
           this.expect('}', 'to close a struct literal');
-          return { kind: 'StructLit', name: tok.text, fields, span: this.spanFrom(tok) };
+          return {
+            kind: 'StructLit',
+            name: tok.text,
+            nameSpan: tok.span,
+            fields,
+            span: this.spanFrom(tok),
+          };
         }
         return { kind: 'Ident', name: tok.text, span: tok.span };
       }
@@ -1062,7 +1664,7 @@ export class Parser {
       default:
         return this.fail(
           'PA010',
-          'expected an expression, found ' + describeToken(tok),
+          'expected an expression, found ' + this.found(tok),
           'not an expression',
         );
     }
@@ -1076,7 +1678,7 @@ export class Parser {
       while (!this.at('}') && !this.at('eof')) {
         const eStart = this.cur();
         let key: Expr;
-        if (this.at('ident')) {
+        if (this.at('ident') || KEYWORDS.has(this.cur().text)) {
           const k = this.advance();
           key = { kind: 'StringLit', value: k.text, span: k.span };
         } else if (this.at('string')) {
@@ -1090,7 +1692,7 @@ export class Parser {
         } else {
           this.fail(
             'PA011',
-            'expected a map key, found ' + describeToken(this.cur()),
+            'expected a map key, found ' + this.found(this.cur()),
             'not a key',
             [{ message: 'keys are names, strings, or `[expr]` for a computed key' }],
           );
@@ -1111,7 +1713,7 @@ export class Parser {
 
   private parseIf(): Expr {
     const start = this.expect('if', 'to start a conditional');
-    const condition = this.inHeader(() => this.parseExpr());
+    const condition = this.inCondition(() => this.parseExpr());
     this.skipNewlines();
     const then = this.parseBlock();
 
@@ -1122,7 +1724,12 @@ export class Parser {
     if (this.at('else')) {
       this.advance();
       this.skipNewlines();
-      otherwise = this.at('if') ? this.parseIf() : this.parseBlock();
+      // An `else if` ladder is a right-leaning tree, one `IfExpr` per rung, so
+      // it costs depth exactly as a nested `if` does — and it was recursing
+      // outside the budget, so a dispatch table emitted from data (the most
+      // plausible way anybody writes four thousand of these) took out the
+      // host's stack instead of earning `PA016`.
+      otherwise = this.at('if') ? this.nested(() => this.parseIf()) : this.parseBlock();
     } else {
       this.i = savedIndex;
     }
@@ -1157,7 +1764,11 @@ export class Parser {
         let guard: Expr | undefined;
         if (this.eat('if')) {
           this.skipNewlines();
-          guard = this.inHeader(() => this.parseExpr());
+          // A guard is not a control-flow header. `=>` follows it, never a
+          // block, so a `{` here can only be a literal — and suppressing them
+          // rejected `_ if { a: 1 }["a"] == v` with a note saying the brace
+          // "starts the body", which is not true in this one position.
+          guard = this.inGuard(() => this.parseExpr());
         }
         this.expect('=>', 'after a match pattern');
         this.skipNewlines();
@@ -1207,7 +1818,9 @@ export class Parser {
       }
       try {
         const subTokens = lex(part.source, this.file, part.span.start);
-        const sub = new Parser(subTokens, this.file, this.source);
+        // The depth is passed on, so `"${"${…}"}"` shares one budget with the
+        // file it is in rather than starting again from zero.
+        const sub = new Parser(subTokens, this.file, this.source, this.depth + 1, 'interpolation');
         parts.push({ kind: 'expr', expr: sub.parseExpressionEntry() });
       } catch (err) {
         if (err instanceof LumenError) {
@@ -1227,8 +1840,33 @@ export function parse(source: string, file = '<input>'): Module {
   return new Parser(tokens, file, source).parseModule();
 }
 
-/** Parse a single expression — used by the REPL. */
+/**
+ * Parse exactly one expression, rejecting anything after it.
+ *
+ * Part of the embedding surface rather than of the pipeline: the REPL parses
+ * whole statements, like everything else that runs a program. This is for a
+ * host that wants one expression and no more — a watch window, a `--eval` flag,
+ * a language server asked about a selection. Its docstring used to claim the
+ * REPL used it, which was how it went unnoticed that nothing did.
+ */
 export function parseExpression(source: string, file = '<input>'): Expr {
   const tokens = lex(source, file);
   return new Parser(tokens, file, source).parseExpressionEntry();
+}
+
+/**
+ * The bare name a statement ends in, if it ends in one: `def` in `def f(x):`,
+ * `lambda` in `let f = lambda x: x + 1`, `new` in `p = new Point()`.
+ */
+function trailingName(stmt: Stmt | undefined): string | undefined {
+  if (stmt === undefined) return undefined;
+  const expr =
+    stmt.kind === 'ExprStmt'
+      ? stmt.expr.kind === 'AssignExpr'
+        ? stmt.expr.value
+        : stmt.expr
+      : stmt.kind === 'LetDecl' || stmt.kind === 'ReturnStmt'
+        ? stmt.value
+        : undefined;
+  return expr?.kind === 'Ident' ? expr.name : undefined;
 }

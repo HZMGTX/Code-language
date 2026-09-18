@@ -1,0 +1,6 @@
+error[RT035]: take n must not be negative, got -2
+ --> take-negative.lm:6:7
+  |
+6 | print(take([1, 2, 3, 4, 5], 0 - 2))
+  |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |

@@ -1,0 +1,7 @@
+// Imported by `../local-import.lm`. Nothing here runs on its own: a module that
+// only exports produces no output, which is what its golden file says.
+export fn greet(name) { "Hello, ${name}" }
+export fn twice(word) { "${word} ${word}" }
+
+// Not exported, so `local-import.lm` cannot see it.
+fn shout(word) { word.upper() }

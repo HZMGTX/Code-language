@@ -1,0 +1,129 @@
+// A website with a form, and the same file as a script.
+//
+//   lumen serve examples/guestbook.lm     then visit http://127.0.0.1:3000
+//   lumen run   examples/guestbook.lm     prints what each route returns
+//
+// `isServer()` is what makes both work. Under `serve` the routes are served;
+// under `run` the same handler is called with requests built by hand and its
+// answers are printed. So the site can be checked from a terminal, in CI, with
+// nothing listening on a port — which is the difference between a website you
+// can test and one you can only look at.
+
+import { serve, page, json, notFound, redirect, escape, form, isServer } from "std/web"
+
+struct Entry { name: Str, message: Str }
+
+// The guestbook itself. `var` because it grows; the handler below closes over
+// it, so every request sees the same list. A real site would write to a
+// database, and the only line that would change is this one.
+var entries = [
+  Entry { name: "Ada",   message: "First!" },
+  Entry { name: "Grace", message: "It compiles." },
+]
+
+// Everything a visitor typed goes through `escape` on the way out. A guestbook
+// is the classic place this is forgotten, and the classic place it is exploited.
+fn entryHtml(e) {
+  "<li><strong>${escape(e.name)}</strong> — ${escape(e.message)}</li>"
+}
+
+fn indexPage(note) {
+  let items = if entries.isEmpty() {
+    "<li><em>nothing yet</em></li>"
+  } else {
+    entries.map(entryHtml).join("")
+  }
+  page(
+    title: "Guestbook",
+    body: "<h1>Guestbook</h1>
+           ${note}
+           <ul>${items}</ul>
+           <form method='post' action='/'>
+             <p><label>Name <input name='name' required></label></p>
+             <p><label>Message <input name='message' required></label></p>
+             <p><button type='submit'>Sign</button></p>
+           </form>
+           <p><a href='/api/entries'>as JSON</a></p>",
+  )
+}
+
+// Validation returns a Result rather than a boolean, so the reason travels with
+// the refusal instead of being reconstructed by the caller.
+fn validate(fields) {
+  let name = fields["name"]
+  let message = fields["message"]
+  if name == nil || name.trim().isEmpty() { return Err("a name is required") }
+  if message == nil || message.trim().isEmpty() { return Err("a message is required") }
+  if len(name) > 40 { return Err("that name is too long") }
+  Ok(Entry { name: name.trim(), message: message.trim() })
+}
+
+fn handle(req) {
+  if req.path == "/" && req.method == "POST" {
+    match validate(form(req)) {
+      Ok(entry) => {
+        entries.push(entry)
+        // Redirect after a post, so a refresh does not sign the book twice.
+        redirect("/")
+      },
+      Err(why) => indexPage("<p style='color:crimson'>${escape(why)}</p>"),
+    }
+  } else if req.path == "/" {
+    indexPage("")
+  } else if req.path == "/api/entries" {
+    json(entries.map(fn(e) { { name: e.name, message: e.message } }))
+  } else {
+    notFound("<h1>404</h1><p>Nothing at <code>${escape(req.path)}</code>.</p>")
+  }
+}
+
+// ----------------------------------------------------------- the script half
+
+// A request is an ordinary Map, so one can be written down. The handler cannot
+// tell the difference, which is the point: what runs here is what will serve.
+fn request(method, path, body) {
+  {
+    method: method,
+    path: path,
+    query: {},
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: body,
+  }
+}
+
+fn summarize(label, response) {
+  let body = response.body
+  let firstLine = body.lines().filter(fn(l) { !l.trim().isEmpty() }).first()
+  print("  ${label.padEnd(34)} ${str(response.status).padStart(3)}  ${len(body)} bytes")
+  match firstLine { Some(l) => print("      ${l.trim().slice(0, 62)}"), None => print("") }
+}
+
+fn demo() {
+  print("Routes, called directly — no socket, no port, no browser.\n")
+  summarize("GET /", handle(request("GET", "/", "")))
+  summarize("POST / (Bobby Tables signs)",
+    handle(request("POST", "/", "name=Bobby&message=%3Cscript%3Ealert(1)%3C%2Fscript%3E")))
+  summarize("POST / (no name)", handle(request("POST", "/", "message=hello")))
+  summarize("GET /api/entries", handle(request("GET", "/api/entries", "")))
+  summarize("GET /nowhere", handle(request("GET", "/nowhere", "")))
+
+  print("")
+  print("The book now holds ${len(entries)} entries:")
+  for e in entries { print("  ${e.name.padEnd(8)} ${e.message}") }
+
+  print("")
+  // The script half earns its keep here: this is a test, and it needs no
+  // server, no browser and no network to run.
+  let page = handle(request("GET", "/", "")).body
+  assert(!page.contains("<script>alert"), "a visitor's script tag reached the page")
+  assert(page.contains("&lt;script&gt;"), "the script tag was not escaped")
+  print("Checked: what Bobby typed is on the page as text, not as a tag.")
+}
+
+fn main() {
+  if isServer() {
+    serve(handler: handle, port: 3000)
+  } else {
+    demo()
+  }
+}

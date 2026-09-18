@@ -1,0 +1,8 @@
+// A module that defines `main` has it called once the file has been read, so
+// writing the call as well runs everything twice — silently, which is the
+// problem. Python programmers write this from habit.
+fn main() {
+  print("hello")
+}
+
+main()

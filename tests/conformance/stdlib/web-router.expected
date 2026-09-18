@@ -1,0 +1,17 @@
+GET / -> 200 <h1>home</h1>
+GET /post/new -> 200 new post form
+GET /post/hello -> 200 post: hello
+GET /post/a%20b -> 200 post: a b
+GET /both -> 200 method was GET
+POST /both -> 200 method was POST
+GET /static/css/site.css -> 200 file: css/site.css
+GET /health -> 200 {"ok":true}
+GET /health/ -> 200 {"ok":true}
+GET //health// -> 200 {"ok":true}
+GET /only-post -> 405 (allow POST) GET is not allowed here. Try: POST
+
+DELETE /health -> 405 (allow GET) DELETE is not allowed here. Try: GET
+
+GET /nope -> 404 Not Found
+get / -> 200 <h1>home</h1>
+404 nothing at /gone

@@ -1,0 +1,5 @@
+// A `let` has no second arm to fall through to, so a pattern that does not fit
+// is an error rather than a miss.
+
+let [a, b, c] = [1, 2]
+print(a)

@@ -1,0 +1,85 @@
+// `std/csv` — comma-separated values, as they actually arrive.
+//
+// CSV looks like `text.split("\n").map(fn(l) { l.split(",") })` and is not.
+// That version is wrong for any file containing a comma, a quote or a newline
+// inside a field — which is to say, for any file a spreadsheet has exported.
+import { rows, records, write, writeRecords } from "std/csv"
+
+// All three of the awkward cases at once.
+let messy = "name,note,qty
+\"Smith, Ada\",\"she said \"\"yes\"\"\",3
+\"multi
+line\",plain,1"
+
+print(rows(messy))
+print(records(messy))
+
+// Reading and writing are inverses, byte for byte.
+match rows(messy) {
+  Ok(grid) => print(write(grid).unwrapOr("?") == "${messy}\n"),
+  Err(w)   => print("ERR ${w}"),
+}
+
+// A ragged row is an error, not a guess: padding it makes every later column
+// wrong by one, and dropping the extras throws data away. A duplicate column
+// is an error for the same reason — one of the two would silently win, and
+// which one is not something a reader could predict.
+print(records("a,b\n1"))
+print(records("a,b\n1,2,3"))
+print(records("a,a\n1,2"))
+print(rows("a,\"unterminated"))
+
+// The shapes a real file comes in.
+print(rows(""))
+print(rows("a"))
+print(rows("a\n"))
+print(rows("x\r\ny\r\n"))
+print(rows("a,b;c", delimiter: ";"))
+
+// A `\r\n` inside a quoted field is data, not a line ending.
+print(rows("\"a\r\nb\"").unwrapOr([]))
+
+// A header with no rows under it is no records, not an error.
+print(records("a,b\n"))
+
+// A blank line is no data rather than misaligned data, so `records` skips it —
+// real files are full of them, and rejecting them as ragged rows is a rule that
+// is right on paper and wrong on every file anybody has. It cannot be mistaken
+// for anything else: a genuine one-field row in a two-column file is still
+// short, and still reported.
+print(records("a,b\n1,2\n\n3,4\n"))
+print(records("a,b\n1,2\n5\n"))
+
+// `rows` keeps it, because `rows` is the grid with no judgement applied at all.
+print(rows("a,b\n1,2\n\n3,4\n"))
+
+// A quote that is not at the start of a field is data; a quoted field followed
+// by more text keeps both, which is what every other reader does with a file
+// that should not exist.
+print(rows("a\"b,c"))
+print(rows("\"a\"b,c"))
+print(rows("\"\"\"\""))
+print(rows(","))
+
+// A delimiter that already means something here is refused rather than quietly
+// doing something else. `rows("a\"b", delimiter: "\"")` used to answer
+// `["a", "b"]`, which looks like an answer and was an accident of which branch
+// ran first.
+print(rows("a\"b", delimiter: "\""))
+print(rows("a", delimiter: "\n"))
+print(rows("a", delimiter: ";;"))
+print(write([["a"]], delimiter: "\""))
+
+// Writing quotes only what has to be quoted.
+print(write([["plain", "has,comma"], ["has\"quote", "has\nnewline"]]))
+
+// Columns come from the first record, in the order it holds them — a Lumen Map
+// keeps its insertion order, so the output is the shape the program built
+// rather than an alphabetical surprise.
+print(writeRecords([{ b: 2, a: 1 }, { a: 3, b: 4 }]))
+print(writeRecords([{ a: 1, b: 2 }], columns: ["b"]))
+
+// A record missing a column gets an empty field: an absent value and an empty
+// one mean the same thing in a format with no nulls.
+print(writeRecords([{ a: 1 }, { b: 2 }]))
+print(writeRecords([]))

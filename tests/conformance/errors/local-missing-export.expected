@@ -1,0 +1,7 @@
+error[RT002]: module "./helpers/greet" has no export named `nope`
+ --> local-missing-export.lm:8:10
+  |
+8 | import { nope } from "./helpers/greet"
+  |          ^^^^ not exported
+  |
+  = note: it exports: greet, half

@@ -1,0 +1,11 @@
+// `{` after `=>` opens a block, and the advice now says what to do about it.
+//
+// `1 => { a: 1 }` reads as an arm whose body is a block containing the
+// statement `a`, and then the `:` has nowhere to go. The standing advice —
+// "expected a line break or `;` here" — is advice that cannot be followed: no
+// line break makes that a map. Parentheses do, and now the note says so.
+let r = match 1 {
+  1 => { a: 1 },
+  _ => 0,
+}
+print(r)

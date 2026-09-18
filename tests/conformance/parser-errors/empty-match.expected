@@ -1,0 +1,6 @@
+error[PA013]: a `match` must have at least one arm
+ --> empty-match.lm:7:7
+  |
+7 | print(match n { })
+  |       ^^^^^^^^^^^ no arms here
+  |

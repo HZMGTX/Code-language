@@ -1,0 +1,7 @@
+// `PA004`: an import list with no `from`.
+//
+// One of nineteen diagnostics the language could emit and no test had ever
+// read. `from` stopped being a keyword in v0.2 — the parser looks for the word
+// where it means something and leaves it an ordinary name everywhere else — so
+// this is the message that has to explain its absence.
+import { upper } "std/str"

@@ -24,8 +24,10 @@ import type {
   Stmt,
 } from './ast.js';
 import { LumenError, type Diagnostic, type Note, type Span } from './diagnostics.js';
+import { FOREIGN_METHODS, FOREIGN_NAMES, methodHintNote } from './hints.js';
 import { parse } from './parser.js';
 import {
+  codePointCount,
   Env,
   NIL,
   NONE,
@@ -59,11 +61,45 @@ import {
 class ReturnSignal {
   constructor(readonly value: Value) {}
 }
+/**
+ * The deepest chain of Lumen calls allowed before `RT045`.
+ *
+ * High enough that no reasonable recursion reaches it — a balanced tree of ten
+ * thousand nodes is fourteen deep, and a list walked recursively would have to
+ * hold ten thousand items — and low enough to fail in well under a second.
+ */
+const MAX_CALL_DEPTH = 10000;
+
+/**
+ * The "it takes: ..." note, which cannot list parameter names for a callee
+ * whose parameters have none — an enum variant's payload is positional, so
+ * `field0` is an implementation detail rather than something to suggest.
+ */
+function takesNote(paramNames: readonly string[], positional: boolean): string {
+  if (positional) {
+    return paramNames.length === 1
+      ? 'it takes 1 value, by position'
+      : 'it takes ' + paramNames.length + ' values, by position';
+  }
+  return 'it takes: ' + (paramNames.length === 0 ? '(nothing)' : paramNames.join(', '));
+}
+
 class BreakSignal {}
 class ContinueSignal {}
-/** Raised by postfix `?` to carry an `Err`/`None` out of the enclosing function. */
+/**
+ * Raised by postfix `?` to carry an `Err`/`None` out of the enclosing function.
+ *
+ * It carries the span of the `?` that raised it, because when one reaches the
+ * top of a program there is no enclosing function to blame and the diagnostic
+ * has to point somewhere. It used to point at the module, which renders as the
+ * first line of the file — so a `?` on line forty put the caret under the
+ * `import` on line one, the one line that was certainly not the problem.
+ */
 class TryPropagate {
-  constructor(readonly value: Value) {}
+  constructor(
+    readonly value: Value,
+    readonly span: Span,
+  ) {}
 }
 
 /** A range materialised by `..` may not exceed this, to turn OOM into an error. */
@@ -97,8 +133,20 @@ export class Interpreter {
   readonly host: Host;
   private readonly resolver: ModuleResolver | undefined;
   private readonly units: SourceUnit[] = [];
+  /** How many Lumen calls are currently on the way in. See `MAX_CALL_DEPTH`. */
+  private depth = 0;
   private readonly moduleCache = new Map<string, ModuleValue>();
   private readonly loading = new Set<string>();
+  /**
+   * Method tables, keyed by type name ("Str", "List", "Map").
+   *
+   * `core` cannot import the standard library, so the tables are registered
+   * from outside. That indirection is what lets `"hi".upper()` work without the
+   * language itself knowing anything about `std/str`.
+   */
+  private readonly methodTables = new Map<string, ReadonlyMap<string, Value>>();
+  /** Methods on every value: the ones whose subject is genuinely any value. */
+  private universalMethods: ReadonlyMap<string, Value> = new Map();
 
   constructor(options: InterpreterOptions) {
     this.host = options.host;
@@ -107,6 +155,71 @@ export class Interpreter {
   }
 
   /** Register a native module so `import { x } from "name"` can find it. */
+  /**
+   * Make `functions` callable as methods on values of type `typeName`.
+   *
+   * Because every standard-library function takes its subject first, this makes
+   * `x.f(a)`, `f(x, a)` and `x |> f(a)` three spellings of one thing.
+   */
+  registerMethods(typeName: string, functions: ReadonlyMap<string, Value>): void {
+    const existing = this.methodTables.get(typeName);
+    if (existing === undefined) {
+      this.methodTables.set(typeName, functions);
+      return;
+    }
+    this.methodTables.set(typeName, new Map([...existing, ...functions]));
+  }
+
+  /**
+   * Make `functions` callable as methods on **every** value.
+   *
+   * For the handful whose subject is genuinely any value — `str`, `inspect`,
+   * `type` — and not a general fallback to whatever is in scope. That
+   * distinction is the point: falling back to every global would make
+   * `[1, 2].upper()` call `upper` with a List and fail somewhere inside
+   * `std/str`, where today it is `RT027: List has no method \`upper\`` with a
+   * list of the ones it does have. Trading a good error for a worse one is not
+   * worth the convenience.
+   *
+   * A type-specific method of the same name always wins, so registering one of
+   * these can never change what an existing call means.
+   */
+  registerUniversalMethods(functions: ReadonlyMap<string, Value>): void {
+    this.universalMethods = new Map([...this.universalMethods, ...functions]);
+  }
+
+  /** The method names available on a type, for error messages and `help()`. */
+  methodNames(typeName: string): string[] {
+    return [
+      ...new Set([
+        ...(this.methodTables.get(typeName)?.keys() ?? []),
+        ...this.universalMethods.keys(),
+      ]),
+    ];
+  }
+
+  /**
+   * Every method table by type name, and the methods every value has, as
+   * names — the tables `readMember` consults, handed to the type checker so
+   * its `TY012` and this interpreter's `RT027` are one answer rather than two
+   * lists that agree until one of them changes.
+   */
+  methodTableNames(): {
+    readonly tables: ReadonlyMap<string, ReadonlySet<string>>;
+    readonly universal: ReadonlySet<string>;
+  } {
+    const tables = new Map<string, ReadonlySet<string>>();
+    for (const [typeName, table] of this.methodTables) tables.set(typeName, new Set(table.keys()));
+    return { tables, universal: new Set(this.universalMethods.keys()) };
+  }
+
+  /** Look up `name` as a method on `receiver`, already bound to it. */
+  private lookupMethod(typeOf: string, name: string, receiver: Value): Value | undefined {
+    const found = this.methodTables.get(typeOf)?.get(name) ?? this.universalMethods.get(name);
+    if (found === undefined) return undefined;
+    return found.k === 'native' ? bindReceiver(found, receiver) : found;
+  }
+
   private unit(): SourceUnit {
     return this.units[this.units.length - 1] ?? { file: '<unknown>', source: '' };
   }
@@ -141,23 +254,24 @@ export class Interpreter {
       for (const stmt of module.stmts) {
         await this.execStmt(stmt, env, unit);
       }
-      const main = env.lookup('main');
-      if (main !== undefined && (main.value.k === 'fn' || main.value.k === 'native')) {
-        await this.callValue(main.value, [], module.span);
+      // "If a module **declares** `fn main()`" — §7.1, and the word matters.
+      // Any binding named `main` used to be called, so `let main = fn() { … }`
+      // followed by `main()` ran the program twice with nothing reported, and
+      // an imported `main` was invoked by a module that had only borrowed the
+      // name — while `RS011` called that same import "never read" and advised
+      // deleting the line, which would have changed what the program did.
+      // `RS008` only ever knew about the declaration, so this is the spelling
+      // the rest of the language already agreed on.
+      if (declaresMain(module)) {
+        const main = env.lookup('main');
+        if (main !== undefined && (main.value.k === 'fn' || main.value.k === 'native')) {
+          await this.callValue(main.value, [], module.span);
+        }
       }
     } catch (error) {
-      if (error instanceof TryPropagate) {
-        // `?` used at top level with nothing to return to.
-        this.fail(
-          'RT001',
-          '`?` propagated ' + inspect(error.value) + ' out of the program',
-          module.span,
-          'unhandled at top level',
-          ['handle it with `match`, or return it from a function that yields a Result'],
-        );
-      }
-      if (error instanceof ReturnSignal) return;
-      throw error;
+      // A module has nowhere to put a returned value, so the answer is dropped.
+      this.atTopLevel(error);
+      return;
     } finally {
       this.units.pop();
     }
@@ -183,9 +297,45 @@ export class Interpreter {
         last = await this.execStmt(stmt, env, unit);
       }
       return last;
+    } catch (error) {
+      // The REPL's module boundary. The difference from `runModule` is only
+      // what becomes of a returned value: a file has nowhere to put it, and
+      // here it is exactly what the person typing wanted to see.
+      return this.atTopLevel(error);
     } finally {
       this.units.pop();
     }
+  }
+
+  /**
+   * What a control-flow signal means when it reaches the top of a program.
+   *
+   * There are four — `return`, `break`, `continue` and `?` — and the two places
+   * a program can end, `runModule` and `runStatements`, each used to decide for
+   * themselves which of them to catch. They disagreed, and the REPL was the one
+   * that lost: a top-level `return` printed `lumen: internal error` with
+   * `[object Object]` after it, and `parse("x")?` printed the same and exited
+   * 70, while a file reported `RT001` for the second and ended quietly for the
+   * first.
+   *
+   * One place to decide it, so a fifth signal cannot be handled by one boundary
+   * and not the other. `break` and `continue` never arrive: `RS006` reports
+   * either outside a loop before anything runs, and a function boundary counts.
+   */
+  private atTopLevel(error: unknown): Value {
+    if (error instanceof TryPropagate) {
+      // `?` used at the top level, with nothing to return the error to.
+      this.fail(
+        'RT001',
+        '`?` propagated ' + inspect(error.value) + ' out of the program',
+        // The `?` itself, not the module: see `TryPropagate`.
+        error.span,
+        'unhandled at top level',
+        ['handle it with `match`, or return it from a function that yields a Result'],
+      );
+    }
+    if (error instanceof ReturnSignal) return error.value;
+    throw error;
   }
 
   // ------------------------------------------------------------------ hoisting
@@ -237,8 +387,24 @@ export class Interpreter {
   private async execStmt(stmt: Stmt, env: Env, unit: SourceUnit): Promise<Value> {
     switch (stmt.kind) {
       case 'LetDecl': {
-        const value = await this.evaluate(stmt.value, env);
+        const value = this.evalLeaf(stmt.value, env) ?? (await this.evaluate(stmt.value, env));
         env.declare(stmt.name, value, stmt.mutable);
+        return NIL;
+      }
+      case 'DestructureDecl': {
+        const value = await this.evaluate(stmt.value, env);
+        // The same matcher `match` and `for` use. A `let` has no second arm to
+        // fall through to, so a pattern that does not fit is an error here
+        // rather than a miss.
+        if (!(await this.matchPattern(stmt.pattern, value, env, stmt.mutable))) {
+          this.fail(
+            'RT047',
+            'the pattern does not fit ' + inspect(value),
+            stmt.pattern.span,
+            'cannot be taken apart this way',
+            ['use `match` when a value may or may not have this shape'],
+          );
+        }
         return NIL;
       }
       case 'FnDecl':
@@ -291,7 +457,8 @@ export class Interpreter {
 
   private async execWhile(condition: Expr, body: Block, env: Env, unit: SourceUnit): Promise<void> {
     for (;;) {
-      if (!truthy(await this.evaluate(condition, env))) return;
+      const test = this.evalLeaf(condition, env) ?? (await this.evaluate(condition, env));
+      if (!truthy(test)) return;
       try {
         await this.execBlock(body, new Env(env), unit);
       } catch (error) {
@@ -363,6 +530,159 @@ export class Interpreter {
 
   // --------------------------------------------------------------- expressions
 
+  /**
+   * Evaluate an expression that cannot possibly do I/O, without a promise.
+   *
+   * Returns `undefined` for anything else, so every caller falls back to the
+   * async path with `this.evalLeaf(e, env) ?? (await this.evaluate(e, env))`.
+   *
+   * It began as literals and names alone, which is where the cost obviously
+   * was: `while i < 300000 { total += i * 2 - 1 }` evaluates six of them per
+   * iteration and each was allocating a promise that resolved immediately. But
+   * the *shape* around them was still paying — the `Binary` node joining two
+   * leaves allocated one too, and so did the `IndexExpr` reading `xs[i]` and
+   * the `MemberExpr` reading `p.x`. So it now recurses over every kind that
+   * provably cannot suspend, and a whole expression like `xs[i] * 2 - 1`
+   * resolves without a single promise.
+   *
+   * **Calls are not among them, deliberately.** Any call may do I/O — that is
+   * the point of Lumen having no async colouring, and there is no way to know
+   * from the call site. `match`, `if` and blocks are excluded for the same
+   * reason: their arms are statements, which can contain anything.
+   *
+   * The rule for adding a kind here is that it must reduce to these operations
+   * and nothing else, and that bailing out part-way must be harmless. It is:
+   * everything below is pure, so a sub-expression that turns out to need the
+   * async path costs one wasted evaluation of its siblings and nothing more.
+   * The two paths share their real work — `applyBinary`, `readIndex`,
+   * `readMember`, `lookupName` — so they cannot come to different answers.
+   *
+   * This is still a narrow version of the hybrid sync/async evaluator the
+   * roadmap describes. The full one means rewriting every `for…of` with an
+   * await into a step function and every `try` to handle a throw and a
+   * rejection — a CPS rewrite that a bytecode VM would then discard.
+   */
+  private evalLeaf(expr: Expr, env: Env): Value | undefined {
+    switch (expr.kind) {
+      case 'NumberLit':
+        return num(expr.value);
+      case 'StringLit':
+        return str(expr.value);
+      case 'BoolLit':
+        return bool(expr.value);
+      case 'NilLit':
+        return NIL;
+      case 'Ident':
+        return this.lookupName(expr, env);
+
+      case 'Binary': {
+        const left = this.evalLeaf(expr.left, env);
+        if (left === undefined) return undefined;
+        const right = this.evalLeaf(expr.right, env);
+        if (right === undefined) return undefined;
+        return this.applyBinary(expr.op, left, right, expr.span);
+      }
+
+      case 'Unary': {
+        const operand = this.evalLeaf(expr.operand, env);
+        if (operand === undefined) return undefined;
+        return this.applyUnary(expr.op, operand, expr.span);
+      }
+
+      case 'Logical': {
+        const left = this.evalLeaf(expr.left, env);
+        if (left === undefined) return undefined;
+        const takeRight = expr.op === '&&' ? truthy(left) : !truthy(left);
+        // Short-circuiting is preserved exactly: the right side is not looked
+        // at at all when the left decides the answer, so a call there stays
+        // uncalled rather than forcing this expression onto the async path.
+        if (!takeRight) return left;
+        return this.evalLeaf(expr.right, env);
+      }
+
+      case 'IndexExpr': {
+        const target = this.evalLeaf(expr.target, env);
+        if (target === undefined) return undefined;
+        const index = this.evalLeaf(expr.index, env);
+        if (index === undefined) return undefined;
+        return this.readIndex(target, index, expr.span);
+      }
+
+      case 'MemberExpr': {
+        const target = this.evalLeaf(expr.target, env);
+        if (target === undefined) return undefined;
+        if (expr.optional && target.k === 'nil') return NIL;
+        return this.readMember(target, expr.name, expr.span);
+      }
+
+      case 'ListLit': {
+        const items: Value[] = [];
+        for (const item of expr.items) {
+          const value = this.evalLeaf(item, env);
+          if (value === undefined) return undefined;
+          items.push(value);
+        }
+        return list(items);
+      }
+
+      case 'MapLit': {
+        const entries = new Map<string, Value>();
+        for (const entry of expr.entries) {
+          const key = this.evalLeaf(entry.key, env);
+          if (key === undefined) return undefined;
+          if (key.k !== 'str') {
+            this.fail(
+              'RT009',
+              'map keys must be Str, got ' + typeName(key),
+              entry.key.span,
+              'not a string key',
+            );
+          }
+          const value = this.evalLeaf(entry.value, env);
+          if (value === undefined) return undefined;
+          entries.set(key.v, value);
+        }
+        return map(entries);
+      }
+
+      default:
+        return undefined;
+    }
+  }
+
+  /**
+   * A unary operator on a value already evaluated.
+   *
+   * Split out for the same reason as `applyBinary`: one copy of the rule, used
+   * by both the synchronous path and the async one.
+   */
+  private applyUnary(op: string, operand: Value, span: Span): Value {
+    if (op === '-') {
+      if (operand.k !== 'num') {
+        this.fail('RT006', 'cannot negate ' + typeName(operand), span, 'expected a Num');
+      }
+      return num(-operand.v);
+    }
+    return bool(!truthy(operand));
+  }
+
+  /** The `Ident` case, shared by both paths so they cannot drift apart. */
+  private lookupName(expr: Extract<Expr, { kind: 'Ident' }>, env: Env): Value {
+    const slot = env.lookup(expr.name);
+    if (slot === undefined) {
+      const foreign = FOREIGN_NAMES.get(expr.name);
+      const hint = suggest(expr.name, env.visibleNames());
+      this.fail(
+        'RT005',
+        '`' + expr.name + '` is not defined',
+        expr.span,
+        'not found in this scope',
+        foreign !== undefined ? [foreign] : hint === undefined ? undefined : ['did you mean `' + hint + '`?'],
+      );
+    }
+    return slot.value;
+  }
+
   async evaluate(expr: Expr, env: Env): Promise<Value> {
     switch (expr.kind) {
       case 'NumberLit':
@@ -377,44 +697,30 @@ export class Interpreter {
       case 'TemplateLit': {
         let out = '';
         for (const part of expr.parts) {
-          out += part.kind === 'text' ? part.value : display(await this.evaluate(part.expr, env));
+          out +=
+            part.kind === 'text'
+              ? part.value
+              : display(this.evalLeaf(part.expr, env) ?? (await this.evaluate(part.expr, env)));
         }
         return str(out);
       }
 
-      case 'Ident': {
-        const slot = env.lookup(expr.name);
-        if (slot === undefined) {
-          const hint = suggest(expr.name, env.visibleNames());
-          this.fail(
-            'RT005',
-            '`' + expr.name + '` is not defined',
-            expr.span,
-            'not found in this scope',
-            hint === undefined ? undefined : ['did you mean `' + hint + '`?'],
-          );
-        }
-        return slot.value;
-      }
+      case 'Ident':
+        return this.lookupName(expr, env);
 
       case 'Unary': {
-        const operand = await this.evaluate(expr.operand, env);
-        if (expr.op === '-') {
-          if (operand.k !== 'num') {
-            this.fail('RT006', 'cannot negate ' + typeName(operand), expr.span, 'expected a Num');
-          }
-          return num(-operand.v);
-        }
-        return bool(!truthy(operand));
+        const operand = this.evalLeaf(expr.operand, env) ?? (await this.evaluate(expr.operand, env));
+        return this.applyUnary(expr.op, operand, expr.span);
       }
 
       case 'Binary':
         return await this.evalBinary(expr.op, expr.left, expr.right, env, expr.span);
 
       case 'Logical': {
-        const left = await this.evaluate(expr.left, env);
-        if (expr.op === '&&') return truthy(left) ? await this.evaluate(expr.right, env) : left;
-        return truthy(left) ? left : await this.evaluate(expr.right, env);
+        const left = this.evalLeaf(expr.left, env) ?? (await this.evaluate(expr.left, env));
+        const takeRight = expr.op === '&&' ? truthy(left) : !truthy(left);
+        if (!takeRight) return left;
+        return this.evalLeaf(expr.right, env) ?? (await this.evaluate(expr.right, env));
       }
 
       case 'RangeExpr': {
@@ -448,14 +754,16 @@ export class Interpreter {
 
       case 'ListLit': {
         const items: Value[] = [];
-        for (const item of expr.items) items.push(await this.evaluate(item, env));
+        for (const item of expr.items) {
+          items.push(this.evalLeaf(item, env) ?? (await this.evaluate(item, env)));
+        }
         return list(items);
       }
 
       case 'MapLit': {
         const entries = new Map<string, Value>();
         for (const entry of expr.entries) {
-          const key = await this.evaluate(entry.key, env);
+          const key = this.evalLeaf(entry.key, env) ?? (await this.evaluate(entry.key, env));
           if (key.k !== 'str') {
             this.fail(
               'RT009',
@@ -464,7 +772,10 @@ export class Interpreter {
               'not a string key',
             );
           }
-          entries.set(key.v, await this.evaluate(entry.value, env));
+          entries.set(
+            key.v,
+            this.evalLeaf(entry.value, env) ?? (await this.evaluate(entry.value, env)),
+          );
         }
         return map(entries);
       }
@@ -486,7 +797,8 @@ export class Interpreter {
         return await this.execBlock(expr.block, new Env(env), this.unit());
 
       case 'IfExpr': {
-        if (truthy(await this.evaluate(expr.condition, env))) {
+        const cond = this.evalLeaf(expr.condition, env) ?? (await this.evaluate(expr.condition, env));
+        if (truthy(cond)) {
           return await this.execBlock(expr.then, new Env(env), this.unit());
         }
         if (expr.otherwise === undefined) return NIL;
@@ -500,7 +812,7 @@ export class Interpreter {
         return await this.evalMatch(expr.subject, expr.arms, env, expr.span);
 
       case 'CallExpr': {
-        const callee = await this.evaluate(expr.callee, env);
+        const callee = this.evalLeaf(expr.callee, env) ?? (await this.evaluate(expr.callee, env));
         const args = await this.evalArgs(expr.args, env);
         return await this.callValue(callee, args, expr.span);
       }
@@ -525,13 +837,13 @@ export class Interpreter {
       }
 
       case 'IndexExpr': {
-        const target = await this.evaluate(expr.target, env);
-        const index = await this.evaluate(expr.index, env);
+        const target = this.evalLeaf(expr.target, env) ?? (await this.evaluate(expr.target, env));
+        const index = this.evalLeaf(expr.index, env) ?? (await this.evaluate(expr.index, env));
         return this.readIndex(target, index, expr.span);
       }
 
       case 'MemberExpr': {
-        const target = await this.evaluate(expr.target, env);
+        const target = this.evalLeaf(expr.target, env) ?? (await this.evaluate(expr.target, env));
         if (expr.optional && target.k === 'nil') return NIL;
         return this.readMember(target, expr.name, expr.span);
       }
@@ -544,11 +856,11 @@ export class Interpreter {
         if (value.k === 'enum') {
           if (value.enumName === 'Result') {
             if (value.variant === 'Ok') return value.values[0] ?? NIL;
-            if (value.variant === 'Err') throw new TryPropagate(value);
+            if (value.variant === 'Err') throw new TryPropagate(value, expr.span);
           }
           if (value.enumName === 'Option') {
             if (value.variant === 'Some') return value.values[0] ?? NIL;
-            if (value.variant === 'None') throw new TryPropagate(value);
+            if (value.variant === 'None') throw new TryPropagate(value, expr.span);
           }
         }
         return this.fail(
@@ -563,13 +875,23 @@ export class Interpreter {
       case 'AwaitExpr':
         // Lumen awaits I/O implicitly, so `await` simply yields its operand.
         return await this.evaluate(expr.operand, env);
+
+      case 'JumpExpr': {
+        // The same signals the statement forms raise, so a `return` inside a
+        // match arm and a `return` on its own line are one mechanism.
+        if (expr.jump === 'break') throw new BreakSignal();
+        if (expr.jump === 'continue') throw new ContinueSignal();
+        const value = expr.value === undefined ? NIL : await this.evaluate(expr.value, env);
+        throw new ReturnSignal(value);
+      }
     }
   }
 
   private async evalArgs(args: readonly Arg[], env: Env): Promise<EvaluatedArg[]> {
     const out: EvaluatedArg[] = [];
     for (const arg of args) {
-      out.push({ name: arg.name, value: await this.evaluate(arg.value, env), span: arg.span });
+      const value = this.evalLeaf(arg.value, env) ?? (await this.evaluate(arg.value, env));
+      out.push({ name: arg.name, value, span: arg.span });
     }
     return out;
   }
@@ -617,7 +939,10 @@ export class Interpreter {
       if (values.has(field.name)) {
         this.fail('RT014', 'field `' + field.name + '` is set twice', field.span, 'duplicate field');
       }
-      values.set(field.name, await this.evaluate(field.value, env));
+      values.set(
+        field.name,
+        this.evalLeaf(field.value, env) ?? (await this.evaluate(field.value, env)),
+      );
     }
     const missing = type.fieldNames.filter((f) => !values.has(f));
     if (missing.length > 0) {
@@ -639,14 +964,27 @@ export class Interpreter {
     env: Env,
     span: Span,
   ): Promise<Value> {
-    const left = await this.evaluate(leftExpr, env);
-    const right = await this.evaluate(rightExpr, env);
+    const left = this.evalLeaf(leftExpr, env) ?? (await this.evaluate(leftExpr, env));
+    const right = this.evalLeaf(rightExpr, env) ?? (await this.evaluate(rightExpr, env));
+    return this.applyBinary(op, left, right, span);
+  }
 
+  /**
+   * A binary operator on two values that have already been evaluated.
+   *
+   * Split out from `evalBinary` so `evalLeaf` can use it: nothing below here
+   * suspends, so once both operands are in hand the whole of arithmetic,
+   * comparison and equality is synchronous. One copy, so the fast path and the
+   * async path cannot come to different answers.
+   */
+  private applyBinary(op: string, left: Value, right: Value, span: Span): Value {
     if (op === '==') return bool(valuesEqual(left, right));
     if (op === '!=') return bool(!valuesEqual(left, right));
 
     if (op === '+') {
-      if (left.k === 'num' && right.k === 'num') return num(left.v + right.v);
+      if (left.k === 'num' && right.k === 'num') {
+        return this.checked(left.v + right.v, op, left.v, right.v, span);
+      }
       if (left.k === 'str' && right.k === 'str') return str(left.v + right.v);
       if (left.k === 'list' && right.k === 'list') return list([...left.items, ...right.items]);
       return this.fail(
@@ -660,7 +998,7 @@ export class Interpreter {
       );
     }
 
-    if (op === '-' || op === '*' || op === '/' || op === '%') {
+    if (op === '-' || op === '*' || op === '/' || op === '%' || op === '**') {
       if (left.k !== 'num' || right.k !== 'num') {
         return this.fail(
           'RT017',
@@ -677,15 +1015,44 @@ export class Interpreter {
           'the right operand is 0',
         );
       }
+      // `0 ** -1` is one over zero by another spelling, and gets the same
+      // answer as `1 / 0` rather than Infinity.
+      if (op === '**' && left.v === 0 && right.v < 0) {
+        return this.fail(
+          'RT018',
+          'division by zero',
+          span,
+          '0 raised to a negative power',
+          ['`0 ** ' + display(num(right.v)) + '` is 1 / 0, which has no value'],
+        );
+      }
+      // A fractional power of a negative number has no real answer: `(-8) **
+      // (1 / 3)` is NaN in IEEE 754 even though -2 cubed is -8. Saying so is
+      // more use than a NaN, and more use than the RT046 it would otherwise
+      // reach, which talks about infinities cancelling.
+      if (op === '**' && left.v < 0 && !Number.isInteger(right.v)) {
+        return this.fail(
+          'RT048',
+          'cannot raise a negative number to a fractional power',
+          span,
+          'no real number answers this',
+          [
+            display(num(left.v)) + ' ** ' + display(num(right.v)) + ' has no real value',
+            'a root of a negative number is imaginary; Lumen has only real numbers',
+          ],
+        );
+      }
       switch (op) {
         case '-':
-          return num(left.v - right.v);
+          return this.checked(left.v - right.v, op, left.v, right.v, span);
         case '*':
-          return num(left.v * right.v);
+          return this.checked(left.v * right.v, op, left.v, right.v, span);
         case '/':
-          return num(left.v / right.v);
+          return this.checked(left.v / right.v, op, left.v, right.v, span);
+        case '**':
+          return this.checked(left.v ** right.v, op, left.v, right.v, span);
         default:
-          return num(left.v % right.v);
+          return this.checked(left.v % right.v, op, left.v, right.v, span);
       }
     }
 
@@ -701,13 +1068,42 @@ export class Interpreter {
     );
   }
 
+  /**
+   * Arithmetic that refuses to produce a value nobody can use.
+   *
+   * `Infinity - Infinity` is NaN in IEEE 754, and NaN in Lumen would be a
+   * value that displays as `NaN`, is not equal to another value that displays
+   * as `NaN`, and is neither less than nor greater than anything. Lumen
+   * already declines to produce nonsense quietly — `1 / 0` and `sqrt(-1)` are
+   * errors rather than Infinity and NaN — so this is the same rule applied
+   * where it was still missing.
+   *
+   * Infinity itself is left alone: it means "larger than we can say", it
+   * compares consistently, and it is equal to itself.
+   */
+  private checked(result: number, op: string, left: number, right: number, span: Span): Value {
+    if (Number.isNaN(result) && !Number.isNaN(left) && !Number.isNaN(right)) {
+      return this.fail(
+        'RT046',
+        'the result of ' + display(num(left)) + ' ' + op + ' ' + display(num(right)) + ' is undefined',
+        span,
+        'no number answers this',
+        [
+          'this comes from infinities cancelling, which usually means an earlier ' +
+            'result overflowed',
+        ],
+      );
+    }
+    return num(result);
+  }
+
   private async evalMatch(
     subjectExpr: Expr,
     arms: readonly { pattern: Pattern; guard: Expr | undefined; body: Expr }[],
     env: Env,
     span: Span,
   ): Promise<Value> {
-    const subject = await this.evaluate(subjectExpr, env);
+    const subject = this.evalLeaf(subjectExpr, env) ?? (await this.evaluate(subjectExpr, env));
     for (const arm of arms) {
       const armEnv = new Env(env);
       if (!(await this.matchPattern(arm.pattern, subject, armEnv))) continue;
@@ -727,13 +1123,24 @@ export class Interpreter {
   }
 
   /** Try a pattern against a value, binding names into `env` on success. */
-  private async matchPattern(pattern: Pattern, value: Value, env: Env): Promise<boolean> {
+  /**
+   * Match `value` against `pattern`, declaring its bindings into `env`.
+   *
+   * `mutable` exists for `var [a, b] = pair`; every other caller — match arms,
+   * loop bindings — binds immutably, which is why it defaults that way.
+   */
+  private async matchPattern(
+    pattern: Pattern,
+    value: Value,
+    env: Env,
+    mutable = false,
+  ): Promise<boolean> {
     switch (pattern.kind) {
       case 'PWildcard':
         return true;
 
       case 'PBinding':
-        env.declare(pattern.name, value, false);
+        env.declare(pattern.name, value, mutable);
         return true;
 
       case 'PLiteral': {
@@ -751,7 +1158,7 @@ export class Interpreter {
           const sub = pattern.args[i];
           const item = value.values[i];
           if (sub === undefined || item === undefined) return false;
-          if (!(await this.matchPattern(sub, item, env))) return false;
+          if (!(await this.matchPattern(sub, item, env, mutable))) return false;
         }
         return true;
       }
@@ -761,7 +1168,7 @@ export class Interpreter {
         for (const field of pattern.fields) {
           const fieldValue = value.fields.get(field.name);
           if (fieldValue === undefined) return false;
-          if (!(await this.matchPattern(field.pattern, fieldValue, env))) return false;
+          if (!(await this.matchPattern(field.pattern, fieldValue, env, mutable))) return false;
         }
         return true;
       }
@@ -776,7 +1183,7 @@ export class Interpreter {
           const sub = pattern.items[i];
           const item = value.items[i];
           if (sub === undefined || item === undefined) return false;
-          if (!(await this.matchPattern(sub, item, env))) return false;
+          if (!(await this.matchPattern(sub, item, env, mutable))) return false;
         }
         if (pattern.rest !== undefined) {
           env.declare(pattern.rest, list(value.items.slice(fixed)), false);
@@ -836,6 +1243,8 @@ export class Interpreter {
       case 'struct': {
         const value = target.fields.get(name);
         if (value === undefined) {
+          const method = this.lookupMethod(target.typeName, name, target);
+          if (method !== undefined) return method;
           const hint = suggest(name, [...target.fields.keys()]);
           this.fail(
             'RT024',
@@ -849,8 +1258,16 @@ export class Interpreter {
         }
         return value;
       }
-      case 'map':
-        return target.entries.get(name) ?? NIL;
+      case 'map': {
+        // A real key always wins over a method of the same name, so adding
+        // methods can never change what an existing map lookup returns.
+        const own = target.entries.get(name);
+        if (own !== undefined) return own;
+        const method = this.lookupMethod('Map', name, target);
+        if (method !== undefined) return method;
+        // A missing key is still nil, as documented.
+        return NIL;
+      }
       case 'module': {
         const value = target.exports.get(name);
         if (value === undefined) {
@@ -887,17 +1304,34 @@ export class Interpreter {
           k: 'native',
           name: enumName + '.' + name,
           params,
+          // Its payload is positional: `Shape.Rect(3, 4)` has no `field0` in
+          // it, so no diagnostic about it should mention one.
+          positional: true,
           call: (args) => enumValue(enumName, name, [...args]),
         };
         return ctor;
       }
-      default:
+      default: {
+        // Str, List and Num reach here: they have no fields, only methods.
+        const method = this.lookupMethod(typeName(target), name, target);
+        if (method !== undefined) return method;
+        const available = this.methodNames(typeName(target));
+        const foreign = FOREIGN_METHODS.get(typeName(target) + '.' + name);
+        const hint = suggest(name, available);
         return this.fail(
           'RT027',
-          'cannot read `.' + name + '` on ' + typeName(target),
+          typeName(target) + ' has no method `' + name + '`',
           span,
-          'no fields here',
+          'not available here',
+          foreign !== undefined
+            ? [methodHintNote(name, foreign)]
+            : hint !== undefined
+              ? ['did you mean `' + hint + '`?']
+              : available.length > 0
+                ? ['available on ' + typeName(target) + ': ' + available.sort().join(', ')]
+                : undefined,
         );
+      }
     }
   }
 
@@ -908,24 +1342,52 @@ export class Interpreter {
     env: Env,
     span: Span,
   ): Promise<Value> {
-    const incoming = await this.evaluate(valueExpr, env);
+    const incoming = this.evalLeaf(valueExpr, env) ?? (await this.evaluate(valueExpr, env));
+    return await this.storeInto(op, target, incoming, env, span);
+  }
 
+  /**
+   * Put an already-evaluated value into a place.
+   *
+   * Separate from `evalAssign` so that `[a, b] = [b, a]` can put each element
+   * into its own place without evaluating anything twice — which is also why
+   * a swap needs no temporary: both new values are in hand before either is
+   * stored.
+   */
+  private async storeInto(
+    op: string,
+    target: Expr,
+    incoming: Value,
+    env: Env,
+    span: Span,
+  ): Promise<Value> {
     /** Apply the compound operator, or just take the incoming value for `=`. */
     const combine = (current: Value): Value => {
       if (op === '=') return incoming;
       if (current.k === 'num' && incoming.k === 'num') {
+        // Through `checked`, like every binary operator, and for the same
+        // reason: `x -= inf` is the same arithmetic as `x = x - inf`, and it
+        // was the one path that put a `NaN` into a Lumen value. `inf - inf` was
+        // `RT046` and `a -= inf` was `NaN` — which the spec forbids outright
+        // ("any arithmetic that would produce one is RT046") and which then
+        // poisons every comparison it reaches, since a NaN is equal to nothing
+        // including itself.
+        //
+        // The base operator is passed rather than the compound one, so the
+        // message reads `Infinity - Infinity` — the arithmetic that actually
+        // has no answer, which is what the reader needs to see.
         switch (op) {
           case '+=':
-            return num(current.v + incoming.v);
+            return this.checked(current.v + incoming.v, '+', current.v, incoming.v, span);
           case '-=':
-            return num(current.v - incoming.v);
+            return this.checked(current.v - incoming.v, '-', current.v, incoming.v, span);
           case '*=':
-            return num(current.v * incoming.v);
+            return this.checked(current.v * incoming.v, '*', current.v, incoming.v, span);
           case '/=':
             if (incoming.v === 0) {
               this.fail('RT018', 'division by zero', span, 'the right operand is 0');
             }
-            return num(current.v / incoming.v);
+            return this.checked(current.v / incoming.v, '/', current.v, incoming.v, span);
           default:
             break;
         }
@@ -944,16 +1406,40 @@ export class Interpreter {
       );
     };
 
+    if (target.kind === 'ListLit') {
+      if (incoming.k !== 'list' || incoming.items.length !== target.items.length) {
+        return this.fail(
+          'RT047',
+          'the pattern does not fit ' + inspect(incoming),
+          target.span,
+          'expected a list of ' + String(target.items.length),
+          ['assignment takes the elements one for one; there is no `..rest` here'],
+        );
+      }
+      for (let i = 0; i < target.items.length; i += 1) {
+        const place = target.items[i];
+        const item = incoming.items[i];
+        if (place === undefined || item === undefined) continue;
+        await this.storeInto('=', place, item, env, span);
+      }
+      return incoming;
+    }
+
     if (target.kind === 'Ident') {
       const slot = env.lookup(target.name);
       if (slot === undefined) {
+        const foreign = FOREIGN_NAMES.get(target.name);
         const hint = suggest(target.name, env.visibleNames());
         this.fail(
           'RT005',
           '`' + target.name + '` is not defined',
           target.span,
           'not found in this scope',
-          hint === undefined ? ['declare it first with `let` or `var`'] : ['did you mean `' + hint + '`?'],
+          foreign !== undefined
+            ? [foreign]
+            : hint === undefined
+              ? ['declare it first with `let` or `var`']
+              : ['did you mean `' + hint + '`?'],
         );
       }
       if (!slot.mutable) {
@@ -1059,11 +1545,30 @@ export class Interpreter {
     }
 
     const label = callee.name === '' ? 'this anonymous function' : '`' + callee.name + '`';
+
+    // Every call is a promise rather than a stack frame, so runaway recursion
+    // would not overflow anything — it would allocate quietly until the
+    // process died or the user gave up. A depth limit turns the commonest
+    // beginner mistake back into a diagnostic that says what happened.
+    if (this.depth >= MAX_CALL_DEPTH) {
+      return this.fail(
+        'RT045',
+        'too many nested calls: ' + label + ' is ' + String(MAX_CALL_DEPTH) + ' deep',
+        span,
+        'call depth exceeded',
+        [
+          'this is usually recursion with no base case, or one that never reaches it',
+          'a loop uses no call depth at all, if the work can be written as one',
+        ],
+      );
+    }
+
     const bound = await this.bindParams(label, callee.params, args, span, callee.closure);
     const callEnv = new Env(callee.closure);
     for (const [name, value] of bound) callEnv.declare(name, value, false);
 
     this.units.push(callee.unit);
+    this.depth += 1;
     try {
       return await this.execBlock(callee.body, callEnv, callee.unit);
     } catch (error) {
@@ -1072,6 +1577,7 @@ export class Interpreter {
       if (error instanceof TryPropagate) return error.value;
       throw error;
     } finally {
+      this.depth -= 1;
       this.units.pop();
     }
   }
@@ -1132,10 +1638,38 @@ export class Interpreter {
     const filledByName: string[] = [];
     let next = 0;
 
+    /**
+     * Where a default is evaluated: the closure, plus the parameters bound so
+     * far.
+     *
+     * `fn greet(name, greeting = "hello " + name)` is what a person writes, and
+     * the resolver accepts it — it declares each parameter only after walking
+     * that parameter's default, so an earlier one is in scope and an unknown
+     * name in a default is still `RS001`. The interpreter evaluated defaults in
+     * the closure alone, so the two passes disagreed: `lumen check` said the
+     * program was fine and the call that left the argument out died with
+     * `RT005` on a parameter that is right there.
+     *
+     * Built only when a default is actually reached, so an ordinary call
+     * allocates nothing extra.
+     */
+    let defaults: Env | undefined;
+    const bind = (name: string, value: Value): void => {
+      out.set(name, value);
+      defaults?.declare(name, value, false);
+    };
+
     for (const param of params) {
+      // `..parts` takes everything positional that is left, as a list. It is
+      // always last, so this is the end of the loop either way.
+      if (param.rest) {
+        bind(param.name, list(positional.slice(next).map((a) => a.value)));
+        next = positional.length;
+        continue;
+      }
       const byName = named.get(param.name);
       if (byName !== undefined) {
-        out.set(param.name, byName.value);
+        bind(param.name, byName.value);
         named.delete(param.name);
         filledByName.push(param.name);
         continue;
@@ -1143,11 +1677,15 @@ export class Interpreter {
       const byPosition = positional[next];
       if (byPosition !== undefined) {
         next += 1;
-        out.set(param.name, byPosition.value);
+        bind(param.name, byPosition.value);
         continue;
       }
       if (param.defaultValue !== undefined) {
-        out.set(param.name, await this.evaluate(param.defaultValue, defaultsEnv));
+        if (defaults === undefined) {
+          defaults = new Env(defaultsEnv);
+          for (const [name, value] of out) defaults.declare(name, value, false);
+        }
+        bind(param.name, await this.evaluate(param.defaultValue, defaults));
         continue;
       }
       this.fail(
@@ -1155,7 +1693,7 @@ export class Interpreter {
         what + ' is missing a value for `' + param.name + '`',
         span,
         'required argument not supplied',
-        ['it takes: ' + params.map((p) => p.name).join(', ')],
+        ['it takes: ' + params.map((p) => (p.rest ? '..' : '') + p.name).join(', ')],
       );
     }
 
@@ -1170,7 +1708,8 @@ export class Interpreter {
   ): Promise<Value[]> {
     const { positional, named } = this.splitArgs(args);
     const paramNames = callee.params.map((p) => p.name);
-    this.rejectUnknownNamed('`' + callee.name + '`', paramNames, named, span);
+    const byPositionOnly = callee.positional === true;
+    this.rejectUnknownNamed('`' + callee.name + '`', paramNames, named, span, byPositionOnly);
     const out: Value[] = [];
     const filledByName: string[] = [];
     let next = 0;
@@ -1195,10 +1734,12 @@ export class Interpreter {
       }
       this.fail(
         'RT036',
-        '`' + callee.name + '` is missing a value for `' + param.name + '`',
+        byPositionOnly
+          ? '`' + callee.name + '` is missing a value: it takes ' + String(paramNames.length)
+          : '`' + callee.name + '` is missing a value for `' + param.name + '`',
         span,
         'required argument not supplied',
-        ['it takes: ' + callee.params.map((p) => p.name).join(', ')],
+        [takesNote(paramNames, byPositionOnly)],
       );
     }
 
@@ -1209,6 +1750,7 @@ export class Interpreter {
       named,
       span,
       filledByName,
+      byPositionOnly,
     );
     return out;
   }
@@ -1223,18 +1765,19 @@ export class Interpreter {
     paramNames: readonly string[],
     named: ReadonlyMap<string, EvaluatedArg>,
     _span: Span,
+    positional = false,
   ): void {
     for (const [name, arg] of named) {
-      if (paramNames.includes(name)) continue;
-      const hint = suggest(name, paramNames);
+      if (!positional && paramNames.includes(name)) continue;
+      const hint = positional ? undefined : suggest(name, paramNames);
       this.fail(
         'RT039',
-        what + ' has no parameter named `' + name + '`',
+        positional
+          ? what + ' takes its values by position, not by name'
+          : what + ' has no parameter named `' + name + '`',
         arg.span,
         'unknown argument',
-        hint === undefined
-          ? ['it takes: ' + (paramNames.length === 0 ? '(nothing)' : paramNames.join(', '))]
-          : ['did you mean `' + hint + '`?'],
+        hint === undefined ? [takesNote(paramNames, positional)] : ['did you mean `' + hint + '`?'],
       );
     }
   }
@@ -1275,6 +1818,7 @@ export class Interpreter {
     leftoverNamed: ReadonlyMap<string, EvaluatedArg>,
     span: Span,
     filledByName: readonly string[] = [],
+    positional = false,
   ): void {
     const firstNamed = [...leftoverNamed.entries()][0];
     if (firstNamed !== undefined) {
@@ -1285,9 +1829,7 @@ export class Interpreter {
         what + ' has no parameter named `' + name + '`',
         arg.span,
         'unknown argument',
-        hint === undefined
-          ? ['it takes: ' + (paramNames.length === 0 ? '(nothing)' : paramNames.join(', '))]
-          : ['did you mean `' + hint + '`?'],
+        hint === undefined ? [takesNote(paramNames, positional)] : ['did you mean `' + hint + '`?'],
       );
     }
     const extra = extraPositional[0];
@@ -1308,10 +1850,11 @@ export class Interpreter {
 
     this.fail(
       'RT040',
-      what + ' takes ' + paramNames.length + ' argument' + (paramNames.length === 1 ? '' : 's'),
+      what + ' takes ' + paramNames.length +
+        (positional ? ' value' : ' argument') + (paramNames.length === 1 ? '' : 's'),
       extra.span,
       'too many arguments',
-      ['it takes: ' + (paramNames.length === 0 ? '(nothing)' : paramNames.join(', '))],
+      [takesNote(paramNames, positional)],
     );
   }
 
@@ -1401,21 +1944,63 @@ function compare(op: string, a: number | string, b: number | string): boolean {
 
 // --------------------------------------------------------------- builtins
 
-/** Define a native function with named parameters. */
+/**
+ * Turn `f(subject, ...rest)` into a method on `subject`.
+ *
+ * The first parameter is dropped from the signature, so arity checking, named
+ * arguments and defaults all keep working on the parameters that remain:
+ * `"a,b".split(",")` reports errors about `separator`, not about `s`.
+ */
+function bindReceiver(fn: NativeValue, receiver: Value): NativeValue {
+  // Spread rather than rebuild field by field: this used to list the fields it
+  // knew about and silently dropped `positional`, and would have dropped
+  // `signature` the day that was added. A method keeps everything the function
+  // had except its first parameter.
+  return {
+    ...fn,
+    params: fn.params.slice(1),
+    call: (args, ctx) => fn.call([receiver, ...args], ctx),
+  };
+}
+
+/**
+ * Define a native function with named parameters.
+ *
+ * `signature` is its type in Lumen's own annotation syntax — see
+ * `NativeValue.signature`. Omitting it leaves the function `Any` in and `Any`
+ * out, which is how every native behaved before any of them were typed.
+ */
 export function native(
   name: string,
   params: readonly string[],
   call: (args: readonly Value[], ctx: CallCtx) => Value | Promise<Value>,
+  doc?: string,
+  signature?: string,
 ): NativeValue {
-  return { k: 'native', name, params: params.map((p) => ({ name: p })), call };
+  return {
+    k: 'native',
+    name,
+    params: params.map((p) => ({ name: p })),
+    ...(doc === undefined ? {} : { doc }),
+    ...(signature === undefined ? {} : { signature }),
+    call,
+  };
 }
 
 /** Define a native function that accepts any number of positional arguments. */
 export function variadic(
   name: string,
   call: (args: readonly Value[], ctx: CallCtx) => Value | Promise<Value>,
+  doc?: string,
 ): NativeValue {
-  return { k: 'native', name, params: [], variadic: true, call };
+  return {
+    k: 'native',
+    name,
+    params: [],
+    variadic: true,
+    ...(doc === undefined ? {} : { doc }),
+    call,
+  };
 }
 
 /**
@@ -1426,10 +2011,14 @@ function installBuiltins(globals: Env): void {
   const define = (value: NativeValue): void => globals.declare(value.name, value, false);
 
   define(
-    variadic('print', (args, ctx) => {
-      ctx.host.writeOut(args.map((a) => display(a)).join(' ') + '\n');
-      return NIL;
-    }),
+    variadic(
+      'print',
+      (args, ctx) => {
+        ctx.host.writeOut(args.map((a) => display(a)).join(' ') + '\n');
+        return NIL;
+      },
+      'Write values to the output, separated by spaces, followed by a newline.',
+    ),
   );
 
   define(
@@ -1437,7 +2026,7 @@ function installBuiltins(globals: Env): void {
       const value = args[0] ?? NIL;
       switch (value.k) {
         case 'str':
-          return num([...value.v].length);
+          return num(codePointCount(value.v));
         case 'list':
           return num(value.items.length);
         case 'map':
@@ -1445,12 +2034,16 @@ function installBuiltins(globals: Env): void {
         default:
           return ctx.panic('len() needs a Str, List or Map, got ' + typeName(value));
       }
-    }),
+    }, 'How many characters, elements or entries a value has.', '(value: Any) -> Num'),
   );
 
-  define(native('type', ['value'], (args) => str(typeName(args[0] ?? NIL))));
+  define(
+    native('type', ['value'], (args) => str(typeName(args[0] ?? NIL)), "The value's type name, as a Str.", '(value: Any) -> Str'),
+  );
 
-  define(native('str', ['value'], (args) => str(display(args[0] ?? NIL))));
+  define(
+    native('str', ['value'], (args) => str(display(args[0] ?? NIL)), 'The value rendered as a Str.', '(value: Any) -> Str'),
+  );
 
   define(
     native('num', ['value'], (args) => {
@@ -1461,10 +2054,12 @@ function installBuiltins(globals: Env): void {
         return value.v.trim() !== '' && !Number.isNaN(parsed) ? enumOk(num(parsed)) : enumErr(str('`' + value.v + '` is not a number'));
       }
       return enumErr(str('cannot convert ' + typeName(value) + ' to Num'));
-    }),
+    }, 'Parse a Str as a number. Ok(n), or Err if it is not one.', '(value: Any) -> Result'),
   );
 
-  define(native('bool', ['value'], (args) => bool(truthy(args[0] ?? NIL))));
+  define(
+    native('bool', ['value'], (args) => bool(truthy(args[0] ?? NIL)), 'The value as a Bool: everything except nil and false is true.', '(value: Any) -> Bool'),
+  );
 
   define(
     native('assert', ['condition', 'message'], (args, ctx) => {
@@ -1473,20 +2068,26 @@ function installBuiltins(globals: Env): void {
       if (truthy(condition)) return NIL;
       const text = message !== undefined && message.k === 'str' ? message.v : 'assertion failed';
       return ctx.panic(text);
-    }),
+    }, 'Stop with a message unless the condition is true. The whole of a test framework.', '(condition: Any, message: Str) -> Nil'),
   );
 
   define(
     native('panic', ['message'], (args, ctx) => {
       const message = args[0] ?? NIL;
       return ctx.panic(message.k === 'str' ? message.v : display(message));
-    }),
+    }, 'Stop the program with a located error.', '(message: Str) -> Nil'),
   );
 
   // Result and Option constructors, available without an import.
-  define(native('Ok', ['value'], (args) => enumOk(args[0] ?? NIL)));
-  define(native('Err', ['error'], (args) => enumErr(args[0] ?? NIL)));
-  define(native('Some', ['value'], (args) => enumValue('Option', 'Some', [args[0] ?? NIL])));
+  define(
+    native('Ok', ['value'], (args) => enumOk(args[0] ?? NIL), 'A Result that succeeded, carrying a value.', '(value: Any) -> Result'),
+  );
+  define(
+    native('Err', ['error'], (args) => enumErr(args[0] ?? NIL), 'A Result that failed, carrying an error.', '(error: Any) -> Result'),
+  );
+  define(
+    native('Some', ['value'], (args) => enumValue('Option', 'Some', [args[0] ?? NIL]), 'An Option that holds a value.', '(value: Any) -> Option'),
+  );
   globals.declare('None', NONE, false);
 
   // The enum types themselves, so `Result.Ok` and `match` on them read naturally.
@@ -1506,3 +2107,11 @@ const enumOk = (v: Value): EnumValue => enumValue('Result', 'Ok', [v]);
 const enumErr = (v: Value): EnumValue => enumValue('Result', 'Err', [v]);
 
 export type { ListValue, MapValue, StructValue, FnValue };
+
+/** Whether this module declares `fn main`, which is what §7.1 calls for. */
+function declaresMain(module: Module): boolean {
+  return module.stmts.some((stmt) => {
+    const decl = stmt.kind === 'ExportDecl' ? stmt.declaration : stmt;
+    return decl.kind === 'FnDecl' && decl.name === 'main';
+  });
+}

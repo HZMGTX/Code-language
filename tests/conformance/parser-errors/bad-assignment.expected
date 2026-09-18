@@ -4,4 +4,4 @@ error[PA008]: cannot assign to this expression
 1 | 1 = 2
   | ^ not a place that can hold a value
   |
-  = note: assignment targets are variables, fields, or index expressions
+  = note: assignment targets are variables, fields, index expressions, or a list of those: `[a, b] = [b, a]`

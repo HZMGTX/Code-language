@@ -1,0 +1,73 @@
+// A marks report, in one file, with no imports at all.
+//
+//   lumen run examples/beginner.lm
+//
+// Read it top to bottom, then change something: add a student, lower the pass
+// mark, widen the bars. Nothing is imported because a method call `x.f(a)` is
+// just another way of writing `f(x, a)`, and the prelude is always there.
+
+// Marks as somebody actually types them: ragged spacing, careless capitals.
+// Tidying that up in code is kinder than asking people to type carefully.
+let raw = "Ada Lovelace, 91
+  grace hopper ,78
+Alan Turing, 64
+katherine johnson , 99
+Edsger Dijkstra, 47"
+
+// A struct fixes the shape of one row, so a misspelt field is something Lumen
+// tells you about rather than a nil you discover much later.
+struct Student { name: Str, mark: Num }
+
+// "  grace hopper " becomes "Grace Hopper". Each method works on whatever the
+// one before it produced, so the chain runs in reading order.
+fn titleCase(name) {
+  name.trim().split(" ").map(fn(w) { w.slice(0, 1).upper() + w.slice(1) }).join(" ")
+}
+
+fn parse(line) {
+  let parts = line.split(",")
+  // Nothing is ever thrown in Lumen: toNum gives back Ok(number) or Err(why),
+  // and match makes you answer both, so one unreadable mark cannot take the
+  // whole report down with it.
+  let mark = match parts[1].trim().toNum() { Ok(n) => n, Err(_) => 0 }
+  Student { name: titleCase(parts[0]), mark: mark }
+}
+
+// passMark has a default, so grade(m) reads cleanly everywhere and grade(m, 40)
+// is still there for the paper that is marked differently.
+fn grade(mark, passMark = 50) {
+  match mark {
+    m if m >= 90       => "excellent",
+    m if m >= 75       => "good",
+    m if m >= passMark => "pass",
+    _                  => "resit",
+  }
+}
+
+// A bar is easier to compare at a glance than a column of numbers.
+fn bar(mark, width = 20) { "#".repeat(round(mark / 100 * width)).padEnd(width) }
+
+fn main() {
+  let students = raw.lines().map(parse)
+  var tally = {}          // how many of each grade, filled in as we print
+
+  print("Marks")
+  for s in students {
+    let g = grade(s.mark)
+    print("  ${s.name.padEnd(18)} ${str(s.mark).padEnd(4)} ${bar(s.mark)} ${g}")
+    // A key that was never set reads as nil, so the first sighting starts at 1.
+    tally[g] = tally.getOr(g, 0) + 1   // a letter nobody has seen counts as zero
+  }
+
+  print("")
+  print("Grades")
+  for [name, count] in tally { print("  ${name.padEnd(10)} ${count}") }
+
+  let marks = students.map(fn(s) { s.mark })
+  let average = round(marks.sum() / len(marks) * 10) / 10
+  let best = students.filter(fn(s) { s.mark >= 90 }).map(fn(s) { s.name }).join(", ")
+
+  print("")
+  print("${len(students)} students, ${min(marks)} to ${max(marks)}, average ${average}")
+  print("Top of the class: ${best}")
+}

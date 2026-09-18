@@ -1,0 +1,9 @@
+// `RS001` underlines the name, not the whole literal.
+//
+// An undefined `Point { x: 1, y: 2 }` had the entire literal underlined —
+// fields and all — when the only thing not defined is `Point`, and the fields
+// are usually the longer half. Every declaration in this language already
+// carries the span of its own name for exactly this reason; a struct literal
+// now does too.
+let p = Point { x: 1, y: 2, label: "origin" }
+print(p)

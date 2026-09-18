@@ -1,0 +1,59 @@
+// `TY010`: a statement that does nothing.
+//
+// `xs.sort()` is the first thing anyone arriving from Python or JavaScript
+// writes, and it sorted nothing — `sort` answers with a new list and leaves its
+// subject alone, like almost everything in the library. Eleven such statements
+// ran silently in the probe that found this.
+//
+// `docs/stdlib.md` has always stated the rule — "nothing mutates unless its
+// name says so" — and this is where it stops being something to remember. The
+// two names it gives as the exceptions, `push` and `pop`, really do mutate, and
+// they say nothing here; see the `-quiet` companion.
+import { sort, unique, take, insert } from "std/list"
+import { upper, trim } from "std/str"
+import { set } from "std/map"
+
+var xs: List<Num> = [3, 1, 2]
+sort(xs)
+unique(xs)
+take(xs, 1)
+insert(xs, 0, 9)
+print(xs)
+
+// §4.7 says `f(x)`, `x.f()` and `x |> f()` are three spellings of one
+// expression, so all three answer alike.
+xs.sort()
+xs |> sort()
+
+var s: Str = "  hi  "
+upper(s)
+s.trim()
+print(s)
+
+var m: Map<Num> = { a: 1 }
+set(m, "b", 2)
+m.remove("a")
+print(m)
+
+// Inside a function body, too — which is its own walk, and was not covered
+// until removing it left this fixture passing.
+fn tally(rows: List<Num>) -> Num {
+  rows.sort()
+  rows.unique()
+  let text: Str = "x"
+  text.upper()
+  rows.len()
+}
+print(tally([2, 1, 1]))
+
+// And inside a loop body and an `if`, which are blocks like any other.
+for row in [1, 2] {
+  let name: Str = "r${row}"
+  name.trim()
+  print(name)
+}
+if true {
+  var seen: Map<Num> = { a: 1 }
+  seen.remove("a")
+  print(seen)
+}

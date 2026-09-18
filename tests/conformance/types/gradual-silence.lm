@@ -1,0 +1,19 @@
+// The central property: code that writes no annotations is never type-checked.
+// Every one of these would be a type error in a language that inferred, and
+// none of them is reported here. Annotations are opt-in, and so is the checking.
+fn add(a, b) { a + b }
+print(add(1, 2))
+
+var loose = 1
+loose = "now a string"
+loose = [1, 2]
+print(loose)
+
+fn identity(x) { x }
+print(identity("anything"))
+print(identity(42))
+
+// A value whose type cannot be determined is Any, and Any fits everywhere.
+fn needsNum(n: Num) -> Num { n }
+let fromList = [1, 2][0]
+print(needsNum(fromList))

@@ -1,0 +1,11 @@
+Infinity
+true
+true
+-Infinity
+error[RT046]: the result of Infinity - Infinity is undefined
+  --> nan.lm:15:7
+   |
+15 | print(huge - huge)
+   |       ^^^^^^^^^^^ no number answers this
+   |
+   = note: this comes from infinities cancelling, which usually means an earlier result overflowed

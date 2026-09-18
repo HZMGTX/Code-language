@@ -9,35 +9,16 @@
 import { promises as fsp } from 'node:fs';
 import * as path from 'node:path';
 
-import { LumenError, parse } from '@lumen-lang/core';
-import { newInterpreter, useColor } from '../support.js';
+import { LumenError, checkModule, parse } from '@lumen-lang/core';
+import { checkOptions, collectFiles, displayPath, newInterpreter, useColor } from '../support.js';
 
-async function collect(target: string, found: string[]): Promise<void> {
-  let stat;
-  try {
-    stat = await fsp.stat(target);
-  } catch {
-    return;
-  }
-  if (stat.isFile()) {
-    if (target.endsWith('_test.lm')) found.push(target);
-    return;
-  }
-  if (!stat.isDirectory()) return;
-  const entries = await fsp.readdir(target, { withFileTypes: true });
-  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
-    if (entry.name === 'node_modules' || entry.name.startsWith('.')) continue;
-    await collect(path.join(target, entry.name), found);
-  }
-}
-
-export async function runTests(target: string): Promise<void> {
-  const root = path.resolve(target);
-  const files: string[] = [];
-  await collect(root, files);
+export async function runTests(targets: string | readonly string[]): Promise<void> {
+  const roots = (typeof targets === 'string' ? [targets] : targets).map((t) => path.resolve(t));
+  const where = roots.length === 1 ? roots[0] : roots.length + ' paths';
+  const files = await collectFiles(roots, '_test.lm');
 
   if (files.length === 0) {
-    process.stdout.write('no `*_test.lm` files found under ' + root + '\n');
+    process.stdout.write('no `*_test.lm` files found under ' + where + '\n');
     process.exit(1);
   }
 
@@ -46,11 +27,13 @@ export async function runTests(target: string): Promise<void> {
   const failures: { file: string; message: string }[] = [];
 
   for (const file of files) {
-    const relative = path.relative(process.cwd(), file);
+    const relative = displayPath(file);
     const source = await fsp.readFile(file, 'utf8');
     try {
       const module = parse(source, file);
-      await newInterpreter().runModule(module, source);
+      const interpreter = newInterpreter();
+      checkModule(module, source, checkOptions(interpreter.globals.ownNames()));
+      await interpreter.runModule(module, source);
       passed += 1;
       process.stdout.write('ok   ' + relative + '\n');
     } catch (error) {

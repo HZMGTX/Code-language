@@ -109,4 +109,21 @@ describe('lexer', () => {
   it('collects several errors rather than stopping at the first', () => {
     assert.equal(errorCodes("let s = 'a' + 'b'").length, 4);
   });
+
+  it('continues a line in a file with either line ending', () => {
+    // A backslash at the end of a line swallows the break. In a CRLF file the
+    // character after the backslash is the carriage return, and only `\n` was
+    // accepted — so the continuation worked on one operating system's files
+    // and was `LX004` on another's, with a bare CR spliced into the message
+    // where it named a character nobody can see.
+    for (const [what, source] of [
+      ['LF', 'let s = "abc\\\ndef"\n'],
+      ['CRLF', 'let s = "abc\\\r\ndef"\r\n'],
+      ['CR', 'let s = "abc\\\rdef"\r'],
+    ] as const) {
+      assert.deepEqual(errorCodes(source), [], what + ' reported: ' + JSON.stringify(source));
+      const strings = lex(source).filter((t) => t.kind === 'string');
+      assert.equal(strings[0]?.str, 'abcdef', what + ' gave ' + JSON.stringify(strings[0]?.str));
+    }
+  });
 });

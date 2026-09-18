@@ -1,0 +1,8 @@
+error[RS008]: `main()` is called for you, so this runs the program twice
+ --> main-called-twice.lm:8:1
+  |
+8 | main()
+  | ^^^^^^ already called
+  |
+  = note: a module that defines `fn main` calls it once the file has been read
+  = note: delete this line; everything it does still happens

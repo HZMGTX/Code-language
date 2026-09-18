@@ -61,3 +61,63 @@ for (const [category, files] of [...byCategory].sort((a, b) => a[0].localeCompar
     }
   });
 }
+
+/**
+ * A golden file can record a bug as correct, and one did.
+ *
+ * `npm run test:update` writes down whatever happens. When `TY010` — the first
+ * warning the type checker ever produced — began stopping programs from running
+ * at all, the fixture written for it was regenerated and recorded a file full of
+ * diagnostics with none of its program's output. That looks exactly like a
+ * fixture which only produces diagnostics, and its `-quiet` companion passed
+ * because a program with no warnings ran fine. Nothing looked wrong.
+ *
+ * So the invariant is checked here rather than trusted to a reader: **a fixture
+ * whose only diagnostics are warnings, and which prints at its top level, must
+ * show what it printed.** An `error` in the golden file excuses it — a static
+ * error never runs and a run-time one stops where it is — but a warning must
+ * never stop anything, which is the whole distinction between the two.
+ *
+ * This needs no maintenance, which is why it is here as well as in
+ * `warnings-run.test.ts`: that one asks the question of every warning *code* and
+ * needs a case adding for each new one, while this asks it of every *fixture*
+ * and fires on its own.
+ */
+describe('a golden file records a program that ran', () => {
+  it('shows output for every fixture whose only diagnostics are warnings', async () => {
+    const silent: string[] = [];
+    let examined = 0;
+
+    for (const file of fixtures) {
+      const source = await fsp.readFile(file, 'utf8');
+      // A `print` in the first column runs unless the program stopped. One
+      // inside a function or a branch may legitimately never be reached.
+      if (!/^print\(/mu.test(source)) continue;
+
+      const golden = await fsp.readFile(file.replace(/\.lm$/u, '.expected'), 'utf8').catch(() => '');
+      if (/^error\[/mu.test(golden) || !/^warning\[/mu.test(golden)) continue;
+      examined += 1;
+
+      // Everything a rendered diagnostic is made of: its header, its `-->`
+      // line, its gutter and its notes. What is left is the program's own.
+      const printed = golden
+        .split('\n')
+        .filter((line) => !/^(error|warning)\[/u.test(line))
+        .filter((line) => !/^\s*(-->|\||=)/u.test(line))
+        .filter((line) => !/^\s*\d+ \|/u.test(line))
+        .filter((line) => line.trim() !== '');
+
+      if (printed.length === 0) silent.push(path.relative(CONFORMANCE_DIR, file));
+    }
+
+    assert.deepEqual(
+      silent,
+      [],
+      'these print but their golden file shows nothing, so the program did not run:\n  ' +
+        silent.join('\n  '),
+    );
+    // A guard on the check itself: if no fixture pairs a warning with output,
+    // this passes on nothing at all, which is how a check like this dies.
+    assert.ok(examined > 0, 'no fixture produces warnings and prints — this checked nothing');
+  });
+});

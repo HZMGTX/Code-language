@@ -1,0 +1,8 @@
+error[PA003]: unexpected `:` after statement
+ --> map-in-block-position.lm:8:11
+  |
+8 |   1 => { a: 1 },
+  |           ^ expected a line break or `;` here
+  |
+  = note: a `{` after `=>`, or at the start of a statement, opens a block
+  = note: for a map literal there, put it in parentheses: `({ a: 1 })`

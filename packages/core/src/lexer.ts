@@ -21,7 +21,7 @@ import {
   pos,
   span,
 } from './diagnostics.js';
-import { KEYWORDS, OPERATORS, type TemplatePart, type Token, type TokenKind } from './token.js';
+import { type Comment, KEYWORDS, OPERATORS, type TemplatePart, type Token, type TokenKind } from './token.js';
 
 const isDigit = (c: string): boolean => c >= '0' && c <= '9';
 const isHex = (c: string): boolean =>
@@ -30,6 +30,27 @@ const isIdentStart = (c: string): boolean =>
   (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c === '_';
 const isIdentPart = (c: string): boolean => isIdentStart(c) || isDigit(c);
 
+/** `a binary`, `an octal` or `a hexadecimal`, for a message about a digit. */
+function radixName(radix: number): string {
+  if (radix === 2) return 'a binary';
+  if (radix === 8) return 'an octal';
+  return 'a hexadecimal';
+}
+
+/** The letter after `0` in `0x1f`, `0b1010`, `0o17`, and what it admits. */
+const RADIX_PREFIXES: ReadonlyMap<
+  string,
+  { radix: number; test: (c: string) => boolean; admits: string }
+> =
+  new Map([
+    ['x', { radix: 16, test: isHex, admits: '0-9, a-f and A-F' }],
+    ['X', { radix: 16, test: isHex, admits: '0-9, a-f and A-F' }],
+    ['b', { radix: 2, test: (c: string) => c === '0' || c === '1', admits: '0 and 1' }],
+    ['B', { radix: 2, test: (c: string) => c === '0' || c === '1', admits: '0 and 1' }],
+    ['o', { radix: 8, test: (c: string) => c >= '0' && c <= '7', admits: '0 to 7' }],
+    ['O', { radix: 8, test: (c: string) => c >= '0' && c <= '7', admits: '0 to 7' }],
+  ]);
+
 export class Lexer {
   private i = 0;
   private line: number;
@@ -37,6 +58,14 @@ export class Lexer {
   private readonly baseOffset: number;
   private readonly tokens: Token[] = [];
   private readonly diagnostics: Diagnostic[] = [];
+  /**
+   * Where the comments were.
+   *
+   * The parser has no use for them — a comment cannot change what a program
+   * means — but `lumen fmt` cannot re-indent a line without knowing whether it
+   * is inside one, so they are recorded rather than thrown away.
+   */
+  readonly comments: Comment[] = [];
 
   /**
    * @param origin Where this source begins in the enclosing file. Supplied when
@@ -86,13 +115,20 @@ export class Lexer {
     return false;
   }
 
-  private error(code: string, message: string, from: Pos, label?: string): void {
+  private error(
+    code: string,
+    message: string,
+    from: Pos,
+    label?: string,
+    notes?: readonly string[],
+  ): void {
     this.diagnostics.push({
       severity: 'error',
       code,
       message,
       span: span(from, this.here()),
       ...(label === undefined ? {} : { label }),
+      ...(notes === undefined ? {} : { notes: notes.map((message) => ({ message })) }),
     });
   }
 
@@ -101,11 +137,11 @@ export class Lexer {
   /** Lex the whole input. Throws `LumenError` if anything went wrong. */
   lex(): Token[] {
     for (;;) {
-      const crossedNewline = this.skipTrivia();
-      if (crossedNewline && this.tokens.length > 0 && this.last()?.kind !== 'newline') {
-        // A statement boundary. Zero-width: it stands between two real tokens.
-        const p = this.here();
-        this.tokens.push({ kind: 'newline', text: '\n', span: span(p, p) });
+      const brokeAt = this.skipTrivia();
+      if (brokeAt !== undefined && this.tokens.length > 0 && this.last()?.kind !== 'newline') {
+        // A statement boundary, at the break itself rather than at whatever
+        // follows it. Zero-width: it stands between two real tokens.
+        this.tokens.push({ kind: 'newline', text: '\n', span: span(brokeAt, brokeAt) });
       }
       if (this.atEnd()) break;
       this.scanToken();
@@ -127,21 +163,40 @@ export class Lexer {
    * Skip whitespace and comments.
    * @returns whether a line break was crossed.
    */
-  private skipTrivia(): boolean {
-    let sawNewline = false;
+  /**
+   * Skip whitespace and comments, and say **where** the first line break was.
+   *
+   * The position matters, and returning only "yes there was one" is what lost
+   * it. This consumes the break *and* every blank line, comment and unit of
+   * indentation after it, so the caller's `here()` was wherever the next real
+   * token began — and the statement-boundary token was stamped there. A
+   * diagnostic reading "expected `=>` after a match pattern, found a line
+   * break" pointed at the line *below* the break, underlining the next arm.
+   */
+  private skipTrivia(): Pos | undefined {
+    let brokeAt: Pos | undefined;
     for (;;) {
       const c = this.peek();
       if (c === ' ' || c === '\t' || c === '\r') {
         this.advance();
       } else if (c === '\n') {
-        sawNewline = true;
+        // The first break is the statement boundary; later ones are blank
+        // lines inside the same gap and do not move it.
+        brokeAt ??= this.here();
         this.advance();
       } else if (c === '/' && this.peek(1) === '/') {
+        const start = this.here();
         while (!this.atEnd() && this.peek() !== '\n') this.advance();
+        this.comments.push({ span: span(start, this.here()), block: false });
       } else if (c === '/' && this.peek(1) === '*') {
-        if (this.skipBlockComment()) sawNewline = true;
+        const start = this.here();
+        const spanned = this.skipBlockComment();
+        this.comments.push({ span: span(start, this.here()), block: true });
+        // A block comment that spans lines *is* a statement boundary, and the
+        // break inside it is where the comment ended.
+        if (spanned) brokeAt ??= this.here();
       } else {
-        return sawNewline;
+        return brokeAt;
       }
     }
   }
@@ -209,8 +264,13 @@ export class Lexer {
       }
     }
 
-    // Nothing matched.
-    this.advance();
+    // Nothing matched. A whole character, which is not the same as a whole
+    // `this.source[i]`: an emoji is two UTF-16 code units, so advancing by one
+    // left the second half to be reported as a *second* unexpected character,
+    // and each message carried a lone surrogate that came out as `` ` ` `` —
+    // naming a character that is not in the file and cannot be typed.
+    const whole = String.fromCodePoint(this.source.codePointAt(this.i) ?? 0);
+    for (let n = 0; n < whole.length; n += 1) this.advance();
     const hint =
       c === '|' ? 'did you mean `||` or `|>`?'
         : c === '&' ? 'did you mean `&&`?'
@@ -220,7 +280,7 @@ export class Lexer {
     this.diagnostics.push({
       severity: 'error',
       code: 'LX001',
-      message: 'unexpected character `' + c + '`',
+      message: 'unexpected character `' + whole + '`',
       span: span(start, this.here()),
       label: 'not valid here',
       ...(hint === undefined ? {} : { notes: [{ message: hint }] }),
@@ -236,7 +296,7 @@ export class Lexer {
   private scanIdent(start: Pos): void {
     while (isIdentPart(this.peek())) this.advance();
     const text = this.source.slice(start.offset - this.baseOffset, this.i);
-    const kw = KEYWORDS[text];
+    const kw = KEYWORDS.get(text);
     this.push(kw ?? 'ident', text, start);
   }
 
@@ -248,17 +308,8 @@ export class Lexer {
    * `0`, `..`, `10` rather than `0.` followed by a stray `.`.
    */
   private scanNumber(start: Pos): void {
-    const radixPrefixes: Record<string, { radix: number; test: (c: string) => boolean }> = {
-      x: { radix: 16, test: isHex },
-      X: { radix: 16, test: isHex },
-      b: { radix: 2, test: (c) => c === '0' || c === '1' },
-      B: { radix: 2, test: (c) => c === '0' || c === '1' },
-      o: { radix: 8, test: (c) => c >= '0' && c <= '7' },
-      O: { radix: 8, test: (c) => c >= '0' && c <= '7' },
-    };
-
-    if (this.peek() === '0' && radixPrefixes[this.peek(1)] !== undefined) {
-      const spec = radixPrefixes[this.peek(1)];
+    if (this.peek() === '0') {
+      const spec = RADIX_PREFIXES.get(this.peek(1));
       if (spec !== undefined) {
         this.advance();
         this.advance();
@@ -270,6 +321,32 @@ export class Lexer {
           this.error('LX005', 'number literal `' + text + '` has no digits', start, 'expected digits here');
           this.push('number', text, start, { num: 0 });
           return;
+        }
+        // A digit the radix does not admit ends the literal silently, and the
+        // parser then complains about whatever is left over: `print(0b1012)`
+        // said "expected `)` to close this call, found `2`", which sends the
+        // reader looking for a missing bracket. The `2` is the mistake, and a
+        // digit immediately after a complete radix literal is never anything
+        // else — there is no operator between them and no way to mean it.
+        // Any letter or digit touching the end of the literal, not only one that
+        // looks like a digit: `0xfg` gave "expected `)` to close this call,
+        // found `g`" for the same reason `0b1012` blamed the bracket. Nothing
+        // legal can be adjacent — an operator or a `.` needs no space but is
+        // neither, and `0b101 and true` has one.
+        const stray = this.peek();
+        if (/[0-9A-Za-z]/.test(stray)) {
+          const at = this.here();
+          this.advance();
+          this.error(
+            'LX005',
+            '`' + stray + '` is not ' + radixName(spec.radix) + ' digit',
+            at,
+            'not valid here',
+            [
+              '`' + text + '` is ' + radixName(spec.radix) + ' literal, so it admits ' +
+                spec.admits,
+            ],
+          );
         }
         this.push('number', text, start, { num: Number.parseInt(digits, spec.radix) });
         return;
@@ -389,6 +466,14 @@ export class Lexer {
         return '"';
       case '$':
         return '$';
+      case '\r':
+        // A CRLF file ends its lines with two characters, and the one after the
+        // backslash is the carriage return. Taking only `\n` meant the
+        // continuation worked on one operating system's files and reported
+        // `LX004` on another's — with a bare CR spliced into the message, so it
+        // named a character the reader cannot see.
+        if (this.peek() === '\n') this.advance();
+        return '';
       case '\n':
         // A line continuation: backslash at end of line swallows the newline.
         return '';
@@ -480,12 +565,30 @@ export class Lexer {
   }
 
   /** Skip over a string literal without interpreting it (used while brace-matching). */
+  /**
+   * Walk past a string that is sitting inside an interpolation.
+   *
+   * It has to know about `${…}` as well as quotes, because a string inside an
+   * interpolation may itself interpolate, and the braces in *that* are the
+   * outer scan's braces too. Without it the depth count desynchronised and the
+   * spec's own example stopped lexing one level down:
+   *
+   *     print("outer ${ "inner ${ pick("}") }" }")
+   *
+   * The `"}"` there is a string containing a brace — the very thing the
+   * bracket-counting is written to see past — and the scan that was supposed
+   * to skip it counted the brace anyway.
+   */
   private skipRawString(): void {
     this.advance(); // opening quote
     while (!this.atEnd()) {
       if (this.peek() === '\\') {
         this.advance();
         this.advance();
+        continue;
+      }
+      if (this.peek() === '$' && this.peek(1) === '{') {
+        this.skipRawInterpolation();
         continue;
       }
       if (this.peek() === '"') {
@@ -495,9 +598,41 @@ export class Lexer {
       this.advance();
     }
   }
+
+  /** The `${…}` of a string being skipped, braces and nested strings and all. */
+  private skipRawInterpolation(): void {
+    this.advance(); // $
+    this.advance(); // {
+    let depth = 1;
+    while (!this.atEnd() && depth > 0) {
+      const c = this.peek();
+      if (c === '"') {
+        this.skipRawString();
+        continue;
+      }
+      if (c === '{') depth += 1;
+      if (c === '}') depth -= 1;
+      this.advance();
+    }
+  }
 }
 
 /** Convenience wrapper around {@link Lexer}. */
 export function lex(source: string, file = '<input>', origin?: Pos): Token[] {
   return new Lexer(source, file, origin).lex();
+}
+
+/**
+ * As `lex`, plus where the comments were.
+ *
+ * Only `lumen fmt` needs this: it has to know which lines sit inside a block
+ * comment, because re-indenting one of those would change the comment's text.
+ */
+export function lexWithComments(
+  source: string,
+  file = '<input>',
+): { tokens: Token[]; comments: readonly Comment[] } {
+  const lexer = new Lexer(source, file);
+  const tokens = lexer.lex();
+  return { tokens, comments: lexer.comments };
 }

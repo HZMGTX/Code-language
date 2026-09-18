@@ -1,0 +1,52 @@
+// `indexOf` answers `Option`, because `-1` is a position.
+//
+// It used to answer `-1` when it found nothing, which is what C, Java,
+// JavaScript and Python's `str.find` all do — and what none of them has is
+// §4's rule that `xs[i]` counts from the end when `i` is negative. Put the two
+// together and a lookup that found nothing gave back the last element:
+//
+//     xs[xs.indexOf("delta")]   ->   "gamma"
+//
+// with no error and nothing to unwrap. The same `-1` walked into `slice`, so
+// the half of a line before a separator that was not there came back as the
+// whole line minus its final character.
+//
+// Every other function in the library that can fail to find something already
+// answered `Option`, and `docs/stdlib.md` states it as a rule: *"absence
+// returns an `Option`"*. This was the one exception.
+import { indexOf, slice, len } from "std/str"
+import { indexOf as indexIn } from "std/list"
+
+let xs = ["alpha", "beta", "gamma"]
+print(indexIn(xs, "gamma"))
+print(indexIn(xs, "delta"))
+
+// The lookup that used to answer with the last element now has to be handled.
+match indexIn(xs, "delta") {
+  Some(at) => print("found at ${at}: ${xs[at]}")
+  None     => print("delta is not in the list")
+}
+
+// The same for text, where the idiom is "cut at the separator".
+fn keyOf(line) {
+  match indexOf(line, ":") {
+    Some(at) => slice(line, 0, at)
+    None     => "(no separator)"
+  }
+}
+print(keyOf("Content-Type: text/html"))
+print(keyOf("no separator here"))
+
+// The start of a string is `Some(0)`, which `-1` could never be told apart
+// from by a truthiness test.
+print(indexOf("abc", "a"))
+print(indexOf("abc", "z"))
+print(indexOf("", ""))
+
+// And `?` works on it, which is the whole reason absence is an Option.
+fn afterColon(line) {
+  let at = indexOf(line, ":")?
+  slice(line, at + 1, len(line)).trim()
+}
+print(afterColon("Content-Type: text/html"))
+print(afterColon("no separator here"))

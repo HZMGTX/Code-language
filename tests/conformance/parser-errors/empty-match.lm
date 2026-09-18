@@ -1,0 +1,7 @@
+// `PA013`: a `match` with no arms at all.
+//
+// It can never produce a value, so it is a mistake rather than a degenerate
+// case — and `RS002` cannot say so, because there is no arm to tell it which
+// enum was meant.
+let n = 1
+print(match n { })

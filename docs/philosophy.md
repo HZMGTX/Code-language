@@ -11,7 +11,7 @@ maintainers, by time, and by the ecosystem around them. Being closed source
 removes the usual mechanism by which languages accumulate durability (a large
 outside community), so the durability has to be built into the artifact itself.
 
-Six deliberate decisions do that work.
+Seven deliberate decisions do that work.
 
 ### 1. The language is defined by a document, not only by code
 
@@ -24,7 +24,7 @@ be archaeology.
 ### 2. Behaviour is pinned by an executable conformance suite
 
 `tests/conformance/` holds one `.lm` file and one exact expected-output file per
-behaviour. Fifty of them today. They are byte-compared, run on three Node
+behaviour. 74 of them today. They are byte-compared, run on three Node
 versions and three operating systems, and they are what makes the specification
 enforceable rather than aspirational.
 
@@ -80,7 +80,19 @@ Annotation syntax was deliberately finished *before* type checking so that the
 v0.2 checker can begin enforcing without invalidating a line of code written
 today.
 
-### 6. Errors are treated as a feature, not an afterthought
+### 6. Being learnable is part of being durable
+
+A language nobody can get started in does not last, however well designed. So the
+prelude carries what a beginner reaches for in the first hour — `range`, `sum`,
+`sorted`, `map`, `filter`, `min`, `max`, `input` — rather than making them find
+the right module first, and `help()` answers "what can I do with this value?"
+from inside the terminal.
+
+*Cost:* a larger prelude is more names to collide with, and more surface that has
+to keep working. The mitigation is that a user binding always shadows a prelude
+one, so a program that defines its own `sum` is unaffected.
+
+### 7. Errors are treated as a feature, not an afterthought
 
 Every diagnostic carries a source span, a caret, a stable code and usually a
 suggested fix. This is not decoration. The quality of its error messages
@@ -98,8 +110,11 @@ returns a `Result` or `Option`.
 
 **No async colouring.** The interpreter awaits I/O, so `chat(...)` composes like
 a pure function and no `async` marker propagates up your call stack.
-*Cost:* every expression evaluation is a promise, which is slow. A bytecode VM
-is the planned answer. This is the trade I would most want to revisit.
+*Cost:* almost every expression evaluation is a promise, which is slow. Leaf
+expressions — literals and plain names — are evaluated synchronously now, since
+none of them can suspend, and that alone was worth about a fifth of the
+benchmark suite. Everything else still allocates. A bytecode VM is the planned
+answer; this is the trade I would most want to revisit.
 
 **Immutable by default.** `let` is final; `var` announces mutability.
 *Cost:* nothing significant, beyond having to mean it.
@@ -114,17 +129,33 @@ always a mistake.
 *Cost:* the asymmetry has to be learned. `std/map.get` returns an `Option` when
 you want absence handled explicitly.
 
-**No methods on built-in types.** There is `len(x)`, not `x.len()`, and
-pipelines carry the ergonomics.
-*Cost:* less familiar. The reason is that method dispatch deserves to be
-designed together with traits in v0.2, rather than bolted on now and
-regretted.
+**Methods on built-in types, from the calling convention rather than an object
+model.** `x.f(a)` means `f(x, a)`. Because every standard-library function takes
+its subject first, `x.f(a)`, `f(x, a)` and `x |> f(a)` are three spellings of one
+thing, and every existing library function gained method syntax without a line of
+new library code.
+*Cost:* two ways to write the same call, which a style guide has to settle. On a
+map, a key and a method can share a name — the key always wins, so adding methods
+can never change what an existing lookup returns, but it does mean
+`m.keys` and `m.keys()` can differ.
 
-**Type annotations parsed but not enforced.** Stated plainly wherever it could
-mislead.
-*Cost:* an annotation currently documents intent rather than guaranteeing it.
-Shipping a full inference engine in a first pass is where language projects
-die; freezing the syntax first is what makes the checker additive later.
+> This reverses an earlier decision, and it is worth recording why rather than
+> quietly editing history. v0.1 argued that method dispatch should wait for
+> traits in v0.2, on the grounds that bolting it on early would be regretted.
+> That reasoning assumed methods required an object model to dispatch through.
+> They did not: the subject-first convention already encoded everything dispatch
+> needed. The earlier position was defensible and wrong, and the cost of holding
+> it was that a beginner wrote three import lines before their first useful
+> program.
+
+**Gradual typing, with `Any` as the default rather than an escape hatch.**
+Annotations are enforced where written; everything else is `Any`, which is
+compatible with everything. An unannotated program is never type-checked.
+*Cost:* the checker is silent exactly where a program most needs help — code
+nobody annotated. It catches a wrong argument to an annotated function, not a
+wrong argument to an unannotated one. The alternative, inferring everywhere,
+would have changed what existing programs mean, which is a larger cost to pay
+without asking.
 
 ## What would make this claim false
 
@@ -138,5 +169,17 @@ watched for:
 - The specification drifting from the implementation with no one reconciling it.
 - Diagnostics degrading into bare messages with no span or suggestion.
 - The core reaching for a host API directly, rather than through `Host`.
+- The host showing through the surface. This one has already happened once:
+  `let valueOf = 1` was a syntax error, because the keyword table was a
+  JavaScript object literal and every name on `Object.prototype` answered a
+  lookup in it. `toString`, `constructor`, `hasOwnProperty` and `__proto__`
+  were unusable too, `stringify` quietly dropped a `__proto__` key, and
+  importing a module by one of those names crashed the interpreter. None of it
+  was visible from inside the implementation, where those names never come up;
+  it was visible immediately from outside, the moment a program wanted a
+  function called `valueOf`. Lookups keyed by something a program wrote use a
+  `Map` now, and objects built from program data are created without a
+  prototype. The lesson worth keeping is the one about where the bug was found:
+  writing programs in the language, not reading the code that implements it.
 
 Each of those is checkable, and the first is checked automatically.

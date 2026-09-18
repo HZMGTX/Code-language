@@ -1,0 +1,23 @@
+import { stringify } from "std/json"
+
+// An optional field is the commonest thing in a JSON document, and JSON already
+// spells it. `Some(v)` is `v`; `None` is `null`.
+print(stringify({ name: "ada", nickname: Some("addy") }))
+print(stringify({ name: "bob", nickname: None }))
+print(stringify([Some(1), None, Some([1, 2])]))
+print(stringify(Some(Some(1))))
+
+// `Result` keeps the tagged form: JSON has no agreed shape for "succeeded or
+// failed", and both arms carry something the reader has to tell apart.
+print(stringify({ result: Ok(1) }))
+print(stringify({ result: Err("bad") }))
+
+// A user's own enum is untouched, whatever it is called.
+enum Colour { Red, Custom(Num) }
+print(stringify([Colour.Red, Colour.Custom(1)]))
+
+enum Option2 { A, B(Num) }
+print(stringify([Option2.A, Option2.B(1)]))
+
+// The one thing JSON cannot keep apart, stated rather than hidden.
+print(stringify([Some(nil), None]))

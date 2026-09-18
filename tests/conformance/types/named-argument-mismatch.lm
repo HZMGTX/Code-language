@@ -1,0 +1,2 @@
+fn greet(name: Str, times: Num) -> Str { name }
+print(greet(name: "Ada", times: "three"))

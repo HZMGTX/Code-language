@@ -1,0 +1,46 @@
+// Nothing here is a no-op, and the checker says nothing at all.
+//
+// The companion to `discarded-answer.lm`, and the more important of the two.
+// `TY010` is a claim that a line does nothing, and getting that wrong means
+// telling somebody their working code is pointless — so every restraint the
+// check is built on has a case here. Every line runs.
+import { sort } from "std/list"
+
+// A function the program declared: what it does is not something this pass can
+// know, so it stays quiet — including one that shadows a library name.
+fn tidy(xs) { print(xs) }
+tidy([1])
+
+fn unique(xs) { print("mine: ${xs}") }
+unique([1])
+
+// The answer is taken, in each of the ways there are to take it.
+var ys: List<Num> = [3, 1, 2]
+let sorted = sort(ys)
+print(sorted)
+print(ys.sort())
+print(ys |> sort())
+ys = ys.sort()
+
+// `push` and `pop` mutate — the two exceptions `docs/stdlib.md` names — so a
+// statement made of one is doing exactly what it looks like.
+ys.push(4)
+ys.pop()
+print(ys)
+
+// A receiver whose type is unknown. Guessing here is how a check starts
+// rejecting good code.
+fn hidden(v) {
+  v.sort()
+  print("hidden")
+}
+hidden([1])
+
+// The last statement of a block is the block's value, so it is not discarded.
+fn newest(xs: List<Num>) -> List<Num> {
+  xs.sort()
+}
+print(newest([2, 1]))
+
+// A lambda called on the spot is not a library function.
+fn(n) { print("lambda ${n}") }(1)

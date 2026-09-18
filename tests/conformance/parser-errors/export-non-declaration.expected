@@ -1,0 +1,6 @@
+error[PA006]: only `let`, `var`, `fn`, `struct` and `enum` can be exported
+ --> export-non-declaration.lm:5:8
+  |
+5 | export print(1)
+  |        ^^^^^ cannot export this
+  |

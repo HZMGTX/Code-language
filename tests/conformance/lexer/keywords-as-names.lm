@@ -1,0 +1,49 @@
+// A keyword is only a keyword where a statement or an expression could start.
+// After a `.`, before the `:` of a map entry, or as a struct field, there is
+// nothing else it could be — and JSON hands you keys like these all the time.
+
+import { parse, stringify } from "std/json"
+
+let m = { if: 1, for: 2, in: 3, match: 4, or: 5, true: 6, return: 7, not: 8 }
+print(m.if)
+print(m.for)
+print(m.true)
+print(m.return)
+print(m.keys())
+print(stringify(m))
+
+// This is the case that matters: it is what `parse` produces.
+match parse("{\"if\": 1, \"true\": 2, \"match\": 3}") {
+  Ok(data) => print([data.if, data.true, data.match]),
+  Err(e)   => print("failed: ${e}"),
+}
+
+// Struct fields too, declared and read.
+struct Config { for: Num, in: Str, while: Bool }
+let c = Config { for: 1, in: "x", while: true }
+print([c.for, c.in, c.while])
+
+// And in a struct pattern.
+print(match c { Config { for: n, in: _, while: _ } => n })
+
+// `from` and `as` are not keywords at all, only words the parser looks for in
+// the one position each of them means something. `let from = ...` is what
+// anybody writes for a rename, and `replace(s, from, to)` is how every other
+// language spells that function; reserving them made both a syntax error and
+// twice left the standard library with a parameter no program could declare.
+let from = "here"
+var as = "that"
+fn move(from, to) { "${from} -> ${to}" }
+print(move(from, "there"))
+print(move(from: "x", to: "y"))
+print([from, as])
+
+// And the position where each still means what it means.
+import { map as mapped } from "std/list"
+print(mapped([1, 2], fn(n) { n * 2 }))
+
+// The keywords are still keywords where they matter.
+if true { print("if still works") }
+for i in [1] { print("for still works") }
+print(true and not false)
+print(match 1 { _ => "match still works" })

@@ -1,0 +1,15 @@
+error[RS007]: struct `Book` declares field `title` twice
+ --> duplicate-field.lm:5:39
+  |
+5 | struct Book { title: Str, pages: Num, title: Num }
+  |                                       ^^^^^^^^^^ declared twice
+  |
+  = note: the earlier one is on line 5
+
+error[RS007]: enum `Status` declares variant `Todo` twice
+ --> duplicate-field.lm:7:27
+  |
+7 | enum Status { Todo, Done, Todo }
+  |                           ^^^^ declared twice
+  |
+  = note: the earlier one is on line 7

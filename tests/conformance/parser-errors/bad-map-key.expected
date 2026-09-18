@@ -1,0 +1,21 @@
+error[PA011]: expected a map key, found `+`
+ --> bad-map-key.lm:2:9
+  |
+2 | print({ + : 1 })
+  |         ^ not a key
+  |
+  = note: keys are names, strings, or `[expr]` for a computed key
+
+error[PA014]: unmatched `}`
+ --> bad-map-key.lm:2:15
+  |
+2 | print({ + : 1 })
+  |               ^ no block is open here
+  |
+
+error[PA010]: expected an expression, found `)`
+ --> bad-map-key.lm:2:16
+  |
+2 | print({ + : 1 })
+  |                ^ not an expression
+  |

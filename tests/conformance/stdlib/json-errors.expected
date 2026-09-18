@@ -1,0 +1,27 @@
+invalid JSON: there is nothing here to read
+invalid JSON: there is nothing here to read
+invalid JSON at line 1, column 1: this `{` is never closed
+invalid JSON at line 1, column 1: this `[` is never closed
+invalid JSON at line 1, column 1: this `"` is never closed
+invalid JSON at line 1, column 2: expected a key in double quotes, found `'`
+invalid JSON at line 1, column 2: JSON writes these in lower case, and `None` is `null`
+invalid JSON at line 1, column 7: JSON has no `NaN`, `Infinity` or leading `+`
+invalid JSON at line 1, column 1: `tru` is not a value JSON knows — did you mean `true`?
+invalid JSON at line 1, column 2: the key `name` needs double quotes around it
+invalid JSON at line 1, column 1: a number may not start with `0`
+invalid JSON at line 1, column 1: JSON has no `NaN`, `Infinity` or leading `+`
+invalid JSON at line 1, column 1: a number needs a digit before the decimal point
+invalid JSON at line 1, column 3: a decimal point needs a digit after it
+invalid JSON at line 1, column 3: an exponent needs a digit after it
+invalid JSON at line 1, column 7: a trailing comma: JSON has no comma before `]`
+invalid JSON at line 1, column 9: a trailing comma: JSON has no comma before `}`
+invalid JSON at line 1, column 2: `\x` is not an escape JSON knows
+invalid JSON at line 1, column 2: `\u` needs four hex digits after it
+invalid JSON at line 1, column 9: the document ended here, and then there was `{`
+invalid JSON at line 3, column 29: a trailing comma: JSON has no comma before `]`
+invalid JSON at line 1, column 6: a trailing comma: JSON has no comma before `]`
+invalid JSON at line 1, column 7: a trailing comma: JSON has no comma before `]`
+invalid JSON at line 1, column 10: a trailing comma: JSON has no comma before `}`
+ok {a: 2}
+ok []
+ok {a: [1, 2]}

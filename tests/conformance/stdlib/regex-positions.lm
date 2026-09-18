@@ -1,0 +1,43 @@
+// A match's `at` is a code point, like every other position in Lumen.
+//
+// The engine reports UTF-16 offsets, and `std/str.slice`, `len` and `chars` all
+// count code points. Handing back the engine's number made `at` unusable for
+// the one thing it is for: on "🎉 order 42 shipped" it said 9 where the `4` is
+// code point 8, so `slice(text, m.at)` cut *inside* the match and
+// `slice(text, m.at, m.at + len(m.text))` did not even return the match.
+import { find, findAll } from "std/regex"
+import { slice, len, chars } from "std/str"
+
+let text = "🎉 order 42 shipped"
+
+// The property worth pinning: a match can be recovered from its own position.
+match find(text, "\\d+").unwrapOr(None) {
+  Some(m) => {
+    print("${m.at} [${m.text}]")
+    print("[${slice(text, m.at, m.at + len(m.text))}]")
+    print("[${slice(text, 0, m.at)}]")
+    print("[${slice(text, m.at)}]")
+  },
+  None => print("no match"),
+}
+
+// Every match in a string full of astral characters, each landing exactly on
+// what it matched.
+for m in findAll("🎉a🎉b🎉c", "[abc]").unwrapOr([]) {
+  print("${m.at} [${m.text}] [${slice("🎉a🎉b🎉c", m.at, m.at + len(m.text))}]")
+}
+
+// A match that is itself astral, and one at the very start and very end.
+for pattern in ["🎉", "^🎉", "c$", "b🎉c"] {
+  match find("🎉a🎉b🎉c", pattern).unwrapOr(None) {
+    Some(m) => print("${pattern} -> ${m.at} [${slice("🎉a🎉b🎉c", m.at, m.at + len(m.text))}]"),
+    None    => print("${pattern} -> none"),
+  }
+}
+
+// Plain ASCII is unaffected, which is the other half of the property.
+match find("order 42", "\\d+").unwrapOr(None) {
+  Some(m) => print("${m.at} [${m.text}]"),
+  None    => print("no match"),
+}
+print("${chars(text).len()} ${len(text)}")

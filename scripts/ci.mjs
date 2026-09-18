@@ -1,0 +1,203 @@
+#!/usr/bin/env node
+/**
+ * Run everything CI runs, locally.
+ *
+ * GitHub Actions is the usual gate, but it is not always available — a private
+ * repository whose Actions are disabled or out of minutes will never run a job,
+ * and a contributor should not have to discover that to find out whether their
+ * change is sound. This script is the same set of checks, in the same order, on
+ * one machine.
+ *
+ *   node scripts/ci.mjs            everything that does not need bun
+ *   node scripts/ci.mjs --full     also build and prove the native binary
+ *
+ * Exits non-zero on the first failure, and prints a summary either way.
+ */
+
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdtempSync, copyFileSync, rmSync, readdirSync, writeFileSync } from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
+const FULL = process.argv.includes('--full');
+const CLI = path.join(ROOT, 'packages', 'cli', 'dist', 'index.js');
+
+const results = [];
+let failed = 0;
+
+function run(label, command, args, options = {}) {
+  process.stdout.write('\n── ' + label + '\n');
+  const started = process.hrtime.bigint();
+  const result = spawnSync(command, args, {
+    cwd: options.cwd ?? ROOT,
+    stdio: options.quiet === true ? 'pipe' : 'inherit',
+    encoding: 'utf8',
+    env: { ...process.env, NO_COLOR: '1', LUMEN_AI_PROVIDER: 'mock', ...(options.env ?? {}) },
+  });
+  const ms = Number((process.hrtime.bigint() - started) / 1000000n);
+  const ok = result.status === 0;
+  if (!ok) failed += 1;
+  if (!ok && options.quiet === true) {
+    process.stdout.write((result.stdout ?? '') + (result.stderr ?? ''));
+  }
+  results.push({ label, ok, ms });
+  process.stdout.write((ok ? '   ok  ' : '   FAIL ') + label + '  (' + ms + 'ms)\n');
+  return { ok, out: (result.stdout ?? '') + (result.stderr ?? '') };
+}
+
+/** A check implemented here rather than by another process. */
+function check(label, fn) {
+  process.stdout.write('\n── ' + label + '\n');
+  const started = process.hrtime.bigint();
+  let ok = false;
+  let detail = '';
+  try {
+    detail = fn() ?? '';
+    ok = true;
+  } catch (error) {
+    detail = error instanceof Error ? error.message : String(error);
+  }
+  const ms = Number((process.hrtime.bigint() - started) / 1000000n);
+  if (!ok) failed += 1;
+  if (detail !== '') process.stdout.write('   ' + detail + '\n');
+  results.push({ label, ok, ms });
+  process.stdout.write((ok ? '   ok  ' : '   FAIL ') + label + '  (' + ms + 'ms)\n');
+}
+
+const node = process.execPath;
+
+// The same order as .github/workflows/ci.yml, so a green run here means the
+// same thing a green run there would.
+run('build', 'npm', ['run', 'build']);
+run('typecheck (clean rebuild)', 'npm', ['run', 'typecheck']);
+run('unit and conformance tests', node, [path.join(ROOT, 'scripts', 'run-tests.mjs')]);
+run('Lumen test suite', node, [CLI, 'test', path.join(ROOT, 'tests', 'lumen')]);
+// The multi-file example ships its own tests, which is half of why it is split.
+run('the notes example tests itself', node, [CLI, 'test', path.join(ROOT, 'examples', 'notes')]);
+// The static checks over every Lumen program in the repository. Conformance
+// fixtures are excluded on purpose: many of them are deliberately wrong, which
+// is what they are for, and a checker that passed on those would be checking
+// nothing.
+run('examples pass the static checks', node, [CLI, 'check', path.join(ROOT, 'examples')]);
+run('Lumen test files pass the static checks', node, [CLI, 'check', path.join(ROOT, 'tests', 'lumen')]);
+run('benchmarks pass the static checks', node, [CLI, 'check', path.join(ROOT, 'bench')]);
+run('examples', node, [path.join(ROOT, 'scripts', 'run-examples.mjs')]);
+// `--check` writes nothing: CI reports the files and the author runs `lumen fmt`.
+run('every .lm file is formatted', node, [CLI, 'fmt', '--check', ROOT]);
+run('generated stdlib docs are current', node, [path.join(ROOT, 'scripts', 'gen-stdlib-docs.mjs'), '--check']);
+// Not "do the documented examples parse" — "does what they say happens happen".
+run('documented examples produce what they claim', node, [path.join(ROOT, 'scripts', 'check-doc-output.mjs')]);
+// The counts on the front page, and that every example and module is documented.
+run('the README matches the repository', node, [path.join(ROOT, 'scripts', 'check-counts.mjs')]);
+run('private, and dependent on nothing', node, [path.join(ROOT, 'scripts', 'check-private.mjs')]);
+
+// Tier 2 of the distribution: one file, no node_modules in sight.
+run('portable bundle builds', node, [path.join(ROOT, 'scripts', 'bundle.mjs')], { quiet: true });
+check('portable bundle is self-contained', () => {
+  const bundle = path.join(ROOT, 'build', 'lumen.cjs');
+  if (!existsSync(bundle)) throw new Error('build/lumen.cjs was not produced');
+  const sandbox = mkdtempSync(path.join(os.tmpdir(), 'lumen-ci-'));
+  try {
+    copyFileSync(bundle, path.join(sandbox, 'lumen.cjs'));
+    copyFileSync(path.join(ROOT, 'examples', 'hello.lm'), path.join(sandbox, 'hello.lm'));
+    if (readdirSync(sandbox).includes('node_modules')) throw new Error('sandbox is not clean');
+    const r = spawnSync(node, ['lumen.cjs', 'run', 'hello.lm'], { cwd: sandbox, encoding: 'utf8' });
+    const out = (r.stdout ?? '').trim();
+    if (out !== 'Hello from Lumen!') {
+      throw new Error('unexpected output: ' + JSON.stringify(out) + (r.stderr ?? ''));
+    }
+
+    // More than a hello-world, because the bundle is the artifact people are
+    // handed and was checked by one. A `const` declared below the function that
+    // read it broke every run when bundled — fine in ESM, where a binding is
+    // live by the time anything calls it, and not fine once the bundler has
+    // wrapped each module in a factory. That happened to sit on the `run` path;
+    // the same mistake in the formatter or the static passes would have shipped.
+    writeFileSync(
+      path.join(sandbox, 'imports.lm'),
+      'import { upper } from "std/str"\nprint(upper("a,b".split(",").join("-")))\n',
+      'utf8',
+    );
+    writeFileSync(path.join(sandbox, 'wrong.lm'), 'print(nope)\n', 'utf8');
+
+    const exercises = [
+      // A module import, a method call and a prelude function: the method
+      // tables and the module registry, which a hello-world never touches.
+      { args: ['run', 'imports.lm'], wants: /^A-B$/mu },
+      // The static passes and the rendering of a diagnostic.
+      { args: ['check', 'wrong.lm'], wants: /RS001/u, failing: true },
+      // The formatter, which is a whole pass of its own.
+      { args: ['fmt', '--check', 'imports.lm'], wants: /already formatted/u },
+    ];
+    for (const { args, wants, failing } of exercises) {
+      const ran = spawnSync(node, ['lumen.cjs', ...args], { cwd: sandbox, encoding: 'utf8' });
+      const said = (ran.stdout ?? '') + (ran.stderr ?? '');
+      if (!wants.test(said)) {
+        throw new Error('`lumen ' + args.join(' ') + '` in the bundle said:\n' + said);
+      }
+      if ((ran.status !== 0) !== Boolean(failing)) {
+        throw new Error(
+          '`lumen ' + args.join(' ') + '` in the bundle exited ' + String(ran.status) + '\n' + said,
+        );
+      }
+    }
+
+    // The language server too, because it is a whole workspace the bundler had
+    // to learn about — it was left out of the bundle the day it was written,
+    // and `lumen lsp` then failed with "cannot find module" on exactly the
+    // artifact people are handed.
+    const body = Buffer.from(
+      JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { capabilities: {} } }),
+      'utf8',
+    );
+    const lsp = spawnSync(node, ['lumen.cjs', 'lsp'], {
+      cwd: sandbox,
+      encoding: 'utf8',
+      input: 'Content-Length: ' + body.length + '\r\n\r\n' + body.toString('utf8'),
+    });
+    if (!(lsp.stdout ?? '').includes('"hoverProvider":true')) {
+      throw new Error(
+        'the bundled language server did not answer `initialize`:\n' +
+          (lsp.stdout ?? '') + (lsp.stderr ?? ''),
+      );
+    }
+    return 'ran a program, an import, a check, a format and a language server from ' + sandbox;
+  } finally {
+    rmSync(sandbox, { recursive: true, force: true });
+  }
+});
+
+// Tier 1 needs bun, which not every machine has, so it is opt-in.
+if (FULL) {
+  run('native binary builds', node, [path.join(ROOT, 'scripts', 'build-binary.mjs')], { quiet: true });
+  check('native binary runs with no runtime installed', () => {
+    const binary = path.join(ROOT, 'build', 'lumen');
+    if (!existsSync(binary)) throw new Error('build/lumen was not produced');
+    // Prove the stripped environment really has no node, or the check is empty.
+    const control = spawnSync('node', ['--version'], { env: { PATH: '/nonexistent' }, encoding: 'utf8' });
+    if (control.status === 0) throw new Error('node still reachable; this check would prove nothing');
+    const r = spawnSync(binary, ['run', path.join(ROOT, 'examples', 'hello.lm')], {
+      env: { PATH: '/nonexistent', HOME: '/tmp' },
+      encoding: 'utf8',
+    });
+    const out = (r.stdout ?? '').trim();
+    if (out !== 'Hello from Lumen!') {
+      throw new Error('unexpected output: ' + JSON.stringify(out) + (r.stderr ?? ''));
+    }
+    return 'ran with PATH=/nonexistent and no node available';
+  });
+} else {
+  process.stdout.write('\n   skipped the native binary (needs bun) — pass --full to include it\n');
+}
+
+process.stdout.write('\n' + '='.repeat(60) + '\n');
+for (const r of results) {
+  process.stdout.write((r.ok ? '  ok    ' : '  FAIL  ') + r.label.padEnd(42) + String(r.ms).padStart(6) + 'ms\n');
+}
+process.stdout.write('='.repeat(60) + '\n');
+process.stdout.write(
+  (failed === 0 ? 'all ' + results.length + ' checks passed' : failed + ' of ' + results.length + ' checks FAILED') + '\n',
+);
+process.exit(failed === 0 ? 0 : 1);

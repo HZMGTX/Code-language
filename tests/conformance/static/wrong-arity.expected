@@ -1,0 +1,7 @@
+error[TY008]: `add` is missing a value for `b`
+ --> wrong-arity.lm:9:11
+  |
+9 | print(add(1))
+  |           ^ required argument not supplied
+  |
+  = note: it takes: a, b

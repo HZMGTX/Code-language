@@ -1,0 +1,65 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Lumen",
+  "scopeName": "source.lumen",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#keywords" },
+    { "include": "#types" },
+    { "include": "#functions" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        { "name": "comment.line.double-slash.lumen", "match": "//.*$" },
+        { "name": "comment.block.lumen", "begin": "/\\*", "end": "\\*/" }
+      ]
+    },
+    "strings": {
+      "name": "string.quoted.double.lumen",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        { "name": "constant.character.escape.lumen", "match": "\\\\." },
+        {
+          "name": "meta.embedded.line.lumen",
+          "begin": "\\$\\{",
+          "end": "\\}",
+          "patterns": [{ "include": "$self" }]
+        }
+      ]
+    },
+    "numbers": {
+      "name": "constant.numeric.lumen",
+      "match": "\\b(0[xXbBoO][0-9a-fA-F_]+|[0-9][0-9_]*(\\.[0-9_]+)?([eE][-+]?[0-9]+)?)\\b"
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.lumen",
+          "match": "\\b(if|else|while|for|in|match|return|break|continue|import|export|from)\\b"
+        },
+        { "name": "storage.type.lumen", "match": "\\b(let|var|fn|struct|enum|async|await)\\b" },
+        { "name": "constant.language.lumen", "match": "\\b(true|false|nil)\\b" },
+        { "name": "keyword.operator.logical.lumen", "match": "\\b(and|or|not)\\b|&&|\\|\\||!" },
+        { "name": "keyword.operator.lumen", "match": "\\|>|\\?\\.|\\*\\*|[-+*/%<>=!]=?|\\?" }
+      ]
+    },
+    "types": {
+      "name": "entity.name.type.lumen",
+      "match": "\\b(Num|Str|Bool|Nil|List|Map|Any|Option|Result)\\b"
+    },
+    "functions": {
+      "patterns": [
+        {
+          "name": "entity.name.function.lumen",
+          "match": "\\b(fn)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": { "1": { "name": "storage.type.lumen" }, "2": { "name": "entity.name.function.lumen" } }
+        },
+        { "name": "entity.name.function.lumen", "match": "\\b([A-Za-z_][A-Za-z0-9_]*)(?=\\s*\\()" }
+      ]
+    }
+  }
+}

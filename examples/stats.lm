@@ -1,0 +1,76 @@
+// Summary statistics over a list of numbers.
+//
+//   lumen run examples/stats.lm
+//
+// The numbers are how long the test suite took, once a day for a fortnight.
+// Read the table and the bars together: the table says what the typical day
+// was, the bars say whether "typical" means anything at all.
+
+import { sqrt } from "std/math"
+
+let seconds = [42, 38, 51, 47, 39, 44, 91, 40, 45, 43, 49, 41, 46, 44]
+
+fn mean(xs) { xs.sum() / len(xs) }
+
+// The middle value, once they are in order. With an even count there is no
+// single middle, so the two either side of the gap are averaged — which is why
+// a median can be a number that never actually occurred.
+fn median(xs) {
+  let ys = xs.sorted()            // a copy: sorted leaves the original alone
+  let mid = floor(len(ys) / 2)
+  if len(ys) % 2 == 1 { ys[mid] } else { (ys[mid - 1] + ys[mid]) / 2 }
+}
+
+// Mean squared distance from the mean. Dividing by len rather than len - 1
+// because these are all the days there were, not a sample drawn from more.
+fn variance(xs) {
+  let m = mean(xs)
+  xs.map(fn(x) { (x - m) * (x - m) }).sum() / len(xs)
+}
+
+// Squaring blew the units up to seconds-squared; the square root brings them
+// back, so a standard deviation can be compared against the mean directly.
+fn stdDev(xs) { sqrt(variance(xs)) }
+
+// Two decimals where they say something and none where they do not: a count of
+// 14 is not 14.00, and a mean of 47.142857142857146 is not worth the width.
+// `fixed` rather than arithmetic, because `round(n * 100) / 100` gives back a
+// number and 12.6 would print with one decimal where the column wants two.
+fn tidy(n) { if n == round(n) { str(n) } else { fixed(n, 2) } }
+
+// Numbers align on the right, labels on the left, so the eye can run down
+// either one without re-reading.
+fn row(label, value) { print("  ${label.padEnd(16)}${str(tidy(value)).padStart(9)}") }
+
+// One bar per reading, scaled so the largest fills the width.
+fn bar(value, peak, width = 34) { "#".repeat(round(value / peak * width)) }
+
+fn main() {
+  let low = min(seconds)
+  let high = max(seconds)
+
+  print("Test suite runtime, ${len(seconds)} consecutive days (seconds)")
+  print("")
+  row("count", len(seconds))
+  row("sum", seconds.sum())
+  row("mean", mean(seconds))
+  row("median", median(seconds))
+  row("min", low)
+  row("max", high)
+  row("range", high - low)
+  row("variance", variance(seconds))
+  row("std deviation", stdDev(seconds))
+
+  print("")
+  print("Day by day")
+  for [i, value] in seconds.enumerate() {
+    // Days are counted from one everywhere except in an index.
+    let day = str(i + 1).padStart(2)
+    print("  ${day}  ${str(value).padStart(3)}  ${bar(value, high)}")
+  }
+
+  print("")
+  // The mean sits well above the median here, and one bar explains why. That
+  // gap is the cheapest outlier detector there is.
+  print("Mean ${tidy(mean(seconds))} against median ${median(seconds)}: one slow day drags the average up.")
+}

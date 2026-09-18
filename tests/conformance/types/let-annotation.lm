@@ -1,0 +1,2 @@
+let total: Num = "not a number"
+print(total)

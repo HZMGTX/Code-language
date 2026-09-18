@@ -1,0 +1,39 @@
+error[TY011]: a List<Str> is indexed by a Num, not an Option
+  --> index-type.lm:12:10
+   |
+12 | print(xs[xs.indexOf("delta")])
+   |          ^^^^^^^^^^^^^^^^^^^ expected Num
+   |
+   = note: an Option holds the number rather than being one
+   = note: take it out first: `match … { Some(i) => xs[i], None => … }`
+
+error[TY011]: a Map is indexed by a Str, not a Num
+  --> index-type.lm:17:14
+   |
+17 | print(counts[1])
+   |              ^ expected Str
+   |
+   = note: every Map key is a Str; `${…}` turns a value into one
+
+error[TY011]: a Str is indexed by a Num, not a Str
+  --> index-type.lm:21:12
+   |
+21 | print(word["a"])
+   |            ^^^ expected Num
+   |
+
+error[TY011]: a Num cannot be indexed
+  --> index-type.lm:25:7
+   |
+25 | print(n[0])
+   |       ^^^^ not indexable
+   |
+   = note: `[…]` reads from a List, a Str or a Map
+
+error[TY011]: a Bool cannot be indexed
+  --> index-type.lm:27:7
+   |
+27 | print(flag[0])
+   |       ^^^^^^^ not indexable
+   |
+   = note: `[…]` reads from a List, a Str or a Map

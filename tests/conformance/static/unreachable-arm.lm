@@ -1,0 +1,6 @@
+enum Colour { Red, Green }
+print(match Colour.Red {
+  Colour.Red => "red",
+  other      => "something else",
+  Colour.Green => "green",
+})

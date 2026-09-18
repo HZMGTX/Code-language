@@ -1,0 +1,20 @@
+// What a first day from Python looks like, one habit per line. Every line is a
+// real error and was already one; what is new is the note, which says how
+// Lumen spells the thing that was meant. The parser reports each and moves on
+// to the next statement.
+print "hello"
+def add(a, b):
+let f = lambda x: x + 1
+if 1 == 1:
+if 1 == 1 { print(1) } elif 1 == 2 { print(2) }
+let name = "x"
+print(f"hi {name}")
+print(2 in [1, 2])
+print([1, 2, 3][0:2])
+import math
+let y = 1 if true else 2
+class Point:
+switch y { case 1: print(1) }
+from "std/str" import upper
+raise "boom"
+try {

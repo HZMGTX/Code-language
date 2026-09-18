@@ -1,0 +1,6 @@
+// A negative count is refused, in the wording `str.repeat` already uses. It
+// used to be read as an offset from the end of the list, which is the opposite
+// of what `take` documents — and `len(xs) - wanted` going negative is the
+// ordinary way to arrive here.
+import { take } from "std/list"
+print(take([1, 2, 3, 4, 5], 0 - 2))

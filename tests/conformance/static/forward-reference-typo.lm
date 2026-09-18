@@ -1,0 +1,9 @@
+// Forward references are allowed, but a misspelled one is still an error —
+// and the name declared further down is exactly the right suggestion.
+
+fn greet() {
+  "Hello, ${nmae}"
+}
+
+let name = "world"
+print(greet())

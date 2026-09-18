@@ -1,0 +1,6 @@
+error[TY003]: `total` is declared as Num but is given Str
+ --> let-annotation.lm:1:18
+  |
+1 | let total: Num = "not a number"
+  |                  ^^^^^^^^^^^^^^ expected Num
+  |

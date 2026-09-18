@@ -1,0 +1,5 @@
+// `asin` is defined only on [-1, 1]. Outside it IEEE 754 answers NaN, and a
+// NaN is the one value this language will not hand back — every sibling that
+// can produce one already refuses, and these were the last routes to one.
+import { asin } from "std/math"
+print(asin(1.5))

@@ -1,0 +1,16 @@
+// `sum` does its addition in TypeScript rather than through a Lumen operator,
+// so it went round the guard that makes a value with no number an error.
+//
+// It mattered: `sorted([1, thatNaN, 2])` came back not sorted, because ordering
+// a value that compares false against everything is not defined — and the whole
+// reason the language refuses to make one is that every function resting on
+// comparison would then be quietly wrong.
+//
+// `reduce` needs no guard, and the difference is instructive: it calls back into
+// Lumen, so the `+` inside its callback is a real operator and already checked.
+import { sum } from "std/list"
+let inf = 1e308 * 10
+print(sum([1, 2, 3]))
+print(sum([]))
+print(sum([inf, 1]))
+print(sum([inf, 0 - inf]))

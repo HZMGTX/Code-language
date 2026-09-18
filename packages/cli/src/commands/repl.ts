@@ -13,14 +13,18 @@ import {
   Env,
   Interpreter,
   LumenError,
+  checkModule,
   inspect,
   lex,
   parse,
   typeName,
+  type Diagnostic,
+  type ResolveOptions,
   type SourceUnit,
 } from '@lumen-lang/core';
 import { STD_MODULE_NAMES } from '@lumen-lang/stdlib';
-import { VERSION, newInterpreter, useColor } from '../support.js';
+import { renderNode } from './inspect.js';
+import { VERSION, checkOptions, newInterpreter, reportWarnings, useColor } from '../support.js';
 
 /** Operators that cannot legally end an input. */
 const DANGLING: readonly string[] = [
@@ -65,7 +69,56 @@ const HELP = [
   '  :quit            leave (Ctrl-D also works)',
   '',
   'Anything else is evaluated. Definitions persist across inputs.',
+  'An unfinished line continues on the next one; a blank line abandons it.',
 ].join('\n');
+
+/**
+ * The warnings that mean something at a prompt.
+ *
+ * All of them but `RS011`. A binding made at the REPL is *for* the inputs that
+ * come after it — that is what a session is — so "never read" is true of nearly
+ * every one and means nothing about any of them. `RS011` already declines to
+ * report anything a module exports, and a session's top level is the same idea
+ * with no keyword for it.
+ *
+ * Everything else applies exactly as it does in a file: a statement that can
+ * never run is still dead, and a call whose answer nobody takes still does
+ * nothing.
+ */
+function sessionWarnings(warnings: readonly Diagnostic[]): readonly Diagnostic[] {
+  return warnings.filter((warning) => warning.code !== 'RS011');
+}
+
+/**
+ * What the static passes are told about a session, rather than about a file.
+ *
+ * A name the session has bound **shadows** the prelude's, so the prelude's
+ * signature must stop applying to it — and it did not:
+ *
+ *     lumen> let fixed = 1
+ *     lumen> fixed + 1
+ *     error[TY005]: cannot add fn(Num, Num) -> Str and Num
+ *
+ * `fixed` is `std/math.fixed`, whose signature the checker seeds its root scope
+ * with. The session's own `fixed` was passed across as a *name* and nothing
+ * more, so it resolved but carried no type, and the prelude's won — rejecting a
+ * line that works, which is the one thing these passes must never do.
+ *
+ * Dropping the signature leaves the binding `Any`, which is what the session
+ * actually knows about it: the REPL carries no type from one input to the next,
+ * and inventing one here would be guessing. Methods are left alone, because a
+ * method comes from the receiver's type and never from scope — `"mine".len()`
+ * is `Str.len` whatever a session has bound `len` to.
+ */
+function sessionOptions(scope: Env): ResolveOptions {
+  const options = checkOptions(scope.visibleNames());
+  const bound = scope.ownNames();
+  if (bound.length === 0 || options.signatures === undefined) return options;
+
+  const signatures = new Map(options.signatures);
+  for (const name of bound) signatures.delete(name);
+  return { ...options, signatures };
+}
 
 export async function startRepl(): Promise<void> {
   const color = useColor();
@@ -95,6 +148,14 @@ export async function startRepl(): Promise<void> {
     const currentUnit: SourceUnit = { file: '<repl>', source };
     try {
       const module = parse(source, '<repl>');
+      // Everything bound in the session so far counts as already in scope.
+      //
+      // `checkModule` raises on an error and *returns* the warnings, so a
+      // caller that drops the return value shows none of them. The REPL did,
+      // which is the same bug the language server had: an unreachable statement
+      // or a call whose answer nobody takes was reported by `lumen run` and
+      // silently accepted here.
+      reportWarnings(sessionWarnings(checkModule(module, source, sessionOptions(scope))), '<repl>', source);
       const value = await interpreter.runStatements(module.stmts, scope, currentUnit);
       if (value.k !== 'nil') process.stdout.write(inspect(value) + '\n');
     } catch (error) {
@@ -109,6 +170,17 @@ export async function startRepl(): Promise<void> {
   rl.prompt();
   for await (const line of rl) {
     const trimmed = line.trim();
+
+    // A blank line abandons a half-written expression. Without this there is
+    // no way out of a continuation but to finish it: typing `1 +` by mistake
+    // left every later line, `:quit` included, being swallowed as more of it.
+    if (buffer !== '' && trimmed === '') {
+      buffer = '';
+      process.stdout.write('(abandoned)\n');
+      rl.setPrompt('lumen> ');
+      rl.prompt();
+      continue;
+    }
 
     // Meta commands are only recognised at the start of a fresh input.
     if (buffer === '' && trimmed.startsWith(':')) {
@@ -164,9 +236,10 @@ export async function startRepl(): Promise<void> {
           }
           try {
             const module = parse(argument, '<repl>');
-            process.stdout.write(
-              JSON.stringify(module.stmts, (key, value) => (key === 'span' ? undefined : value), 2) + '\n',
-            );
+            // The same renderer `lumen ast` uses, so the two never disagree.
+            const lines: string[] = [];
+            renderNode(module.stmts, 0, lines);
+            process.stdout.write(lines.join('\n') + '\n');
           } catch (error) {
             if (error instanceof LumenError) process.stdout.write(error.render(color) + '\n');
             else throw error;

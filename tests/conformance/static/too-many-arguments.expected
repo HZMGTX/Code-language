@@ -1,0 +1,23 @@
+error[TY007]: `one` takes 1 argument
+ --> too-many-arguments.lm:8:14
+  |
+8 | print(one(1, 2))
+  |              ^ too many arguments
+  |
+  = note: it takes: a
+
+error[TY007]: `upper` takes 0 arguments
+ --> too-many-arguments.lm:9:19
+  |
+9 | print("abc".upper(1))
+  |                   ^ too many arguments
+  |
+  = note: it takes no arguments
+
+error[TY007]: `len` takes 0 arguments
+  --> too-many-arguments.lm:10:18
+   |
+10 | print([1, 2].len(0))
+   |                  ^ too many arguments
+   |
+   = note: it takes no arguments

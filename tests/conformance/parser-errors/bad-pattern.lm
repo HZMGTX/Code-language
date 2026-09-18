@@ -1,0 +1,6 @@
+// `PA007`: something that is not a pattern, where a pattern goes.
+let n = 1
+match n {
+  + => "plus",
+  _ => "other",
+}

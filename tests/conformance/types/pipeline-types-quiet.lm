@@ -1,0 +1,22 @@
+// Everything a pipeline may legitimately be, and the checker says nothing.
+fn double(n: Num) -> Num { n * 2 }
+fn add(a: Num, b: Num) -> Num { a + b }
+fn describe(n) { "n is ${n}" }
+
+print(3 |> double())
+print(3 |> add(4))
+print(3 |> double)
+print(3 |> double() |> double())
+print(3 |> double() |> add(4) |> describe())
+
+// An unannotated function is `Any` in and `Any` out, so piping anything into it
+// is silent — the same restraint every other check in this pass keeps.
+print("text" |> describe())
+
+// The three spellings agree, which is the whole point — for the standard
+// library, whose functions take their subject first. A user-defined `add` has
+// no method spelling: §4.7 is deliberate that `.f()` is not a fallback to
+// whatever function is in scope, so `1.add(2)` is `RT027` rather than a call.
+print(join(["a", "b"], "-"))
+print(["a", "b"] |> join("-"))
+print(["a", "b"].join("-"))

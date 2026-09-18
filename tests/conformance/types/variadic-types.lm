@@ -1,0 +1,8 @@
+// A rest parameter collects *everything* after it, so its declared type applies
+// to every remaining argument. It used to apply to exactly one: the walk moved
+// past the parameter after the first match and paired the rest with nothing, so
+// `log("a", 1, 2)` reported the `1` and said nothing about the `2`.
+fn log(prefix: Str, ..parts: Str) { print("${prefix}: ${parts.join(" ")}") }
+
+log("ok", "one", "two")
+log("bad", 1, 2, 3)

@@ -1,0 +1,42 @@
+a/b/c.txt
+/etc/hosts
+a/b
+.
+a/b/d
+../../a/b
+/b
+.
+/usr/bin
+.
+/
+node
+["/", "usr", "local", "bin"]
+["a", "b"]
+archive.tar
+.gz
+[]
+.gitignore
+src/main.js
+src/main.js
+main
+true
+false
+/srv/www/index.html
+/etc/passwd
+../c/d
+.
+c
+/a/b
+true
+true
+false
+false
+[true, true, true]
+[false, false, false]
+[false, false, false]
+["", "", "", ".", "..", "..."]
+C:/Users/ada/Documents
+true
+false
+C:/Users/ada
+//server/share/dir/f.txt

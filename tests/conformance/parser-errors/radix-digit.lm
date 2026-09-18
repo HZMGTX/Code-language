@@ -1,0 +1,11 @@
+// A digit the radix does not admit is the mistake, and is what gets reported.
+//
+// `0b1012` said "expected `)` to close this call, found `2`", because the
+// literal ended silently at the `2` and the parser then complained about
+// whatever was left over — which sends the reader looking for a missing
+// bracket. `0xfg` did the same with a letter.
+//
+// Nothing legal can touch the end of a radix literal: an operator or a `.`
+// needs no space but is neither a letter nor a digit, and `0b101 and true` has
+// a space.
+print(0b1012)

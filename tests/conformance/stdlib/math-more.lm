@@ -1,0 +1,11 @@
+import { gcd, lcm, hypot, atan2, cbrt, asin, acos, atan, TAU, INFINITY, PI } from "std/math"
+print([gcd(12, 18), gcd(-12, 18), gcd(0, 5), gcd(0, 0)])
+print([lcm(4, 6), lcm(4, 0), lcm(-4, 6)])
+print(hypot(3, 4))
+print(cbrt(0 - 8))
+print(cbrt(27))
+print(atan2(0, 1))
+print([asin(0), acos(1), atan(0)])
+print(TAU == PI * 2)
+print(INFINITY > 1e300)
+print(1 / INFINITY)

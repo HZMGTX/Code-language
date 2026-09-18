@@ -1,0 +1,73 @@
+// What `parse` says when the text is not JSON.
+//
+// "invalid JSON" was the whole message once, for every failure there is. That
+// is unactionable about a file somebody else exported, and out of keeping with
+// a language where every other diagnostic says where. The position is worked
+// out here rather than taken from the host, because the host rewords its JSON
+// errors between releases and a Lumen program's output must not depend on which
+// one is installed.
+import { parse } from "std/json"
+
+fn why(text) {
+  match parse(text) {
+    Ok(value)  => "ok ${value}",
+    Err(reason) => reason,
+  }
+}
+
+// Nothing at all.
+print(why(""))
+print(why("   "))
+
+// Brackets that never close, reported where they opened rather than at the end
+// — the `{` is the thing you have to go and look at.
+print(why("{"))
+print(why("[1, 2"))
+print(why("\"unterminated"))
+
+// The mistakes that come from writing JSON as if it were something else.
+print(why("{'a': 1}"))
+print(why("[True, None]"))
+print(why("{\"a\": NaN}"))
+print(why("tru"))
+print(why("{name: 1}"))
+
+// Numbers JSON does not have.
+print(why("01"))
+print(why("+1"))
+print(why(".5"))
+print(why("1."))
+print(why("1e"))
+
+// Commas where JSON has none, which is the commonest of all.
+print(why("[1, 2,]"))
+print(why("{\"a\": 1,}"))
+
+// Escapes.
+print(why("\"\\x41\""))
+print(why("\"\\u00z9\""))
+
+// More than one document in one text.
+print(why("{\"a\": 1}{\"b\": 2}"))
+
+// The line and column are the point, so here is one with lines in it.
+let config = "{
+  \"name\": \"report\",
+  \"tags\": [\"daily\", \"email\",],
+  \"owner\": \"ada\"
+}"
+print(why(config))
+
+// The column is a code point, like every other position in Lumen. `["🎉",]`
+// has its `]` as the sixth character; counting the host's UTF-16 units said
+// seven, which is the same off-by-one three other functions had and is no
+// better for being in a message than in a return value.
+print(why("[\"🎉\",]"))
+print(why("[\"ab\",]"))
+print(why("{\"🎉\": 1, }"))
+
+// And what still parses. A duplicate key is not an error: JSON allows it and
+// every parser takes the last, so refusing it would reject real documents.
+print(why("{\"a\": 1, \"a\": 2}"))
+print(why("[]"))
+print(why("  {\"a\" : [ 1 , 2 ] }  "))

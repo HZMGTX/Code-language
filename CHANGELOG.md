@@ -5,6 +5,2908 @@ All notable changes to Lumen are recorded here. The format follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html) — with the
 stability policy in [docs/spec.md](docs/spec.md) §10.
 
+## [Unreleased]
+
+### Language
+
+- **`RS011`: a binding that is never read — the first warning.** Nothing in the
+  language had ever produced one: every check either rejected a program or said
+  nothing, and `Severity` had carried an unreachable `'warning'` arm since v0.1.
+
+  A binding nothing reads is dead code or a typo somewhere else, and neither
+  stops the program running — so rejecting it would mean rejecting programs
+  that work. `checkModule` now draws that line directly: it raises on errors
+  and *returns* warnings, so `lumen check` prints them and still exits zero. A
+  build that fails over an unused binding is a build people learn to pass with
+  `--no-verify`.
+
+  The rule is narrow on purpose, because a check that is merely advisory has to
+  be worth reading. Only `let`, `var` and `import`: a parameter is often unused
+  deliberately, a function may be the point of the file, and a pattern binding
+  already has `_`. Never for a name starting with `_`, and never for anything
+  the module exports.
+
+  Writing does not count as reading, but a compound assignment does — `total +=
+  n` reads `total`. That distinction was a false positive when first written,
+  found by running the check over this repository.
+
+  It found 23 real ones there, all imports used only as methods. A method comes
+  from its type's table and never from scope, so `xs.groupBy(f)` works with no
+  import at all and those imports really were dead. They are gone.
+
+- **A `TY010` warning stopped programs from running, and its own fixture
+  recorded that as correct.** `checkModule`'s comment has always said what a
+  warning is — *"a warning must never stop a program that works"* — and the line
+  below it did the opposite:
+
+  ```text
+  const typeProblems = checkTypes(module, options);
+  if (typeProblems.length > 0) {
+    throw new LumenError(typeProblems, module.file, source);   ← no severity filter
+  }
+  ```
+
+  Harmless while the type checker produced nothing but errors. `TY010` gave it a
+  warning, and `lumen run` began refusing any program carrying one: the
+  diagnostic printed and not a line of the program ran.
+
+  **The fixture written for `TY010` enshrined it.** A golden file full of
+  diagnostics with none of its program's output looks exactly like a fixture
+  that only produces diagnostics — and the `-quiet` companion passed, because a
+  program with no warnings ran fine. The asymmetry that makes those pairs worth
+  having is the same asymmetry that hid this: nothing looked wrong.
+
+  Both passes are filtered the same way now, and the returned warnings come from
+  both rather than only from the resolver. The fixture's golden file gained its
+  program's output, which is also the better fixture: it shows the warning *and*
+  that the statement really did nothing.
+
+- **The language server could have been published, and nothing would have said
+  a word.** `check-private.mjs` guards the closed-source decision by requiring
+  `"private": true` in every manifest — from a list of four, written out by
+  hand. `packages/lsp` was added to the repository and not to the list, so for
+  the whole of v0.2 it sat outside the one check that exists to stop an
+  accidental publish. Removing its `"private"` passed, reporting cheerfully that
+  *"all 4 manifests are marked private"*.
+
+  The manifests are found rather than listed now, so a package added tomorrow is
+  covered the day it exists. A list of things that exist goes stale exactly as
+  fast as a count of them, which this repository has now learned three times.
+
+- **One library export cannot be called by its own name.** `std/option.or` is a
+  keyword in expression position, so `or(maybe, fallback)` is a syntax error and
+  only `maybe.or(fallback)` parses. The import even succeeds, which is the trap:
+  it binds a name the program can never use.
+
+  It stays. `maybe.or(fallback)` is how every language with an `Option` spells
+  it, and there is no fixing the other spelling — `a or (b)` genuinely cannot be
+  told from `or(a, b)`. Renaming would cost the reading that matters to gain the
+  one that does not. `docs/stdlib.md` says so now, where it was silent.
+
+  The rest of the library is held to the rule instead. Every one of the 253
+  exports is parsed as a plain call, and anything that will not parse has to be
+  renamed or listed with a reason — so a future `and`, `not`, `in` or `match` is
+  caught on the day it is written rather than by somebody's import three
+  releases later. It is the same mistake the language fixed from the other side
+  in v0.2, when `from` and `as` stopped being keywords because the library had
+  twice ended up with a parameter no Lumen program could declare.
+
+  Found by calling `help()` on all 253 exports and reading the one module whose
+  program would not parse.
+
+- **Nearly half the language's diagnostics had never been triggered by a test.**
+  `check-counts.mjs` fails on a code that is emitted and not *documented*; the
+  other half of the question had not been asked. **43 of 96** appeared in no
+  golden file and no test — a message nobody had read, in the part of the
+  language a person only meets when something has gone wrong.
+
+  Most of the gap was the interpreter's own guard layer. §6 promises it to a
+  host that skips the static passes — *"arity, field names and operand types are
+  also checked at run time, so a host embedding the interpreter without running
+  these passes is not left unguarded"* — and every ordinary test goes through
+  `checkModule` first and sees the static diagnostic instead. The run-time twin
+  of each check had quietly never run: the field checks, the struct checks, the
+  indexing checks, the argument checks.
+
+  `TY011` had made it worse the same afternoon. Asking the indexing question a
+  pass earlier is right, and it also took `RT021` and `RT023` out of every test
+  that had been reaching them by accident. A check that moves earlier removes
+  its run-time twin's only coverage, which is the argument for testing that
+  layer directly rather than through whatever happens to reach it.
+
+  Twenty-six guards are exercised now, through the `runUnchecked` seam that
+  already existed for the purpose, plus seven fixtures for parse and lexer
+  errors nobody had triggered. **92 of 96**, and none of them turned out to be
+  wrong: each is Lumen's own words, names what is wrong and points at it.
+
+  The last five are listed with a reason each rather than a count, because "5
+  uncovered" is a number and this has to be an argument. Each is a guard nothing
+  anybody tried can reach — `PA001` catches the `else` case first, a map literal
+  cannot express a non-`Str` key, `PA008` refuses an invalid assignment target
+  while parsing — and `RT034` looks superseded outright: the only positional-only
+  native is an enum constructor, which answers with `RT039` and a better
+  sentence. They are kept, because deleting a guard that turns out to be
+  reachable is the expensive mistake.
+
+  Writing the check, it passed on nothing: those five codes appear as string
+  literals in the file that excuses them, which lives under `tests/`, so each
+  looked exercised by its own excuse.
+
+- **The bundle is checked with more than a hello-world.** It is the artifact
+  people are actually handed — a single file with a JavaScript runtime inside it
+  — and it was verified by running `hello.lm` and answering one LSP
+  `initialize`.
+
+  That mattered the same afternoon. A `const` declared below the function that
+  read it broke every bundled run: fine in ESM, where a binding is live by the
+  time anything calls it, and not fine once the bundler has wrapped each module
+  in a factory. It happened to sit on the `run` path, so the check caught it —
+  the same mistake in the formatter or the static passes would have shipped.
+
+  The sandbox now also runs a program that imports a module and calls a method,
+  a file with a deliberate mistake through `lumen check`, and `lumen fmt
+  --check` — the module registry, the method tables, the static passes,
+  diagnostic rendering and the formatter, none of which a hello-world reaches.
+  Verified by breaking `str.upper` and watching the import case fail.
+
+- **One classification of what each module does to the world**, replacing two
+  lists in two files that nearly agreed. `TY010` asked "is every function here
+  called for its effect"; the `Result` sweep asked "can this module be called
+  with junk arguments without doing real damage" — different questions with
+  overlapping answers, kept separately.
+
+  A module added to neither would have been quietly treated as pure by the
+  first, warning about working code, and swept blind by the second, which hands
+  invented arguments to every export it can reach. `std/fs` is in that sweep's
+  blast radius.
+
+  Every module now carries `pure`, `mixed` or `effectful`, and a test requires
+  the classification to name exactly the modules that exist — in both
+  directions, so a module removed is caught as well as one added.
+
+- **The documentation checker names the blocks it could not check**, rather than
+  counting them. *"2 blocks whose output does not line up with their prints"*
+  tells a reader there is something unverified and gives them no way to look at
+  it — and whether a block is *legitimately* ambiguous is a judgement somebody
+  has to be able to make. Both of the current two turn out to be exactly the
+  documented cases: a `match` whose output the trailing-comment convention
+  cannot describe, and a multi-line string.
+
+- **The documents whose output is verified are found rather than listed**, the
+  third instance of the same hand-written list in one afternoon. This one
+  omitted `DEVELOPING.md` — the file that explains how the checker works, whose
+  own example of the convention was the one sample nobody was checking. It was a
+  fragment referring to a `greet` defined nowhere, so it is self-contained now
+  and really does print what it claims: 34 inline results verified where there
+  were 32.
+
+- **The version check's manifest list is found rather than written out**, for
+  the same reason and before it could bite: a sixth package would have walked
+  into the identical hole `packages/lsp` fell into. The other hand-written list
+  in that file, the two passes whose headers name their diagnostic codes, was
+  checked and really is complete — the lexer, parser and interpreter list none.
+
+- **"Zero runtime dependencies" is checked.** It is the claim the project makes
+  most loudly — the README, `docs/philosophy.md`, and the whole reason the
+  language server was written against raw JSON-RPC rather than
+  `vscode-languageclient` — and it was kept entirely by hand. A package may
+  depend on its workspace siblings and nothing else, and `core` may not even do
+  that: `docs/philosophy.md` names *"the core reaching for a host API directly"*
+  as something that would falsify the project's claims, so `core` importing
+  anything at all, `node:fs` included, now fails the build.
+
+  All three failures were checked by causing them: a manifest losing its
+  `private`, a real dependency appearing, and `core` reaching for the host.
+
+- **`std/web.formAll`, because a repeated field lost all but the last.**
+  `?tag=a&tag=b&tag=c` reached a handler as `{tag: "c"}` — and a checkbox group
+  and a `<select multiple>` are exactly that shape, and are ordinary HTML. Three
+  tags went in and one came out, on the query path and the urlencoded-body path
+  alike.
+
+  A `Map` holds one value per key, so `form` could not have done otherwise. It
+  is additive rather than a change, the same way `std/http` answered the
+  identical question about `Set-Cookie`: the simple case keeps its simple shape,
+  and there is somewhere to go when it is not enough. Every field is a list in
+  `formAll`, including the ones that appeared once, because a type that changes
+  with the input is worse than one that is always the same.
+
+  A request carries `search` now — the query as it arrived — because `req.query`
+  has already dropped the repeats by the time a handler sees it, so there was
+  nothing left to recover them from. Both readers ask one shared question of the
+  request and differ only in what they do with a repeat.
+
+  The encodings were all already right, checked at the same time: `%F0%9F%8E%89`,
+  `a%2Bb` against `a+b`, an empty value and a name with no `=` at all.
+
+- **A string too large to hold is a diagnostic now, not a crash.** `range()` has
+  turned an out-of-memory into an `RT035` since v0.1 — its comment says *"to
+  turn OOM into an error"* — and the four functions that build a string of a
+  length the caller chose had no equivalent:
+
+  ```text
+  repeat("x", 600000000)      → lumen: internal error
+                                RangeError: Invalid string length
+                                    at String.repeat (<anonymous>)      ← V8's, with a JS stack
+  padStart("x", 600000000)    → <--- Last few GCs --->                  ← the process, aborted
+  ```
+
+  The second is the worse one: there is nothing left to report a problem with
+  once the heap is gone. The limit used is the host's own number, so nothing
+  that would work is refused — 536,870,888 characters is accepted and one more
+  is not.
+
+  `center` needed a guard of its own. It pads twice, and the inner call at half
+  the width passed `padded`'s check and ran out of memory before the outer one
+  was ever reached.
+
+- **Counting a long string no longer builds a list of its characters.**
+  `[...s].length` is the obvious way to count code points and allocates an array
+  as long as the string, so `repeat("x", 536870000).len()` ran out of memory
+  counting one the host had just made without trouble. Iterating yields code
+  points one at a time, which is the same answer in constant space — and the
+  `strings` benchmark is unchanged, measured interleaved.
+
+  Five places counted that way, in `std/str`, `std/regex` and the interpreter's
+  own `len`. The last needed the helper written twice, since `core` imports
+  nothing.
+
+- **The spec said three spellings of a call are one expression, and for 95
+  functions they are two.** §4.7 opened with *"Every standard-library function
+  takes its subject first, so these three are the same expression"* and then
+  showed `x.f(a)`, `f(x, a)` and `x |> f(a)`. Six paragraphs later it says
+  correctly that method tables come from six modules — but a reader who stops at
+  the table has been told something that is not so:
+
+  ```text
+  sha256("abc")        → ba7816bf…
+  "abc" |> sha256()    → ba7816bf…
+  "abc".sha256()       → RT027: Str has no method `sha256`
+  ```
+
+  The run-time message is already the best of the three, listing every method
+  `Str` does have. It was only the promise that was wrong, and it says now which
+  types have a table and that the other two spellings always work.
+
+  §4.7's two lists — the six types with a table, and the five functions on every
+  value — are **checked against the real tables** now. Prose about a data
+  structure is exactly what goes quietly stale, and this one decides whether a
+  call has three spellings or two.
+
+  Found by sweeping the conventions `docs/stdlib.md` states, one at a time,
+  against the whole library. The other two came out clean: every function in a
+  module about a type takes that type first, bar three constructors and the two
+  randomness-over-lists functions, which take *their* subject first.
+
+- **Four commands accepted an option they do not have.** `run` and `serve` have
+  refused one since somebody typed `lumen run --colour app.lm` and was told the
+  *file* `--colour` could not be read. `check`, `test`, `repl`, `lsp` and `fmt`
+  never got the same treatment, and two of them made the identical mistake in a
+  different shape:
+
+  ```text
+  lumen check --colour   →   no `.lm` files found under ./--colour
+  ```
+
+  A path is where those commands put anything that is not an option, so a
+  mistyped flag became a directory nobody meant — the exact reading the older
+  check was written to prevent. `repl` and `lsp` took no arguments at all and
+  silently ignored whatever they were handed, which is the quieter version of
+  the same thing.
+
+  All of them share one check now, with an allow-list so `fmt --check` survives,
+  and everything after a filename still belongs to the program rather than to
+  the CLI.
+
+- **A golden file cannot record a program that did not run.** The companion to
+  the fix above, and the one that needs no maintenance: `npm run test:update`
+  writes down whatever happens, so a regression that stops programs running gets
+  *recorded as correct* the next time anybody regenerates.
+
+  A fixture whose only diagnostics are warnings, and which prints at its top
+  level, must now show what it printed. An `error` in the golden file excuses it
+  — a static error never runs and a run-time one stops where it is — but a
+  warning must never stop anything, which is the whole distinction.
+
+  Checked against the thing that fooled it: with the bug back *and the golden
+  files regenerated*, the byte comparison passes and this still fails. An audit
+  of all 179 fixtures found no second instance.
+
+- **A warning never stopping a program is a test now**, on every warning the
+  language has — derived from `docs/spec.md`'s own table rather than listed, so
+  a new warning code fails the suite until somebody shows a program carrying it
+  still runs. Each case ends by printing, so "it ran" is something the test can
+  see rather than infer.
+
+- **The REPL showed no warnings at all**, which is the third appearance of one
+  bug: `checkModule` raises on errors and *returns* warnings, so a caller that
+  drops the return value shows none of them. The language server did it, the
+  REPL did it, and `lumen run` did the opposite thing wrong by raising on them.
+
+  `RS011` is the one it filters out. A binding made at a prompt is *for* the
+  inputs that come after it — that is what a session is — so "never read" is
+  true of nearly every one and means nothing about any of them. `RS011` already
+  declines to report anything a module exports; a session's top level is the
+  same idea with no keyword for it.
+
+- **The REPL rejected working lines, because a session binding was checked as
+  the prelude name it shadows.**
+
+  ```text
+  lumen> let fixed = 1
+  lumen> fixed + 1
+  error[TY005]: cannot add fn(Num, Num) -> Str and Num
+  ```
+
+  `fixed` is `std/math.fixed`, whose signature the checker seeds its root scope
+  with. The session's own `fixed` was passed across as a *name* and nothing
+  more, so it resolved but carried no type, and the prelude's won — a false
+  positive against a line that works, which is the one thing these passes exist
+  to never do.
+
+  A session binding now drops the prelude's signature for that name, leaving it
+  `Any`, which is exactly what the session knows about it: the REPL carries no
+  type from one input to the next, and inventing one would be guessing. One
+  signature rather than all of them, so everything a session has *not* rebound
+  keeps being checked — and methods are untouched either way, because a method
+  comes from the receiver's type and never from scope.
+
+- **The two ends of a program disagreed about control flow, and the REPL lost.**
+  There are four signals — `return`, `break`, `continue` and `?` — and the two
+  places a program can end, `runModule` and `runStatements`, each decided for
+  themselves which to catch. A file reported `RT001` for a top-level `?` and
+  ended quietly on a top-level `return`; the REPL printed `lumen: internal
+  error` for both, with `[object Object]` after the first and `TryPropagate {…}`
+  after the second, and exited 70 on one of them.
+
+  They share one boundary now, so a fifth signal cannot be handled by one and
+  not the other. `break` and `continue` never reach it: `RS006` reports either
+  outside a loop before anything runs, and a function boundary counts.
+
+  The remaining difference is what becomes of a returned value — a file has
+  nowhere to put it and drops it, while at the REPL it is exactly what the
+  person typing wanted to see, so it is printed. `docs/spec.md` now states both,
+  which it never had: the behaviour of a top-level `return` had simply never
+  been written down.
+
+  **Fixing the first of the two found the second**, which is the argument for
+  asking what the whole set does rather than fixing the one that turned up.
+
+- **An unhandled `?` pointed at the top of the file.** `RT001` was reported
+  against the *module's* span, which renders as its first line — so a `?` on
+  line forty put the caret under the `import` on line one, the one line that was
+  certainly not the problem. The signal carries the span of the `?` that raised
+  it now, and the caret lands on it.
+
+- **`lumen: internal error` says what escaped.** The line was
+  `String(error)` for anything that is not an `Error`, and `String` of an object
+  is `[object Object]` — a bug report with less information in it than silence.
+  It names the class and its fields now, and ends by saying the fault is Lumen's
+  rather than the program's, which is the thing a reader most needs to know.
+
+  Nothing in it can throw. A cyclic object or a getter that fails comes back as
+  "its fields could not be rendered", because reporting a problem must not
+  become a second problem — the failure mode this line already had once.
+
+- **`RS012`: a statement that can never run.**
+
+  ```text
+  fn check(n) {
+    return n
+    print("never runs")     ← warning[RS012]
+  }
+  ```
+
+  Nothing reported it. Almost always a misplaced `return` or a leftover from an
+  edit, and neither is visible from reading the line itself — the mistake is a
+  line above. `RS003` has always reported a `match` arm that cannot be reached
+  and `RS011` a binding that is never read; this is the same family, for
+  statements, and a warning for the same reason: the program runs.
+
+  The test for "always leaves" is deliberately the shapes that are certain —
+  `return`, `break`, `continue`, a call to the prelude's `panic`, an `if` whose
+  branches all leave, and a `match` where every arm leaves *and* one of them
+  catches everything. No cleverness beyond that: a `while true` with no `break`
+  never ends either, and working that out is the beginning of a flow analysis
+  this pass is not. Being wrong here means telling somebody their working code
+  is dead, which is the one thing it must not do.
+
+  Three restraints came out of the `-quiet` companion rather than from thinking
+  about it first. A guarded arm may not fire, so it disqualifies its whole
+  match. A match with no catch-all falls through to `RT020` rather than leaving.
+  And `panic` is recognised by its **binding** rather than its name, so a
+  program that declares its own is calling its own.
+
+  It reports once per block, at the first statement that cannot run, because a
+  dead tail of ten lines is one mistake and ten diagnostics would bury it.
+
+  Writing it, `break` and `continue` turned out to be statements in their own
+  right *and* expressions when written as one — covering `JumpExpr` alone
+  covered half the cases, and the fixture caught it.
+
+- **`std/web.url`, because `escape` cannot make a link safe.** `docs/stdlib.md`
+  said *"always use `escape` on anything a visitor supplied"*, and following
+  that advice exactly ships a cross-site script:
+
+  ```text
+  <a href="${escape(link)}">   with link = javascript:alert(document.cookie)
+  → <a href="javascript:alert(document.cookie)">
+  ```
+
+  `escape` did its job. There is nothing in `javascript:alert(1)` to escape.
+  Escaping answers *"could this text break out of where I am putting it"*; a
+  link needs *"does this text tell the browser to run something"*, which is a
+  different question — and nothing in the library answered it.
+
+  `url(link)` does. A scheme that is not `http`, `https`, `mailto` or `tel`
+  becomes `about:blank`, which leaves the page working and the link dead rather
+  than silently dropping it, and the result is escaped for the attribute too, so
+  it is one call rather than two. An allow-list rather than a block-list,
+  because the schemes that can run code are open-ended — `javascript:`,
+  `data:text/html`, `vbscript:`, and whatever a browser adds next — while the
+  ones people actually link to are four and have not changed in twenty years.
+
+  The scheme is read the way a **browser** reads it: leading whitespace and
+  control characters stripped first, case ignored. `java\tscript:alert(1)` and
+  ` javascript:alert(1)` are both `javascript:` to a browser and were both "not
+  a scheme I recognise" to a naive check.
+
+  A relative link has no scheme and is left alone. So is a protocol-relative
+  `//host/path`, which navigates rather than executing — that is an
+  open-redirect question for the program to answer, not something a library can
+  decide. And nothing here is the tool for text inside a `<script>` block; the
+  documentation now says so, and says to use a `data-` attribute instead.
+
+  `examples/website.lm` builds its links through it now. Its slugs are the
+  program's own and could go in bare — but an `href` built by interpolation is
+  exactly where the habit has to already be.
+
+- **The regex warning named the wrong half of the danger.** `docs/stdlib.md`
+  already said `std/regex` has no backtracking guard and that *"a pattern from a
+  stranger is a denial of service"* — which is true, and is the half that
+  matters least. A probe hung the interpreter with a pattern the *program* wrote,
+  `(a+)+$`, against thirty characters of input: the classic shape is a hard-coded
+  validator meeting a submitted field, and a reader who concluded "my patterns
+  are all literals, so I am safe" would have drawn exactly the wrong lesson from
+  what was written.
+
+  Both sides are named now, with what to do about it — `std/str`'s `contains`,
+  `startsWith`, `splitOnce` and `count` cannot backtrack at all, a quantifier
+  should not contain another where input from outside will meet it, and bounding
+  the input's length is the other half, since the blow-up is in *its* length.
+
+  It also records something reassuring that was true by accident and is now held
+  by a test: **`std/web`'s router does not use `std/regex`.** A route is matched
+  by splitting the path into segments and comparing them, so no request can make
+  a server backtrack. The test sends a real server a path built to blow up a
+  backtracking matcher — one that a `^/(a+)+$` never returns from at all — and
+  requires a 404 within two seconds. A refactor to regex-based routing fails it
+  rather than shipping a server one request can hang.
+
+- **`TY011`: an indexing that cannot work, said a pass earlier.** `RT021` and
+  `RT023` have always reported this at run time with both types in hand, so
+  nothing was missing but the timing:
+
+  ```text
+  xs[xs.indexOf("delta")]   ← an Option is not a position
+  counts[1]                 ← every Map key is a Str
+  word["a"]                 ← a Str is indexed by position, not by content
+  1[0]                      ← a Num cannot be indexed at all
+  ```
+
+  It became worth having the moment `indexOf` started answering `Option`, since
+  `xs[xs.indexOf(v)]` is the shape of every program written against the old
+  `-1` — and turning a silent wrong answer into a run-time one was only most of
+  the fix. The diagnostic for that case says what to do about it rather than
+  only what is wrong.
+
+  The restraint is `TY005`'s, and for the same reason: both sides must be known.
+  A container indexed by something `Any` is a program that may well be right.
+
+- **`indexOf` answers `Option`, because `-1` is a position.** It used to answer
+  `-1` when it found nothing, which is what C, Java, JavaScript and Python's
+  `str.find` all do — and what none of them has is §4's rule that `xs[i]` counts
+  from the end when `i` is negative. Put the two together:
+
+  ```text
+  let xs = ["alpha", "beta", "gamma"]
+  xs[xs.indexOf("gamma")]   → "gamma"
+  xs[xs.indexOf("delta")]   → "gamma"     ← not in the list at all
+  ```
+
+  Two different questions, one confident answer, no error and nothing to
+  unwrap. The same `-1` walked into `slice`, so `slice(line, 0, indexOf(line,
+  ":"))` — the half of a line before its separator — came back as the whole
+  line minus its final character when there was no separator, and the other
+  half came back as the whole line.
+
+  `docs/stdlib.md` has stated the rule since v0.1: *"fallible operations return
+  a `Result`; absence returns an `Option`"*. `find`, `first`, `last`, `at`,
+  `get`, `pop`, `minimum`, `maximum` and `choice` all answer `Option` for
+  absence. `indexOf` — both of them, in `std/str` and `std/list` — was the one
+  exception, and a sweep of the whole library for sentinel returns finds no
+  others.
+
+  It was found by `TY009`, added an hour earlier, refusing a probe that assumed
+  `indexOf` answered an `Option` like everything else. The third time in one
+  sitting that a wrong guess about a return type turned out to be the
+  interesting part.
+
+- **The library's failure policy is a test now, and it turned out to hold.**
+  `docs/stdlib.md` has always said *"fallible operations return a `Result` …
+  neither ever raises for an ordinary failure"*, which is the whole of Lumen's
+  error story: there are no exceptions, so a program's only way to handle a
+  failure is to be handed one as a value. A `Result`-returning function that
+  raises instead takes the process out on input it was written to cope with.
+
+  Unlike the sweeps beside it this one **found nothing**, across 198 calls to
+  every function the library declares as answering with a `Result`. It is here
+  for the reason the others are: the rule was kept by hand, and `std/process`
+  had already shown what that is worth.
+
+  Its one restraint is what makes it a fair question, and it is a property of
+  the type language rather than a list of names. A value is used only when the
+  declared type **fully describes** it: a bare `List` says nothing about its
+  elements, so `[1]` satisfies `csv.write`'s annotation while breaking its
+  requirement — and *that* raise is a wrong argument, which the policy says
+  should raise. `List<Str>` does describe its elements, so its awkward values
+  are fair game. Likewise `fn(Any) -> Any` cannot say that `result.andThen`
+  needs a `Result` back, so the callback the sweep passes honours that.
+
+  Both of those were found by running the sweep without them and reading what it
+  reported, rather than by deciding in advance what it should ignore.
+
+- **The editor is now checked for agreeing with the compiler, over the whole
+  conformance corpus.** The language server's own header states the property —
+  *"an editor that disagrees with the compiler is worse than an editor with no
+  hover"* — and it had already been false once: `analyse` called `checkModule`
+  and discarded its return value, so every warning was invisible in an editor.
+
+  The test that existed could not have caught it. It asserted about one
+  hand-written program, and that program produced an *error*, which is raised
+  rather than returned. Adding `TY010` would have been the same story again:
+  a new warning, and nothing failing if the editor missed it.
+
+  So this is driven by the fixtures instead. Every fixture whose golden output
+  holds a rendered diagnostic — 60-odd of them, across the lexer, the parser,
+  the resolver and the checker — is analysed both ways, and the two lists of
+  codes must match exactly. A fixture added for a new diagnostic therefore
+  tests the editor too, with nobody remembering to write a second test.
+
+  Two guards keep it from passing vacuously: the corpus must not be empty, and
+  it must hold a fixture where a warning sits *alongside* something else, since
+  that is the precise case a server which only catches loses.
+
+  Writing it turned up its own instance of the same mistake. `parse` sat outside
+  the `try`, so a fixture in `lexer/` or `parser-errors/` threw instead of being
+  compared — and those are most of the corpus.
+
+- **`TY010`: a statement that does nothing.** `xs.sort()` is the first thing
+  anyone arriving from Python or JavaScript writes, and it sorted nothing:
+
+  ```text
+  var xs: List<Num> = [3, 1, 2]
+  xs.sort()      ← warning[TY010]: this statement does nothing
+  print(xs)      → [3, 1, 2]
+  ```
+
+  Eleven statements like it ran silently in the probe that found this —
+  `sort`, `reverse`, `unique`, `take`, `insert`, `upper`, `trim`, `set` — every
+  one answering with a new value and leaving its subject alone, as almost
+  everything in the library does.
+
+  `docs/stdlib.md` has stated that rule since v0.1: *"nothing mutates unless its
+  name says so"*. This is where it stops being something to remember. The two
+  functions it names as the exceptions, `push` and `pop`, really do mutate, so
+  `xs.push(1)` says nothing while `xs.sort()` does — and the library states that
+  exception list in one place, so the rule and the diagnostic cannot drift
+  apart. A native added to `std/fs` is effectful without anybody saying so,
+  because the unit is the module; one added to `std/str` is not, because a
+  `std/str` function that reached the host would be a design error anyway.
+
+  A warning rather than an error, the line `RS011` draws: the program runs, and
+  a line that does nothing is a mistake in what the author meant rather than in
+  what the machine can do.
+
+  The restraints, as ever, are the interesting half. Only a call to a function
+  the *library* described, **by identity rather than by name**, so a program
+  declaring its own `sort` is left alone. Only when the answer's type is known
+  and is not `Nil`. Never the last statement of a block, which is the block's
+  own value. And all three spellings alike — §4.7 says `f(x)`, `x.f()` and
+  `x |> f()` are one expression, so they warn or stay silent together, since
+  being loud about one spelling and silent about another is exactly the drift
+  this project keeps finding.
+
+  The fixture needed widening before it was worth having. Removing the check
+  from block bodies left it **passing**, because every no-op in it sat at module
+  level and the two walks are separate code. Both are covered now, each verified
+  by removing it and watching the suite fail.
+
+- **`TY009`: a `match` arm the subject's type can never produce.** The mistake
+  nobody makes twice and everybody makes once — misremembering whether a
+  function answers with a `Result`:
+
+  ```text
+  match stringify(v) {      ← `json.stringify` answers with a Str
+    Ok(text) => ...
+    Err(why) => ...
+  }
+  ```
+
+  Every arm is dead, so the match cannot succeed. It passed every static check
+  and then failed at run time as `RT020`, with the caret on the *subject* —
+  which is the one part that was right.
+
+  It was found by writing a probe against the library and getting it wrong in
+  exactly this way, twice in one sitting. `RS003` has always reported an arm
+  that can never be reached because an earlier one covers it; this is the same
+  defect for the reason only the type checker can see, so the two now cover the
+  structural case and the typed one between them.
+
+  Four restraints, the same no-false-positives rule as everywhere else: an
+  `Any` subject says nothing, so an unannotated program is silent; a variant
+  that cannot be traced to exactly *one* enum says nothing, which covers both an
+  unknown name and two enums declaring a variant alike; a payload's pattern is
+  not checked, only the shape it sits in; and **`nil` is never impossible**,
+  because it is the one value that legitimately turns up where a type says
+  otherwise, so guarding against it is defensive rather than wrong.
+
+  The two built-in enums used to be written out in the resolver and again in the
+  type checker. They are one table now, beside `PEnum` in the AST — stating them
+  twice is how two passes come to disagree about what a program means.
+
+- **Two functions were not the inverses their names promise.** Found by asking
+  one question of the whole library at once, which is the only way this class
+  shows up: each half is perfectly reasonable alone.
+
+  - `path.split` answers with a list and `path.join` took only loose strings, so
+    `join(split(p))` — the obvious way to put a path back together — was a
+    run-time error. Lumen has no spread at a call site, so there was no way
+    around it either. `join` takes a single list now, exactly as `min` takes
+    "a list, or the values themselves".
+  - `time.fromParts` took seven separate numbers while `time.parts` answers with
+    a Map, so the function whose *name* says it takes parts could not take them.
+    It reads the Map now, ignoring the two keys `parts` derives — `weekday` and
+    `dayOfYear` — while still refusing an unknown one, because silently ignoring
+    a key would mean `fromParts({ yaer: 2026 })` quietly answering with the year
+    1. Its `year` parameter had to give up its declared type to do it: there is
+    no union to write, and declaring `Num` would have made the inverse a `TY001`
+    on a call that works.
+
+  Fixing the first uncovered a second bug underneath it. `split` yields `"/"` as
+  its first piece for an absolute path, and `join` appended a separator without
+  looking at whether one was already there — so `join("/", "abs", "x.txt")`
+  built `//abs/x.txt`, which is not `/abs/x.txt` but the UNC share `x.txt` on
+  the server `abs`, and normalising it answered `//abs/x.txt/`. With two parts
+  `normalize` had been quietly rescuing it, which is why it had never shown up.
+
+- **Every inverse pair is now checked for being one**, and the pairs are
+  **derived from the library's own naming** rather than listed: a name beginning
+  `from` or `parse` is a promise about another function's output, and every such
+  promise must be kept *and* have a round-trip case — so adding `fromFoo` fails
+  the suite until somebody round-trips it. The pairs whose halves share no stem
+  (`split`/`join`, `stringify`/`parse`, `rows`/`write`, `escape`/`find`) are
+  listed separately, so it stays obvious which half of that file is a convention
+  being enforced and which is a judgement somebody made. A guessed list is what
+  let `sum([inf, -inf])` sit unnoticed in the NaN sweep.
+
+- **`from` and `as` are no longer keywords.** Each appears in exactly one
+  position in the grammar — after the `}` of an import list, and between a name
+  and its alias inside one — so the parser looks for the word where it means
+  something and leaves it an ordinary name everywhere else. `as` already worked
+  that way; `from` did not.
+
+  Reserving it bought nothing and cost a great deal. `let from = ...` is what
+  anybody writes for a rename, `replace(s, from, to)` is how every other
+  language spells that function, and `relative(from, to)` is the conventional
+  signature — all three were syntax errors, and the standard library twice
+  ended up with a parameter no Lumen program could have declared. It came up
+  three times in one afternoon, which is enough.
+
+  The rest of the keywords stay reserved: each can begin a statement or an
+  expression, where a name could also begin, so they genuinely keep the grammar
+  unambiguous.
+
+- **`RS013`: a condition that assigns instead of comparing.**
+
+  ```text
+  var x = 1
+  if x = 2 { print("always") }     ← error[RS013]: did you mean `==`?
+  ```
+
+  Assignment is an expression, so this was a legal program: it assigned, `2`
+  was truthy, and the branch ran every time. Nothing said a word. It was found
+  by writing sixty of the mistakes a person arriving from Python makes and
+  reading what Lumen said about each — most of the answers were right, and
+  this was the one that was silent.
+
+  An error rather than a warning for the reason `RS008` is one: the program
+  runs and does something certainly wrong. Only the condition itself is looked
+  at, seen through `not` and `and`/`or`, so `while (line = next()) != nil`
+  keeps its assignment inside a comparison and is left alone. The target is
+  then resolved as a *read* rather than an assignment, because a second
+  diagnostic — `RS005`, about a `let` the program never meant to assign to —
+  is the wrong one to act on.
+
+  Writing the fixture turned up that `if a and x = 4` is not this at all: `=`
+  binds loosest, so it is an assignment to `a and x`, which `PA008` refuses.
+  The parser knows when it is inside a control-flow header, so that note now
+  says `==` too.
+
+- **`TY012`: a member the receiver's type does not have, said a pass earlier.**
+
+  ```text
+  let xs = [1, 2]
+  xs.append(3)          ← error[TY012]: List has no method `append`
+  xs.pussh(3)           ← did you mean `push`?
+  Some(1).unwrap()      ← did you mean `unwrapOr`?
+  p.z                   ← `P` has no field `z` — did you mean `x`?
+  ```
+
+  Each was `RT027` or `RT024` at run time, with the same suggestion — and only
+  on the branch that ran. `RS001` has reported a misspelled *name* before the
+  program runs since the resolver existed; a misspelled *method* was the one
+  kind of typo a program still had to run to find. With the standard library
+  typed the checker knows what `xs` is, so it asks the same question of the
+  same tables.
+
+  The tables are the point. The checker's method map holds only the methods
+  somebody wrote a signature for, and `Num.max` has none and works — a check
+  that read existence off the signatures would have called `3.max(5)` a typo.
+  So the interpreter hands over its own tables as names, and the check mirrors
+  `readMember` branch for branch: a struct's field, then its type's table, then
+  the five every value has. A `Map` is left alone, because a missing key reads
+  as `nil` by design; anything `Any` — every `var`, every parameter — is
+  trusted, as always. A unit test walks every method on every table through
+  the checker and requires silence, so a table the checker cannot see fails
+  the build rather than a program.
+
+  Its first run over the repository found two things. A rest parameter was
+  bound inside its function as its annotation rather than as a list of it, so
+  `..parts: Str` made `parts.join(" ")` look like a method `Str` does not have
+  — a checker bug that had been there since rest parameters were typed, and
+  that nothing had been in a position to say out loud. And `examples/rename.lm`
+  called `has` on a list: a set from `std/set` *is* a `List`, whose method is
+  `contains`, and the branch that would have failed was one the demo never
+  took. The example ran clean every day and would have failed the first person
+  to rename a file onto another.
+
+### Fixed
+
+- **`TY011` was silent about three of the kinds it names.** The spec says
+  nothing but a `List`, a `Str` or a `Map` can be indexed, and the check tested
+  for `Nil`, `Num` and `Bool` by name — so a struct, an enum value and a
+  function passed `lumen check` and failed at run time as `RT023`, which is the
+  gap this check exists to close. The test is positive now: a kind added to the
+  type language has to be thought about rather than falling through.
+
+- **Five documentation claims were false.** Each was found by a sweep that read
+  the prose as a set of assertions and tried them:
+
+  - `docs/from-python.md` said annotations "parse, but nothing checks them yet".
+    They are checked, `TY001`–`TY012` do it, and §6 of the spec describes it in
+    detail — so the one document aimed at newcomers told them the feature was
+    not there, and cited a roadmap that says otherwise.
+  - It said `all` and `any` "always take a predicate; there is no one-argument
+    form". There is, it works, and `docs/stdlib.md` documents the predicate as
+    optional.
+  - It sent Python's `s.split()` to `s.split(" ")` "— no whitespace-aware
+    form". `s.words()` is exactly that, and the recommended substitute is wrong
+    on a run of spaces and on a tab.
+  - It said `a, b = 1, 2` was "not available — one `let` each". `let [a, b] =
+    [1, 2]` is in §3.1, and so is the swap.
+  - `docs/spec.md` §9 says "The modules are" and then names them, which makes
+    it an enumeration. It listed 14 of the 19, omitting `std/crypto`,
+    `std/csv`, `std/path`, `std/process` and `std/regex`. `check-counts.mjs`
+    now reads that sentence and fails the build when it disagrees with the
+    library, in both directions.
+  - `ROADMAP.md` listed unused-binding warnings under "Still ahead" and said
+    the `'warning'` severity had never been used. Three warnings ship.
+
+- **Four library functions cut characters in half.** A character in Lumen is a
+  code point, and `len`, `slice`, `indexOf`, `chars`, `reverse` and the padding
+  functions all agreed — while `split("")`, `replace("", …)`, `capitalize` and
+  `title` went through the host, which cuts in UTF-16 units:
+
+  ```text
+  "a😀b".split("")        ["a", "\u{D83D}", "\u{DE00}", "b"]   ← four "characters"
+  "a🎉b".replace("", "-") a-?-?-b                              ← the emoji, halved
+  "𐐨bc".capitalize()      𐐨bc                                  ← nothing happened
+  ```
+
+  The halves are lone surrogates, which are not characters at all, and `len`
+  then counted each as one. `capitalize` and `title` took `s.slice(0, 1)` as
+  "the first letter" and got half of one, which has no upper case — so they
+  returned their argument unchanged for Deseret and Adlam, alphabets with
+  ordinary words in them, while `upper` on the same letter had always worked.
+
+- **Two ordinary programs met the host's stack instead of an answer.**
+  `flatten` and `flatMap` passed an inner list to `push(...items)`, and an
+  argument list is bounded by the stack — so flattening a list of 150,000
+  answered "stack overflow … please report the file" about a program with no
+  recursion and no nesting in it. Printing a value nested thousands deep did
+  the same; it stops at a depth now and says so with the marker it already uses
+  for a value that contains itself. The message that appears when the stack
+  does run out named only recursion and source nesting, and asked for a bug
+  report; it names the third cause now, which is the one that looks ordinary.
+
+- **`std/path`: `relative(".", target)` climbed out of a directory nobody had
+  entered.** `normalize(".")` is `"."`, and that single dot was counted as a
+  directory — so `relative(".", "docs/spec.md")` was `"../docs/spec.md"`, for
+  the commonest base anybody passes, and `resolve` agreed with it because it
+  made the same mistake in reverse. Found with it: `resolve("/", "a/b")` built
+  `//a/b`, which the path reader takes for a UNC network path — resolving
+  against the root produced a path pointing at another machine.
+
+- **`std/time` was wrong by nineteen centuries for the years 0 to 99.** The
+  host's `Date.UTC` still carries a rule written for two-digit years in the
+  nineties, and reads a year in that range as 1900 plus it. `fromParts` worked
+  around it; `startOfDay` and `parts` did not, so `startOfDay` on an instant in
+  the year 50 answered 1950 and `dayOfYear` came back as -693,900. And `iso`
+  wrote `-0044` for a year before zero, which is not ISO 8601 — the standard
+  reserves a leading sign for the expanded six-digit form — so the module's own
+  `parseIso` refused what its `iso` had just written.
+
+- **`router` answered 405 to HEAD.** HEAD is GET without the body, which RFC
+  9110 requires every general-purpose server to support, and which `curl -I`,
+  uptime monitors, link checkers and caches all send — so a monitor read every
+  page as unavailable. The GET route runs and the body is not written.
+
+- **A route's `*rest` capture was decoded twice.** `file` decodes the path it
+  is given, and the router had already decoded the capture, so the documented
+  static-file route served the wrong file in both directions:
+  `/static/100%25.txt` looked for `100` and `/static/a%2520b.txt` served
+  `a b.txt`. A `:name` still arrives decoded, which is the name the link meant;
+  a `*rest` is a path and arrives as written.
+
+- **`std/http` reported the host's wording.** A bad header name or value came
+  back as `Headers.append: "x a" is an invalid header name` — a method of the
+  Fetch API, in a language the reader is not writing, whose text changes with
+  the Node version. The module already translates what the host says about a
+  URL, and now says this too, along with what is wrong with a method name.
+
+- **Three shapes of source could still take out the host's stack.** `PA016`
+  bounds the depth of the tree the parser will build, and the spec says that
+  bound is what keeps every later walk — the resolver, the checker, printing,
+  equality — finite. Three shapes were not counted by it:
+
+  ```text
+  a?.b?.b?.b…          `?.` was missing from the token set that counts a suffix,
+                       while the branch below handled both spellings
+  else if … else if …  recursed without going through the budget at all
+  await await await …  the same, beside a sibling branch that does
+  ```
+
+  Each died as `Maximum call stack size exceeded` with no file, line or code —
+  and an `else if` ladder is the most plausible of the three, since it is what a
+  dispatch table emitted from data looks like. All three are `PA016` now, and
+  `deep-source.test.ts` generates them along with its other twenty.
+
+- **One misplaced `..` parameter produced sixty identical errors.** The
+  25-error cascade bound is consulted where a diagnostic aborts the parse, and
+  `PA017` reports without aborting, so `fn f(..a, b, c, …)` re-reported the same
+  mistake once per later parameter. It is one mistake and it is reported once.
+
+- **A nested interpolation stopped lexing.** A string inside a `${…}` may
+  itself interpolate, and the braces inside *it* are the outer scan's braces
+  too — so the scan that skips a nested string counted them anyway and lost
+  count. The example that broke is the spec's own, one level further down:
+
+  ```text
+  print("outer ${ "inner ${ pick("}") }" }")      LX003, wrongly
+  ```
+
+- **A line continuation did not work in a CRLF file.** The character after the
+  backslash is the carriage return there, and only `\n` was accepted — so the
+  same file was valid on one operating system and `LX004` on another, and the
+  message spliced the bare CR into itself, naming a character nobody can see.
+
+- **A `{` in a match guard was refused.** A guard is not a control-flow header:
+  `=>` follows it and never a block, so a brace there can only be a literal.
+  `_ if { a: 1 }["a"] == v` was rejected with a note saying the brace "starts
+  the body", which is untrue in that one position.
+
+- **An emoji outside a string was reported twice, as a character that was not
+  there.** It is two UTF-16 code units; the lexer advanced by one, so the second
+  half became a second error, and each message carried a lone surrogate that
+  arrives as `?`. One diagnostic now, naming the character.
+
+- **Renaming in an editor produced a file that no longer compiles, two ways.**
+
+  Renaming a reassigned `var` rewrote every *read* and left the assignment
+  alone, because the resolver reported a reference for a name it read and not
+  for one it wrote:
+
+  ```text
+  var count = 0        rename `count` → `tally`      var tally = 0
+  count = count + 1                                  count = tally + 1   ← RS001
+  print(count)                                       print(tally)
+  ```
+
+  An assignment target is a use of the binding as surely as a read is, and
+  `references`, `documentHighlight` and go-to-definition were missing it for the
+  same reason. They all come from the one callback, so they are all fixed by the
+  one line.
+
+  Renaming an unaliased import rewrote which export was being asked for:
+  `import { round }` became `import { rounded }`, and `std/math` has no
+  `rounded`. The local name and the exported name are the same span there, which
+  is the whole trap — so import specifiers now carry a span for each, and the
+  rename writes `import { round as rounded }`. Lumen has aliases, and this is
+  what they are for. An already-aliased import renames in place, as it did.
+
+- **`main` was called for you whether or not you declared it.** §7.1 says "if a
+  module *declares* `fn main()`", and the interpreter called any binding of that
+  name — so `let main = fn() { … }` followed by `main()` ran the program twice
+  with nothing reported, while `RS008`, which exists to catch exactly that, only
+  ever knew about the declaration. An imported `main` was invoked by a module
+  that had merely borrowed the name, and `RS011` called that same import "never
+  read" and advised deleting the line, which would have changed what the program
+  did. Both checks were right and the interpreter was not.
+
+- **Five ways a program could end in a Node stack trace instead of a Lumen
+  diagnostic.** Each is ordinary use, and each took the whole process down:
+
+  - `lumen run count.lm | head -2` — the reader closes the pipe, the next
+    `print` raises `EPIPE` on a stream with no handler, and Node rethrows it.
+    Twenty-five lines of V8 stack trace naming files inside `dist/`, for the
+    commonest idiom in the shell. It stops quietly now, as `head` expects.
+  - `run("head", ["-n", "1"], input: …)` with more than a pipe buffer of input —
+    the child takes its line and stops reading, and the same unhandled `EPIPE`
+    killed the program that had already earned its `Ok(...)`.
+  - A request body past Node's maximum string length killed `lumen serve`
+    outright: the decode was the one step outside the `try` that exists so "a
+    broken page never silently hangs the connection". It answers 413 now and
+    keeps serving.
+  - A header value carrying a line break — response splitting, correctly
+    refused by Node — surfaced as a raw `TypeError [ERR_INVALID_CHAR]` both on
+    the operator's stderr and in the body served to whoever sent it. It is a
+    Lumen sentence now, naming the header.
+  - `pow(1, INFINITY)` answered a `NaN`, which §4.2 says cannot exist in a
+    Lumen program. The operator spelling already refused it (`RT046`), so the
+    two spellings of one expression disagreed. `pow`'s guard had been written
+    for `pow(-8, 0.5)` and enumerated its inputs; it asks about the *result*
+    now, which cannot miss the next indeterminate form.
+
+    The derived NaN sweep that was supposed to catch this made every argument
+    infinite at once, and `pow(INFINITY, INFINITY)` is `Infinity`. It now
+    varies one argument at a time with ordinary numbers beside it — the shape
+    `failure-policy.test.ts` already used — and fails without the guard.
+
+- **`lumen check a.lm b.lm` never opened `b.lm`.** It printed "no problems" and
+  exited 0, from the command README.md sends people to for a pre-commit hook
+  and a CI. `check`, `fmt` and `test` took the first positional argument and
+  dropped the rest in silence; they take every path now, and `lumen check
+  src/*.lm` means what it looks like.
+
+- **`std/csv` lost a row that was a single empty field.** `""` on a line of its
+  own is not a blank line — the quotes are how CSV writes "one field, and it is
+  empty" — and `records` could not tell them apart, so it skipped a row that
+  `rows` had just reported. The writer had the mirror of the same bug, writing
+  that row as a blank line, so `records(write(grid))` lost data that had
+  survived the writer. The parser now says which rows were blank lines, and the
+  writer quotes the one shape that cannot survive being written plainly.
+
+- **`lumen fmt` was deleting the contents of a multi-line string.** The line a
+  multi-line string opens on ends *inside* the string, so what looks like
+  trailing whitespace there is the string's value — and the formatter ran
+  `trim()` over it:
+
+  ```text
+  let s = "a␣␣␣
+  b"
+  print(s.len())      6 before `lumen fmt`, 3 after
+  ```
+
+  Only the *continuation* lines of a multi-line token were marked as untouchable;
+  the line the token opens on was treated as ordinary code. The same one-line
+  off-by-one corrupted every multi-line string in a CRLF file, because the CR is
+  trailing whitespace on the string's first line. The formatter's whole promise
+  is that it changes whitespace and not meaning, and this was the one way it was
+  breaking it; `tests/unit/format.test.ts` had stated the invariant in its own
+  header since v0.1 and exercised only the lines that were already safe.
+
+- **A guard clause ending in `panic` was a type error.** `panic` and `exit` are
+  declared `-> Nil` because `Nil` is as near as the type language gets to "no
+  answer", and `TY002` read it literally:
+
+  ```text
+  fn mustBePositive(n: Num) -> Num {
+    if n > 0 { return n }
+    panic("expected a positive number, got ${n}")   ← TY002, wrongly
+  }
+  ```
+
+  `RS012` has always counted that call as a statement that certainly leaves, so
+  the two static passes disagreed about the same call. The checker is now told
+  which library signatures belong to functions that never give a value back, and
+  recognises them by the identity of the signature rather than by name — so a
+  program that declares its own `panic` is calling its own, exactly as `RS012`
+  already had it. Nothing in a signature distinguishes these two, so it is a
+  list; `tests/unit/never-returns.test.ts` keeps it honest by running every
+  library function that answers `Nil` and requiring that exactly the listed two
+  fail to reach the line after the call.
+
+- **A struct or enum declared inside a function was checked against the one
+  outside it.** Declarations are scoped like any other name and may shadow
+  (§7.2), and this pass collected only the module's top level — so an inner
+  `struct Point { label: Str }` was invisible, and `p.label` beside it was
+  `TY012: \`Point\` has no field \`label\``, listing fields from a declaration
+  somewhere else in the file. A valid program rejected, which is the worst thing
+  this pass can do.
+
+- **A struct field naming a struct declared further down the file was `Any`.**
+  Field types were resolved in the same pass that registered the names, so
+  `struct Wrapper { inner: Payload }` written above `struct Payload` left
+  `w.inner` untyped and every check on it silently switched off — the same
+  program, checked differently depending on which line came first. Registered in
+  one pass and resolved in another now, so declaration order cannot matter.
+
+- **A default that read an earlier parameter passed `lumen check` and failed at
+  run time.** `fn greet(name, greeting = "hello ${name}")` is what a person
+  writes, and the resolver accepts it — it declares each parameter only after
+  walking that parameter's default. The interpreter evaluated defaults in the
+  closure alone, so the call that left the argument out died with `RT005` on a
+  parameter that is right there, and with a note suggesting the enclosing
+  function as a replacement for it. Defaults now see the parameters bound before
+  them, which is what both the resolver and the reader already assumed.
+
+  Found by a ten-dimension sweep of the language that wrote and ran programs
+  against every surface it has; these five are the first of what it turned up.
+
+### Added
+
+- **Every library function now says what it does to `help()`.** `help(walk)`
+  printed a signature and nothing else, and so did `help(chat)`,
+  `help(stringify)` and seventy-two others — 75 of the library's 249
+  functions: all of `std/core`, `std/math`, `std/json`, `std/fs`, `std/http`,
+  `std/web` and `std/ai`, and `std/map.getOr`. Their authors had written the
+  explanation as a comment above the definition, which is exactly where a
+  person typing `help()` cannot see it, and `docs/stdlib.md` is generated from
+  the same docstrings, so a row there was a signature beside an empty cell.
+
+  Each has one line now, distilled from the implementation rather than the
+  comment where the two differed, and a test derived from the modules holds
+  every native to carrying one: a function added tomorrow without a docstring
+  fails the build on the day it is added. Found by writing a program against
+  those modules and reaching for `help()` the way a beginner would.
+
+- **`inspect`, `clone` and `isNil` say where they live.** They are outside the
+  prelude on purpose, and `inspect(x)` was a bare "not defined". The note now
+  says that every value has them as a method, `x.inspect()`, and that the bare
+  name is one import from `std/core` away.
+
+- **An unclosed bracket says where it opened.** "expected `}` to close this
+  block, found end of file" pointed at the end of the file, and the mistake was
+  a `{` two hundred lines up that nothing closed — the one line the message
+  did not name. `PA001` now carries a note, `it opened here`, with the line
+  and column, whenever the opener is on an earlier line; on the same line the
+  caret already shows it. The opener is found by walking the tokens back with
+  a depth count, which is exact for this and needs nothing from the grammar.
+  The renderer had documented exactly this note in its own example since v0.1,
+  and nothing had ever produced it.
+
+- **What Lumen says when your fingers type Python.** Sixty of the things a
+  person arriving from Python writes on their first day were run through the
+  language and what it said about each was read. Every one was an error, and
+  every error was *correct* — `print "hello"` really is a string where a line
+  break was expected — and almost none of them said the one thing that person
+  needed, which is Lumen's spelling of what they meant:
+
+  ```text
+  print "hello"         ← to call `print`, put its arguments in parentheses: `print(…)`
+  def add(a, b):        ← functions are declared with `fn`: `fn name(args) { … }`
+  } elif x == 2 {       ← `elif` is spelled `else if`
+  if x == 1:            ← a block starts with `{` and ends with `}`; Lumen does not use `:`
+  f"hi {name}"          ← there is no `f` prefix: every string interpolates, `"hi ${name}"`
+  2 in xs               ← `xs.contains(x)` asks whether a list holds a value
+  xs[0:2]               ← a slice is `xs.slice(from, to)`
+  import math           ← an import names what it takes: `import { sqrt } from "std/math"`
+  let t = True          ← Lumen spells it `true`
+  let n = null          ← `nil` is the missing value
+  int("5")              ← `num(text)` parses a number from text
+  count = 1             ← declare it first: `let count = …`, or `var count = …` if it will change
+  xs.append(2)          ← did you mean `push`? `append` is what another language calls it
+  s.strip()             ← did you mean `trim`?
+  Some(1).unwrap()      ← an Option is taken apart with `match`, or `unwrapOr(fallback)`, or `?`
+  "a" + 1               ← or turn the other value into text first: `str(n)`
+  "ab" * 3              ← `"ab".repeat(3)` repeats a string
+  ```
+
+  Nothing became an error or stopped being one: each keeps the code it always
+  had, and gains one note. The tables live in one place (`hints.ts`) and are
+  consulted before the edit-distance guess, because `True` is not a slip of the
+  fingers for anything in scope — it is a word from somewhere else, and an
+  exact match on a well-known one beats a near match on a local name. A test
+  holds every note to naming only things that exist: every `std/…` module,
+  every name inside an `import { … }`, every prelude function, every method a
+  hint points at — derived from the library, so a renamed export fails the
+  build on the day it is renamed rather than a note three releases later.
+
+  Reading the fixture turned up a second error behind several of the first
+  ones. `} elif x == 2 { print(2) }` was reported twice: once for `elif`, and
+  once more for the `}` at the end, "unmatched", because recovery had skipped
+  to `print(2)` and parsed the block's tail on its own. A `{ … }` opened past
+  the error is now skipped as one unit, since it is the body of the thing that
+  failed. Two fixtures that had pinned the same cascade after a map literal in
+  a header lost it as well.
+
+- **The language server gained find-references, rename, document highlight and
+  signature help.** All four work by **identity** rather than by name: the
+  resolver says where each use was declared, so the set is exactly the uses
+  that resolve to the same binding. Two different `x` in two different scopes
+  are two different bindings, and a rename that changed both would be a rename
+  that broke the program — which is precisely what a name-matching
+  implementation does, silently.
+
+  Signature help is the feature the typed standard library most obviously
+  buys: `"7".padStart(` is a question that had no answer at all before, and now
+  gets `padStart(width: Num, fill: Str = ...) -> Str` with the current
+  parameter marked. It repairs the document first, like completion, because a
+  call is asked about while it is being typed and therefore has no closing
+  bracket yet.
+
+  A rename to something that is not a name is declined rather than performed:
+  an editor sends whatever the person typed, and silently producing a file that
+  does not parse is worse than saying no.
+
+- **A declaration's name has a span of its own.** `RS004` used to draw a caret
+  under the whole of `let total = 2` to say that `total` was declared twice,
+  which points at everything except the part that is wrong. It now underlines
+  the name — and that span is what made rename possible, since replacing the
+  declaration's span would have replaced the declaration.
+
+- **The guides know what the language can do now.** `docs/tour.md` said
+  "Twelve standard modules" and listed twelve, six modules after that stopped
+  being true — a count in prose goes stale exactly as fast as one in digits and
+  is harder to notice, so the same check that pins the README's numbers now
+  pins the tour's module list. `docs/from-python.md` gained a table of the
+  standard library by the Python module a reader would reach for: `re`, `csv`,
+  `pathlib`, `subprocess`, `random.seed`, `sys.stdin.read()`, and the four
+  differences worth knowing before hitting them.
+
+- **Every standard module is checked for being exercised by something that
+  runs.** `std/http` shipped with no fixture, no unit test and no example — the
+  only one — so the client half of "you can build a website with this" had
+  never once executed. That was found by reading, which is not a method. The
+  check found `std/result` on its first run: its functions were well covered as
+  methods, and the import path had never been run at all.
+
+- **`std/crypto`** — hashing, HMAC, secure random, constant-time comparison.
+  Four things, because a program that serves anything needs all four and gets
+  at least one of them wrong by hand: an ETag, a content-addressed cache key, a
+  webhook signature to verify, a session token to issue. Every digest in the
+  fixture is a published test vector, so it checks the implementation against
+  the standard rather than against itself.
+
+  `token()` comes from the operating system, never from `std/math.random`, and
+  is not affected by `seed` — that generator exists so a test can be repeated,
+  which is the exact opposite of what a session id needs. `equals()` compares
+  without leaking how much matched, because `==` on strings stops at the first
+  differing character and that recovers a signature one character at a time.
+
+  No encryption, no key exchange, no password hashing, and the reason is
+  written down: each needs choices that change with the year, and a standard
+  library making them silently is wrong in 2031 for everybody at once. `sha1`
+  and `md5` are present and documented as broken, because real work needs them
+  and omitting them only makes people write them worse.
+
+- **Three bugs found by probing the new modules adversarially**, none of them
+  visible from reading the code:
+
+  - `isInside(".", "a")` was **false**. The check compared paths as text, and
+    `"a"` does not start with `"./"` — so every program asking whether a
+    relative path stays under the working directory was told no. It compares
+    segment by segment now, which also handles the two cases it already got
+    right (`/publicity` is not inside `/public`; `..` is resolved first).
+  - `ext("..")` was `"."` and `stem("..")` was `"."`. `.` and `..` are
+    directory references, not files whose name is empty and whose extension is
+    a dot, so a path walking upwards lost half of itself to a function that was
+    only supposed to look at it.
+  - A CSV delimiter that already means something — a quote, a line break —
+    was accepted and quietly did something else. `rows("a\"b", delimiter: "\"")`
+    answered `["a", "b"]`, which looks like an answer and was an accident of
+    which branch ran first. Refused now, with the reason.
+
+- **A diagnostic about a line break pointed at the line below it.** The
+  statement-boundary token was stamped wherever the *next* real token began,
+  because `skipTrivia` consumed the break and then every blank line, comment and
+  unit of indentation after it, and only then was the position read. So
+
+  ```text
+  let x = match 1 {
+    1                  ← the `=>` is missing here
+    _ => 2,
+  }
+  ```
+
+  reported "expected `=>` after a match pattern, found a line break" with the
+  caret on the next arm's `_`, one line below the mistake. `lumen tokens` showed
+  the confusion directly: the terminator of one line printed at the position of
+  the token on the next.
+
+  `skipTrivia` returns *where* the first break was now rather than whether there
+  was one, and the caret lands at the end of the arm — which is exactly where
+  the missing `=>` belongs. Only the first break in a gap is the boundary; the
+  rest are blank lines inside it, and a fixture shows one boundary spanning a
+  blank line, a comment, another blank line and a multi-line block comment.
+
+- **A function ending in a local called `sum` was rejected.** This ordinary
+  program did not compile:
+
+  ```lumen
+  fn total(xs: List) -> Num {
+    var sum = 0
+    for x in xs { sum += x }
+    sum
+  }
+  ```
+
+  `error[TY002]: this function returns Num but is giving back fn(List) -> Num`.
+  The implicit-return check re-types the last statement, and ran *after* the
+  body's scope had been restored — so the `sum` on the last line resolved
+  outside the function and found the prelude's `sum`. Any function whose last
+  statement names a local that shadows a prelude name was rejected the same way,
+  and `sum`, `len`, `count`, `first`, `last`, `keys`, `min`, `max`, `join` and
+  `take` are all ordinary names for a local.
+
+  A false positive is the one thing `docs/philosophy.md` says gradual typing
+  must never produce, and this one rejected a shape people write constantly.
+  `block` now takes what has to see its bindings and runs it before throwing the
+  scope away. A real mismatch is still caught — `fn f() -> Num { "text" }` is
+  still `TY002` — and the fixture covers nine shadowed names plus a nested `if`,
+  because the same rule has to hold one level down.
+
+- **Four diagnostics that named the wrong thing.**
+
+  - **A digit the radix does not admit ended the literal silently.**
+    `print(0b1012)` said ``expected `)` to close this call, found `2` `` — so
+    the reader goes looking for a missing bracket, and the `2` is the mistake.
+    `0xfg` did the same with a letter. Nothing legal can touch the end of a
+    radix literal (an operator or a `.` needs no space but is neither a letter
+    nor a digit, and `0b101 and true` has one), so an adjacent alphanumeric is
+    reported with what the radix does admit.
+  - **A parse error inside `${…}` said "found end of file" in the middle of the
+    file.** Each interpolation is parsed by its own sub-parser over the
+    fragment's source, so its end of input *is* the end of the fragment. Every
+    other position in the diagnostic was right, which made the one wrong word
+    harder to disbelieve. It says "found the end of the interpolation" now.
+  - **`{` after `=>` gave advice that cannot be followed.** `1 => { a: 1 }`
+    reads as an arm whose body is a block containing the statement `a`, and then
+    the `:` has nowhere to go — and the message said "expected a line break or
+    `;` here", which no line break can satisfy, because the writer wanted a map.
+    Two notes now say that a `{` there opens a block and that parentheses are
+    how to write a map literal in that position.
+  - **`RS001` underlined a whole struct literal.** An undefined
+    `Point { x: 1, y: 2, label: "origin" }` had the entire literal underlined,
+    fields and all, when the only thing not defined is `Point` — and the fields
+    are usually the longer half. Every declaration in this language already
+    carries the span of its own name for exactly this reason; a struct literal
+    now does too.
+
+- **The formatter pushed a comment out of the statement it annotated.**
+
+  ```lumen
+  let n = xs
+    // keep only the even ones
+    .filter(fn(x) { x % 2 == 0 })
+  ```
+
+  came out with the comment flush left at column 0 — between two indented lines
+  of the statement it describes, reading as though it introduced the next
+  top-level statement. A comment line has no tokens, so it is never a
+  `continuation`, so it took the statement's floor instead of the continuation's
+  level.
+
+  A comment belongs to the code *below* it, and the bracket stack cannot change
+  across a comment, so borrowing the next code line's continuation is enough.
+  A top-level comment still sits at column 0, and a comment at the end of a file
+  has nothing to line up with and is left alone.
+
+- **`take` and `drop` read a negative count as an offset from the end.**
+  `take(xs, -2)` answered "all but the last two" and `drop(xs, -2)` answered
+  "only the last two" — the opposite of what each one documents ("the first `n`
+  elements", "everything after the first `n`") — because the number went
+  straight to `Array.prototype.slice`. `chunk` and `windows` in the same module
+  already refused one, so it was a disagreement inside the module too, and
+  `len(xs) - wanted` going negative is the ordinary way to arrive there. Refused
+  now, in the wording `str.repeat` already used. The fixture pins the property
+  that made it wrong rather than merely surprising: `take(xs, n) + drop(xs, n)`
+  is `xs`, for every `n`.
+
+- **Seven kinds of deeply nested source crashed with a bare `RangeError`.**
+  `docs/spec.md` promises `PA016` past 250 levels, and the parser's own comment
+  explains why it matters: *"The limit bounds every later walk of the tree as
+  well — the resolver, the type checker, `display`, equality — since none of
+  them can meet a tree deeper than the parser was willing to build."*
+
+  That was not true, because the limit counted the **parser's** recursion rather
+  than the depth of the tree it built, and several shapes deepen one without the
+  other. `1 + 1 + 1 + …` three thousand times is parsed by a *loop*: it sat at
+  depth 1, and then took the type checker's stack out. So did a chained `**` (it
+  recurses on the right instead of looping), a repeated unary, `x = x = …`,
+  `a[0][0]…`, `m.a.a…`, a nested list pattern and a nested `List<…>` annotation.
+  And a nested `${…}` built a **new** parser for each interpolation, starting
+  the budget again from zero.
+
+  Every one printed `RangeError: Maximum call stack size exceeded` — the host's
+  own words, with no file, no line, no diagnostic — and in a multi-file
+  `lumen check` that was the *only* line about the file that failed. `lumen run`
+  printed "stack overflow — a function is probably recursing without a base
+  case" about programs that declare no function at all.
+
+  All of them are `PA016` now, with the chain and suffix cases counted where
+  they loop, and the sub-parser inheriting the budget. The boundary is still
+  exactly 250: a 248-term chain and 248 unary minuses both run.
+
+  The test **generates** twenty deep shapes rather than listing the seven that
+  were found — the same lesson the NaN route list taught an hour earlier — and
+  it found the nested-interpolation case, which no hand list had. It asserts
+  only that the host's stack never becomes the user's problem, and that a
+  failure says *where*; which diagnostic it is remains the language's business.
+
+  The two last-resort messages are honest now as well. `lumen check` no longer
+  prints a bare host exception with no file name, and the CLI's stack-overflow
+  line no longer diagnoses a construct it cannot see — runaway recursion is
+  `RT045`, naming the function and its depth, and deep source is `PA016`, so
+  anything still reaching that branch is something nobody has diagnosed and
+  guessing would send the reader after the wrong thing.
+
+- **The formatter was not a fixed point.** `lumen fmt` followed by
+  `lumen fmt --check` exited 1:
+
+  ```text
+  let m = [
+          [1,        ← 8 spaces
+           2],       ← 9 spaces, level with the `1`
+  ]
+  ```
+
+  One pass gave `   2],` at column 3, a second gave `    2],` at column 4, and a
+  third was finally stable. In a pre-commit hook that is a loop, and CI runs
+  `fmt --check` over every `.lm` file in the repository.
+
+  Alignment is detected against the *input* column and emitted at the *output*
+  column, so the first pass moved that line from column 9 to column 3 — at which
+  point it was no longer *past* its floor of 4, and a `>` in the alignment test
+  stopped calling it alignment and pulled it out to the floor. Whether an
+  alignment column is past the floor or short of it does not matter: it is still
+  the column the enclosing bracket's first element starts at, which is the whole
+  definition.
+
+  The invariant was **already asserted** — `format.test.ts` states it as
+  invariant 3 and checks it inside the mangling test — and passed throughout,
+  because `mangle` never produced the input that breaks it. Random mangling is
+  the wrong instrument: the interesting column is one specific number out of a
+  dozen and has to coincide with a bracket opened on another line. There is now
+  an exhaustive test instead — six templates, every indentation from 0 to 12 on
+  every varying line, about 9,000 inputs — plus the token stream compared over
+  the same inputs, because a fixed point is worth nothing if reaching it changed
+  the program.
+
+- **`let c = c` was reported as two mistakes.** The initialiser is resolved
+  before the name is declared, so the `c` on the right is genuinely undefined —
+  that `RS001` is right. But `use` declares the name as a **recovery binding**,
+  so the same typo is not reported at every later use, and `declare` then
+  mistook that for a real declaration and added a false `RS004` claiming `c` was
+  declared twice — with a note citing the line of the *use* as "the earlier
+  one". Across lines, that note named a line which declares nothing at all.
+
+  A recovery binding is not a declaration. The two kinds were already paired
+  this way where assignment checks mutability, a few hundred lines below in the
+  same file; `declare` now agrees. A real double declaration is still reported,
+  a typo is still reported once rather than at every use, and a `-quiet`
+  companion fixture pins both along with shadowing, `_` and built-ins.
+
+- **`std/http` lost two of three cookies.** `Set-Cookie` is the one header the
+  Fetch API deliberately does not combine — a cookie value can contain a comma,
+  as in `Expires=Wed, 09 Jun 2021`, so a joined form could not be split back —
+  so `Headers.forEach` yields one of them and `headers["set-cookie"]` held the
+  **last**. A login response setting a session cookie and a CSRF token gave up
+  one of the two, silently, and reading `set-cookie` is very nearly the only
+  reason to look at a response's headers at all.
+
+  `response.cookies` is a `List<Str>` of all of them, in order, from
+  `getSetCookie()`. A new field rather than a change to `headers`, because every
+  *other* repeated header is combined there correctly — `x-repeated: "one, two"`
+  — and that is worth keeping.
+
+- **A header value that was not text went out empty.** `nil`, `true`, a list
+  and a map all became `authorization:` with nothing after it — the one answer
+  that is silently wrong. `headers: { authorization: token }` where `token` came
+  back `nil`, because a config value was not there, produced a request that
+  looked authorized and blank, and the server's 401 then sent the reader hunting
+  for a token problem. A `Str` or a `Num` now, or a panic naming the header. A
+  value containing a newline was already refused by the host, which is the one
+  thing here that was right.
+
+- **A URL `std/http` will not fetch now says why.** The host named the wrong
+  thing for every one of them: `file:///etc/hostname` answered "not
+  implemented... yet...", `blob:http://…` answered "invalid method" — for a GET
+  — and only `ws://` happened to mention a scheme. The scheme is checked up
+  front, so all three say `std/http speaks http and https, not \`file\``, and
+  something that is not a URL at all says that instead.
+
+- **`std/ai` said the bare "fetch failed"** that `docs/stdlib.md` singles out as
+  the thing not to do: *"`std/http` names the request that failed, since 'fetch
+  failed' on its own says nothing when several are in flight."* `std/http` does
+  it properly — pulling the real reason out of `cause`, which is the only place
+  it is — and both `std/ai` providers threw the whole thing away. A program that
+  asks a model something has one request in flight and no other clue about it.
+
+- **Five things in `std/fs`, every one of them a disagreement between functions
+  that should have said the same thing.**
+
+  - **`write` reported the opposite of the truth.** Where a path segment is a
+    file, it said `EEXIST` — and nothing exists that should not; a path segment
+    is a file. `append` and `makeDir` said "a path segment is not a directory"
+    for the identical path, because they reach the real operation and get
+    `ENOTDIR` from it, while `write` was reporting its own `mkdir -p` attempt.
+    Creating the parent is best-effort now, so whatever is really wrong comes
+    from the write.
+  - **`copy` leaked Node's identifiers** — `ERR_FS_CP_NON_DIR_TO_DIR`,
+    `ERR_FS_CP_DIR_TO_NON_DIR`, `ERR_FS_CP_EINVAL` — while `rename` managed
+    sentences for the same mistakes. All of them have sentences now, along with
+    `EXDEV`, which is the one failure a documented "move" has to explain: *they
+    are on different filesystems — copy and then remove instead*.
+  - **`copy` and `rename` named the wrong path.** "cannot rename `note.txt`: it
+    is a directory" — `note.txt` is not a directory, `archive` is. A sentence
+    naming the wrong path sends the reader to look at the wrong thing, which is
+    worse than one naming neither. Both are named now.
+  - **`append` was the only writing function that did not create parent
+    directories**, so `write(p, line)` worked and `append(p, line)` to the same
+    path did not. The first line of a log file is exactly where that bit.
+  - **`copy` broke the symlinks in a tree it copied.** Node's `cp` resolves a
+    relative link against the *source* and stores the absolute result, so
+    copying a tree containing `latest.txt -> report.txt` gave a backup whose
+    `latest.txt` pointed at the original. Writing through the copy's own link
+    edited what the copy was a backup of, and deleting the original left the
+    backup dangling. `verbatimSymlinks` keeps the link as written, and the test
+    asserts the property rather than the flag: write into the copy, the original
+    is untouched; delete the original, the copy still reads.
+
+  The host-error sweep should have caught the two leaking identifiers and did
+  not, because it passed **one** argument to every function — so `copy(a, b)`
+  and `rename(a, b)` failed on arity and never reached their own error paths at
+  all. It now passes as many as each function requires, which is the second time
+  that check has needed widening after a probe found something it should have
+  caught: the first was boundary values. Both widenings were verified by putting
+  a leak back.
+
+  Three further `std/fs` findings from the same probe were **rejected** on
+  verification, and the reasons are worth keeping: `walk` not following symlinks
+  is documented at `fs.ts:257` and matches `find -P`; `exists` answering false
+  for a dangling link is conventional (POSIX `test -e`, Python
+  `os.path.exists`); and a bare errno with no sentence yet is the documented
+  policy, not an oversight — which is why `EXDEV` got a sentence rather than the
+  policy getting changed.
+
+- **An empty `provider:` argument sent the prompt to the real API.**
+  `docs/stdlib.md` states the order: an explicit argument, then
+  `LUMEN_AI_PROVIDER`, then the keys, then `mock`. An **empty** argument does
+  not name a provider, so step 1 should not apply to it — and it did:
+
+  ```text
+  LUMEN_AI_PROVIDER=mock ANTHROPIC_API_KEY=sk-real
+  chat("say hi", provider: "")        // went to Anthropic, with the key
+  ```
+
+  The empty string made the resolver skip the environment entirely and fall
+  through to the key. So `chat(prompt, provider: config.getOr("provider", ""))`
+  — reading the provider from a config file with an empty default, which is an
+  ordinary way to write it — silently cancelled the one setting that keeps every
+  test and all of CI offline, and sent the prompt out. `provider: nil` already
+  fell through correctly; now the empty string does too.
+
+- **And the mock's own advice could not be followed.** With
+  `LUMEN_AI_PROVIDER=mock` and a key set, the reply said "No AI provider is
+  configured … Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` for a real answer" —
+  and the key *was* set, and `mock` overrides it, so following the advice
+  changes nothing and the reader is left assuming their key is broken. The mock
+  now says which of the two situations it is in: asked for, or fallen back to.
+  The second keeps the original advice, where it is exactly right.
+
+- **`groupBy` and `map.invert` were wrong about keys in both directions at
+  once.** Both turn a value into a `Map` key, and a `Map`'s keys are text:
+
+  ```lumen
+  let a = { city: "Oslo", zone: 1 }
+  let b = { zone: 1, city: "Oslo" }
+  a == b                                  // true
+  groupBy([a, b], fn(x) { x }).keys()     // two groups, named by insertion order
+
+  1 == "1"                                // false
+  groupBy([1, "1"], fn(x) { x }).keys()   // one group
+  invert({ a: 1, b: "1" })                // {"1": "b"} — the `a` entry is gone
+  ```
+
+  Equal keys split, different keys merged, and an entry disappeared. Neither
+  case is exotic: data read from a CSV is all `Str` and data from JSON is mixed,
+  so an `id` that is sometimes `7` and sometimes `"7"` is an ordinary thing to
+  be holding, and the rows for the two quietly became one group.
+
+  A shared `keyText` now refuses both — a value with no faithful text form, and
+  a collision between two types — with the same reasoning `std/csv` applies to a
+  duplicate column: one of the two would silently win, and which one is not
+  something a reader could predict. Two values of the *same* type landing on the
+  same text really are one key, so `groupBy` still groups them and `invert`
+  still collapses them, which is what its docstring has always promised.
+
+  Every use of either function in this repository keys on a `Str`, so nothing
+  changed for anything that worked.
+
+- **A NaN cannot be produced by any Lumen program, and that is now checked
+  rather than hoped for.** `docs/spec.md` has always said so, and it was being
+  kept by hand. Three holes turned up in an hour:
+
+  - compound assignment, above;
+  - `asin` and `acos` are defined only on `[-1, 1]` and answered `NaN` outside
+    it, while every sibling that can produce one already refused — `sqrt(-1)`,
+    `log(0)`, `pow(-8, 0.5)`, `gcd(Infinity, 2)`;
+  - `sin`, `cos` and `tan` answered `NaN` at `Infinity`, where the value
+    oscillates and has no limit. **That one was found by the test itself**,
+    which is the best argument for having written it.
+
+  So the guard moved to the helper that builds every unary numeric function
+  rather than sitting on the functions one at a time. `sqrt` and `log` were
+  guarded by hand, `asin` and `acos` were missed, `tan` was missed after that —
+  and a function added later can no longer reopen the hole. `asin` and `acos`
+  keep their own domain message, because "outside that range there is no angle
+  whose sine this is" says more than a general refusal.
+
+  `Infinity` is untouched and deliberately so: it means "larger than we can
+  say", it compares consistently, and it is equal to itself. `round(Infinity)`,
+  `exp(Infinity)`, `sqrt(Infinity)` and `atan(Infinity)` all still answer.
+
+  The test has two halves, and the second exists because the first was not
+  enough. The first is a written list of language-level routes — arithmetic,
+  compound assignment, a unary operator — which cannot be enumerated from the
+  library and so are enumerated by hand. **That list missed
+  `list.sum([inf, -inf])`**, which does its addition in TypeScript rather than
+  through a Lumen operator, and so went round the guard exactly as compound
+  assignment had. `reduce` needs nothing, and the difference is the lesson: it
+  calls back into Lumen, so the `+` in its callback is a real operator and
+  already checked.
+
+  So the second half **derives** its routes from the library instead of
+  guessing them: every exported function is called with `Infinity`, with a
+  negative `Infinity`, and with a list of the two, and a `NaN` answer fails.
+  307 calls; one route, which is `sum`. A function added tomorrow is covered
+  without anybody remembering to add a line, and `support.ts` now carries a
+  `checkedNum` for any native that does arithmetic itself. Both halves were
+  checked against the bug by putting it back, which is the step that was
+  skipped the first time — and the derived half caught it.
+
+  The first half also covers
+  both read `type()` rather than the printed output, because a `NaN` prints as
+  `NaN` and so does the text of a correct message about one:
+  `toNum("NaN")` rightly answers ``Err("`NaN` is not a number")``, and reading
+  the output for the word called that a defect when the sweep was first written
+  by hand. A second test checks the guards did not simply refuse their whole
+  domain, which would pass the first one and break the functions.
+
+  This matters beyond tidiness. Four separate findings about `std/set`,
+  `sorted`, `minimum`/`maximum` and `groupBy` mishandling a `NaN` are, with
+  this, **unreachable rather than fixed** — none of those functions is written
+  to cope with a value that compares false against itself, and now none has to
+  be. If a route ever reopens, they come back, which is exactly why the route
+  list is a test.
+
+- **Compound assignment went round the NaN guard.** `inf - inf` is `RT046`;
+  `a -= inf` was a `NaN`, and `lumen check` said the file had no problems.
+  Every binary operator goes through `checked`, and compound assignment had its
+  own little arithmetic inside `storeInto` that did not — so `+=`, `-=`, `*=`
+  and `/=` were the one path that could put a `NaN` into a Lumen value.
+
+  `docs/spec.md` forbids it outright — *"any arithmetic that would produce one
+  is `RT046`"* — and the reason is in the guard's own comment: a `NaN` is equal
+  to nothing, including itself, so one that gets into a value poisons every
+  comparison it later reaches. The whole point of `RT046` is that it cannot
+  get in.
+
+  All four now go through `checked`, and the message names the *base* operator:
+  `the result of Infinity - Infinity is undefined`, because that is the
+  arithmetic which has no answer and is what the reader has to see. `/= 0` is
+  still `RT018`, and `Infinity` itself is still an ordinary value — it means
+  "larger than we can say", it compares consistently, and it is equal to
+  itself. A second fixture pins every ordinary use, including `+=` on a string
+  and a list, and an index and a field as targets.
+
+- **`std/list.pop` declared the wrong return type, so the idiomatic use was
+  rejected.** The signature said `(xs: List) -> List`; the docstring says
+  "Some(x), or None if empty" and the implementation returns exactly that. Only
+  the signature disagreed — and a signature is not documentation that can be
+  quietly wrong, it is what the checker believes:
+
+  ```text
+  error[TY001]: `unwrapOr` expects Option for `option` but was given List
+  ```
+
+  A false positive on correct code, which `docs/philosophy.md` names as the one
+  thing gradual typing must never do. The converse was live too: code that
+  really did treat the answer as a list was approved.
+
+  Four tests already compared a signature with its implementation — the same
+  parameter names, the same order, the same ones optional, the same defaults.
+  None looked at the *return*, and there is nothing in TypeScript to compare it
+  against: a native's callback is typed `Value` and nothing finer. So the new
+  test **calls** each function and compares the answer's own `type()`, with
+  arguments derived from the declared parameter types; a call that cannot be
+  made is skipped rather than reported. 235 functions declare a return type and
+  exactly one was wrong — then the test was checked against the bug it exists
+  for by putting the signature back, and it names it exactly.
+
+- **`std/option` and `std/result` reported the interpreter's internal tags.**
+  `andThen([1], f)` said `note: this is list` — and there is no type called
+  `list` in this language. Both use `typeName` now, which is what `type()`
+  answers and what every other diagnostic in the library uses.
+
+  Found by tripping over it while writing the test above: its first version
+  rendered type names by hand and produced `num`, `str` and `list` rather than
+  `Num`, `Str` and `List`, reporting all 72 functions as mismatched. The test
+  uses `showTy` — the language's own rendering — for the same reason the library
+  now uses `typeName`.
+
+- **`min` and `max` were two functions, and importing the wrong one broke
+  working code.** This compiled and ran:
+
+  ```lumen
+  let scores = [3, 1, 4, 1, 5]
+  print(max(scores))
+  ```
+
+  and stopped compiling the moment somebody added
+  `import { sqrt, min, max } from "std/math"`, with `TY008: max is missing a
+  value for b`. True of `std/math`'s `max`, false of the `max` everybody means
+  — and `std/math` is exactly where a reader goes looking for `min`.
+
+  The prelude's pair is variadic and takes a list *or* the numbers themselves,
+  because guessing wrong about which one a beginner meant is a bad first
+  experience. `std/math` kept a narrower pair of its own, exactly two `Num`s,
+  **with a signature saying so** — and the comment beside the prelude's version
+  explains that a variadic deliberately carries none "so that the checker's
+  argument-count rule can never be wrong about them". The narrow pair's
+  signature is precisely what made the rule wrong.
+
+  The prelude's header states the rule that was broken: *"so there is one
+  implementation, not two."* The variadic pair lives in `std/math` now, where
+  the functions belong, and the prelude takes them from there the way it already
+  takes `split`, `join`, `abs` and `round` — one native, so the two cannot
+  disagree. Which is the answer this project had already reached for `now`,
+  shared between `std/core` and `std/time` for the same reason.
+
+  The generated reference follows on its own: `min` and `max` read `min(...)`
+  rather than a two-parameter signature, and typed coverage stays at 100%
+  because variadics are excluded from both sides of that count — 244/244, was
+  246/246.
+
+- **The "no host error text" rule is now a test rather than a habit.**
+  `docs/stdlib.md` has always said error text belongs to Lumen and not to the
+  host, and every module kept it — which is exactly why nobody looked at the one
+  `catch` in `std/process` that stringified whatever it caught. So the question
+  is asked of the whole library at once: call every export with an argument of
+  the wrong shape and with the awkward values, and fail if the answer contains a
+  word only the host would use (`TypeError`, `ERR_…`, `errno`, `ENOENT`,
+  `[object …]`, `node:internal`, and a dozen more).
+
+  1701 calls, 390 ms, in-process. The result on the current library is zero,
+  which is the answer worth having written down.
+
+  Two things about building it are worth recording, because both were wrong
+  first:
+
+  - The first version used only wrong *types* — `nil`, `[]`, `0 - 1` — and when
+    the `std/process` bug was put back to check the test, **it still passed**.
+    `run("")` was the input that produced the `TypeError`, and no wrong type
+    goes near it. An empty string, a zero and an empty collection are what a
+    program computes by accident — a trimmed field, a `len()` of nothing, a
+    list that filtered down to none — and that is where the unconsidered branch
+    is. A check nobody verified against the bug it exists for is a check that
+    reports "all clear" about nothing.
+  - `null` and `NaN` were in the list of host words and had to come out. JSON
+    spells nil `null`, so `stringify(nil)` is `null` and `std/web.json(nil)`
+    carries a body of `null`; `Infinity` and `NaN` are how `inspect` renders
+    those values. Both are Lumen's own spelling, and reporting them made the
+    sweep call two correct answers defects — which is the failure mode a check
+    like this has to avoid, because a check nobody believes is worse than none.
+
+- **`inspect` did not print a value the way you would write it**, which is the
+  contract stated in its own source. It escaped strings with
+  `JSON.stringify` — escaping for a different language — and concatenated a
+  `Map`'s keys raw:
+
+  ```text
+  inspect("${name}")      was  "${name}"       an interpolation, so a different value
+  inspect("a\0b")         was  "a\u0000b"      Lumen writes \u{0}; this does not lex
+  inspect({"a-b": 1})     was  {a-b: 1}        reads back as a subtraction
+  inspect({"a\nb": 1})    was  {a              broke the line, and the output after it
+  ```
+
+  None of that needs a strange program. A `Map` key is an arbitrary string, and
+  `std/csv.records`, `std/json.parse` and `std/web.form` all build maps whose
+  keys somebody else chose — so printing a parsed CSV row with an awkward
+  header column corrupted the log line it was in. A list element was *already*
+  quoted (`[1, "a"]`, never `[1, a]`), so a key not being was one function
+  answering the same question two ways.
+
+  `quote` writes Lumen's escapes now, not JavaScript's: `\"`, `\\`, `\n`, `\t`,
+  `\r`, `\u{…}` for the C0 controls and for a lone surrogate, and `\$` before a
+  `{` — an escape the lexer has had since it was written and nothing was using.
+  A bare `$` is left alone, because escaping every price and every shell
+  snippet buys nothing. A key is bare only when it is a plain name.
+
+  The test lexes the output instead of reading it, which is the part that would
+  have caught this on day one: for every awkward string, `inspect` must produce
+  exactly one token, that token must be a `string` and not a `template`, and it
+  must carry back the value it started with. `template` is the whole `${` half —
+  an unescaped marker does not produce a wrong string, it produces a different
+  kind of token.
+
+- **And a fifth, in the JSON locator added above.** The column it reports was
+  counted in the host's UTF-16 units, so `["🎉",]` said column 7 where the `]`
+  is the sixth character. Found by asking the same question of every function
+  that hands back a position, which is what the previous four should have
+  prompted immediately. Counting the *rest* of the library that way also turned
+  up the one place the units genuinely differ on purpose, now written down in
+  `ROADMAP.md`: a span's `col` is UTF-16 because that is what LSP means by a
+  character, which is why the language server needs no conversion — and the
+  terminal caret inherits it, so it is right for ASCII, right by coincidence
+  for an emoji, and a cell out after a combining mark or a CJK character.
+  Placing it properly means the East Asian Width table, which is a dependency
+  this project will not take.
+
+- **A regex match could not be found at the position it reported.** `std/regex`
+  handed back the engine's UTF-16 offset while every position in Lumen is a code
+  point, so `at` pointed one place past the match for every astral character
+  before it — and the field exists for exactly one purpose:
+
+  ```lumen
+  let text = "🎉 order 42 shipped"       // the `4` is code point 8
+  find(text, "\\d+")                     // said at = 9
+  slice(text, 9)                         // "2 shipped" — inside the match
+  slice(text, 9, 9 + len("42"))          // "2 " — not even the match itself
+  ```
+
+  A match whose own text cannot be recovered from its own reported position is
+  not a position. `findAll` was worse: on `"🎉a🎉b"` the positions landed on the
+  emoji and then past the end, so the last `slice` came back empty. Converted
+  now, and the fixture pins the property rather than the examples —
+  `slice(text, m.at, m.at + len(m.text)) == m.text` for every match.
+
+  This is the fourth place the same mistake was found — `std/str.indexOf`,
+  `padStart`, `padEnd`/`center`, and now this. The pattern is always the same: a
+  function that delegates to the host and passes the host's units through a
+  boundary where the units change.
+
+- **A symlink walked straight out of a served directory.** `std/web.file`
+  blocked every textual escape — `../`, `%2e%2e%2f`, an absolute path, a NUL
+  byte, a backslash — and then served `public/keys.txt -> /etc/secrets` with a
+  200, because the boundary was checked on the path as *written* and a symlink
+  makes that a lie: a link inside the root pointing anywhere at all resolves to
+  something that looks inside it. The module's own documentation says "`root` is
+  a boundary, not a suggestion", which it was not.
+
+  Nothing about the request has to be strange for a link to be there — an upload
+  directory, a linked build artefact, a `node_modules` somebody symlinked. The
+  boundary is checked twice now, once on the path as written and once on what
+  the filesystem really has, with the root resolved too (`/var/www -> /srv/www`
+  is an ordinary way to arrange a machine, and comparing a resolved target
+  against an unresolved root would 404 every request on one). A link that stays
+  inside still works, because `current -> releases/v3` is how deployments are
+  done — which is the reason this checks rather than refusing symlinks outright.
+
+- **And it served `.env`.** The other way a web root leaks is the files a
+  checkout has in it anyway, and `file`'s default `root` is `"."` — the
+  directory the program is running in. `.env`, `.git/config`, `.ssh/id_rsa`:
+  the most-exploited misconfiguration on the web, available from a one-line
+  handler. A path with a dot-leading segment is a 404 now. `.well-known` is the
+  one exception and is not negotiable: it is where a certificate authority looks
+  to prove the site is yours, so blocking it breaks HTTPS rather than protecting
+  anything.
+
+- **Half of `std/str` counted characters and half counted UTF-16 units.**
+  `len`, `slice`, `chars` and `reverse` counted code points; `indexOf`,
+  `padStart`, `padEnd` and `center` inherited JavaScript's counting, where an
+  emoji is two. Two functions that disagree about what a position is are worse
+  than either convention, because the whole point of them is being used
+  together:
+
+  ```lumen
+  let line = "🎉name: value"
+  let at = indexOf(line, ":")     // said 6; the colon is the sixth code point
+  slice(line, 0, at)              // "🎉name:" — the half before it, with it
+  slice(line, at + 1)             // " value" — a character late
+  ```
+
+  Both halves came back wrong, silently, for any text with an emoji in it —
+  which is most text people type. And `padEnd(name, 28)` produced 27 characters
+  by `len`'s count whenever `name` had one, so a table column was short by one
+  for exactly the rows nobody tests with.
+
+  All eight count code points now, and a fixture pins the property rather than
+  the examples: `len(padStart(s, n, f)) == n` for every case, and
+  `slice(s, 0, indexOf(s, sep))` is the half before the separator. Grapheme
+  clusters are still not claimed — `reverse` of an `e` and a combining acute
+  moves the accent, and there is no dependency-free way to do better — but the
+  line is now drawn in the same place by everything in the module.
+
+- **`parseIso` moved a date that does not exist instead of refusing it.**
+  `parseIso("2024-02-30")` answered March 1st, and `parseIso("2023-02-29")`
+  answered March 1st too — so a date read out of somebody's exported file
+  shifted by a day and nothing said so. The host is the source of it and is
+  incoherent about it: it rejects month 0, month 13, day 0, day 32, minute 60
+  and second 60 on its own, and then accepts February 30th. If rolling over
+  were the intent, month 13 would roll over into next January. It is an `Err`
+  now, with the century rule applied — `1900-02-29` is refused, `2000-02-29` is
+  not — and `24:00` is left alone, because ISO 8601 really does mean the end of
+  that day by it. The module already overrode the host where it read an unzoned
+  time as local; this is the same override for the same reason.
+
+- **Four signatures declared a default the function does not have**, and the
+  check that would have caught them did not exist. `std/time.time` said
+  `seconds: Bool = false` and defaults to `true`, so the reference said
+  `time(t)` gives `12:34` when it gives `12:34:56`. `std/math.log` said
+  `base = 0` — a value the function itself rejects — and defaults to `e`.
+  `std/math.fixed` said `places = 0` and defaults to `2`. `std/time.format`
+  said `template = ""` and defaults to `"YYYY-MM-DD hh:mm:ss"`.
+
+  The existing check compared names, order and *which* parameters were
+  optional, and stopped there; the generated reference renders every default as
+  `...`, so nothing anybody read would have shown the disagreement either. The
+  test now parses each signature as the real declaration it is and compares the
+  default expressions with the implementation's, which is what found all four —
+  the first one by hand, and the other three in the three runs after it.
+
+- **`std/json` says where the document goes wrong.** Every failure there is —
+  an empty file, a trailing comma on line 300, an unquoted key, a string that
+  never closes — answered with the same four words, "invalid JSON". That is
+  unactionable about a file somebody else exported, and out of keeping with a
+  language whose every other diagnostic carries a position, a caret and a "did
+  you mean".
+
+  ```text
+  invalid JSON at line 3, column 29: a trailing comma: JSON has no comma before `]`
+  invalid JSON at line 1, column 2: the key `name` needs double quotes around it
+  invalid JSON at line 1, column 1: `tru` is not a value JSON knows — did you mean `true`?
+  ```
+
+  The original reason for saying nothing was sound and is kept: V8 rewords its
+  JSON errors between Node releases, so `JSON.parse("{")` is "Unexpected end of
+  JSON input" on one and "Expected property name or '}' in JSON at position 1"
+  on another, and a Lumen program's output must not depend on which Node is
+  installed. The wrong step was concluding that the *position* had to go too.
+  It is worked out here instead, by a second scan of the text.
+
+  That scan runs **only** after the host's parser has already refused the
+  document, which is what makes a hand-written one safe: it cannot affect a
+  document that parses, and the worst a bug in it can do is produce a vaguer
+  message. Writing a parser good enough to *accept* every valid document —
+  surrogate pairs, `__proto__` keys, the exact rounding of every number — is a
+  much harder thing than writing one good enough to find where an invalid one
+  first goes wrong, and the host already does the first perfectly well. A test
+  pins the two together over 200,000 generated documents: the locator finds a
+  problem exactly when `JSON.parse` refuses the text. An unclosed bracket is
+  reported where it *opened*, not at the end of the file, because the `{` is
+  the thing you have to go and look at.
+
+- **`stringify` refused to write `null` for a number JSON cannot hold.**
+  `Infinity` and `NaN` are ordinary Lumen values — the spec says overflow to
+  `Infinity` is not `RT046` — and `JSON.stringify` writes `null` for both
+  without a word. `null` is the worst possible substitute, because it is how
+  JSON spells *absent*: an overflowed total did not merely lose its magnitude,
+  it came back looking like a field nobody had filled in, and every check for a
+  missing value then said yes. It is a panic naming the path now — `it is at
+  $.total` — which is what this module already did for a function and for a
+  cycle. A number with no JSON form is the same kind of thing.
+
+- **Five more bugs, from turning the same adversarial probe on `std/process`
+  and the language server.** The pattern that found the last three found these:
+  use the thing the way a program would, then ask what it says when the answer
+  is inconvenient.
+
+  - **`lumen lsp` never exited.** LSP's `exit` notification asks a server to
+    end its *process*; this one resolved a promise and kept running, because
+    attaching a reader puts stdin into flowing mode and Node keeps a process
+    with a live stdin pipe alive however the stream is left. So every editor
+    session left an orphan behind — which is the one thing `exit` exists to
+    prevent. It now exits with the status the protocol specifies: 0 after a
+    `shutdown`, 1 for an `exit` that did not follow one, which is how an
+    editor's log distinguishes a server that was asked to stop from one that
+    had to be killed. The existing tests could not have caught it: they end by
+    killing the child, so the process staying alive looked exactly like the
+    process being shut down.
+
+  - **The editor never showed a warning.** `checkModule` raises on errors and
+    *returns* warnings, and the language server dropped the return value on the
+    floor — so `RS011` was a warning on the command line and nothing at all in
+    the editor, while the module's own header promised the two could never
+    disagree. Two lines, and an editor that now draws what `lumen check` prints.
+
+  - **A missing `cwd` blamed the program.** `run("pwd", cwd: "/gone")` answered
+    ``cannot run `pwd`: no such program`` — a wrong answer of the worst kind,
+    the sort that sends the reader to check their PATH, their spelling and
+    their installation, none of which is the problem. Node reports a missing
+    directory with exactly the `ENOENT` it reports for a missing program, right
+    down to naming the *command* in `path`, so there is nothing in the error to
+    branch on: the module looks at the directory before it spawns, in order to
+    be able to say which one was missing.
+
+  - **An empty command name leaked a Node `TypeError`.** ``run("")`` answered
+    with "The argument 'file' cannot be empty", naming a parameter of a
+    function the reader has never called, in a language they are not writing.
+    Every other error in the module is a sentence; this one is now too.
+
+  - **A negative timeout meant "wait forever".** Zero means no limit and is
+    documented, but a negative number is what `deadline - now()` gives once the
+    deadline has passed — so a program that had run out of time waited the
+    longest of all. It is an `Err` naming the value.
+
+  Two smaller things went with them: a rename the server declines because the
+  new name is not a name now says so, rather than answering `null` — which is
+  the valid answer for "no edits", so the person pressed Enter and watched
+  nothing happen; and a comment claiming Lumen only ever produces errors, which
+  stopped being true when `RS011` landed.
+
+- **`std/csv`** — comma-separated values, as they actually arrive. Quoted
+  fields containing the delimiter, a newline or a doubled quote; `\r\n` and
+  `\n` mixed in one file; a delimiter that is not a comma. Reading and writing
+  are inverses byte for byte, and a fixture asserts it.
+
+  A ragged row is an `Err` naming the row rather than a guess: padding it makes
+  every later column wrong by one, and dropping the extras throws data away. So
+  is a duplicate column name, because one of the two would silently win and
+  which one is not something a reader could predict. `rows` gives the raw grid
+  for a caller who knows better.
+
+  A **blank line** is the exception and is skipped: it is no data rather than
+  misaligned data, and rejecting it was a rule that was right on paper and
+  wrong on every file anybody actually has. Found by writing
+  `examples/report.lm` against it.
+
+  CSV has one type and it is text, so a `Num` written and read back is a `Str`.
+  That is the format being honest rather than this module guessing which
+  columns were numbers.
+
+- **`std/path`** — paths as text, with **one separator** everywhere. A path is
+  written with `/` and read with either, so a Windows path pasted into a
+  program works and a path this module produces looks the same on every
+  machine; Node's own `path` changes behaviour with the platform, which is the
+  same reason `std/time` has only UTC. Drive letters and UNC roots are
+  understood and preserved, because losing one silently turns an absolute path
+  into a relative one.
+
+  Nothing here touches the filesystem, which is what lets a program work out
+  where things will go before doing any of it. `isInside(parent, child)` is the
+  check a program serving files needs, with both ways of getting it wrong
+  already handled: `/publicity` is not inside `/public`, and `..` is resolved
+  first.
+
+- **`std/regex`** — regular expressions, with the pattern as a `Str`. There is
+  no `/.../` literal, deliberately: it would be ambiguous with division in a
+  language whose newlines are significant, and every escape would then have to
+  be understood by the lexer as well as by the matcher.
+
+  The dialect is ECMAScript and says so. Every function that takes a pattern
+  returns a `Result`, because a pattern comes from somewhere and `(` is an
+  ordinary thing for a person to type. There is no backtracking guard, and that
+  is written down rather than left to be discovered.
+
+- **Randomness you can repeat.** `seed(n)` replaces the generator with one
+  written in the library, so the same seed gives the same sequence on every
+  machine and every version of Node — which is what makes a randomised test
+  repeatable when it fails, and there was no way to write one before.
+  `shuffle` and `choice` come with it, and `shuffle` is Fisher-Yates: the
+  spelling everybody reaches for first, `sortBy(fn(_) { random() })`, is not
+  uniform, because a comparison sort asks about the same pair more than once
+  and gets different answers.
+
+  Not cryptographic, and it says so.
+
+- **`inputAll()`** — everything on the input as one string. The pipeline half of
+  `input()`: `cat access.log | lumen run report.lm` could not be written with
+  `input` alone without a loop and an `Option` to say "read the input".
+
+- **`std/fs` gained `stat`, `isDir`, `isFile`, `copy`, `rename`, `makeDir` and
+  `walk`.** `stat` reports a modification time as a Lumen instant, so
+  `stat(p).modified.iso()` needs no conversion — Node reports a `Date`, and
+  mixing the two units is how a program compares a timestamp against a duration
+  and gets a plausible wrong answer. `walk` does not follow symbolic links: a
+  tree containing a link to its own parent is not unusual, and walking it
+  forever is not a useful answer.
+
+- **`std/regex` gained `multiline` and `dotAll`**, which are most of what a
+  regular expression is for over plain string work. Without the first, `^`
+  matches only the very start of the text, so a pattern written to find
+  something at the beginning of each line finds it at most once — and there was
+  no way to ask for anything else. `(?m)` is not the way: JavaScript has no
+  inline modifier group, so a pattern written that way does not compile.
+
+  Found by writing a program that needed it, which is the only way this kind of
+  gap gets found.
+
+- **`std/time` exports `now`**, which until now lived only in `std/core`. Every
+  other function in that module takes an instant, and the obvious way to get one
+  is the current time, so `iso(now())` needing a second import was a surprise
+  every reader had exactly once. It is one native in both places, so the two
+  cannot disagree.
+
+- **`std/process`** — running another program, with **no shell**. A command is
+  a name and a list of arguments, never one string for `/bin/sh` to take apart:
+  with a shell, every call has to decide how to quote whatever it interpolates,
+  and the one that forgets turns a file called `; rm -rf ~` into a disaster.
+  With an argument list there is nothing to quote, because nothing is parsed.
+
+  What that gives up is written down rather than left to be discovered — no
+  `*`, no `|`, no `>`, no `&&` — with the line of Lumen that replaces each.
+
+  A non-zero status is `Ok`, because "did this program work" is the question
+  being asked and `grep` says "no match" that way; `Err` is for not having run
+  at all. `timedOut` is its own field rather than a status to interpret.
+  `which` looks along `PATH` itself, since shelling out to `which` would need
+  the shell this module does not have.
+
+- **`examples/report.lm`** — a messy CSV in, a CSV and an HTML page out, which
+  is the shape of most real work. Every awkward part is there on purpose: a
+  comma inside a quoted field, a doubled quote, a field with a newline, `\r\n`
+  endings, a blank line, two rows whose numbers do not parse, and a product
+  called `Tom & Jerry's <Ever>` that has to reach the HTML as a name rather
+  than as markup. Money stays whole pence throughout, because a report that is
+  a penny out is a report nobody trusts.
+
+  It also teaches the lesson its own data forced: the multi-line field is
+  correct and destroys a terminal table, so display collapses it to one line
+  while the CSV written back out keeps the newline.
+
+- **`examples/rename.lm`** — renaming a folder full of files, safely. It plans
+  every move before making any, refuses to overwrite, refuses to leave the
+  folder it was pointed at, and can be run twice with nothing happening the
+  second time. The dangerous parts of that job are all in what it does not do.
+
+## [0.2.0] — 2026-09-14
+
+A release about **depth**: the standard library declares its types, so calling
+it is checked; the interpreter evaluates far more without allocating a promise;
+and there is a language server, so all of it reaches an editor.
+
+A `0.x` minor may change the language (spec §10), and this one does: four new
+static checks reject programs that previously passed `lumen check` and then
+failed when they ran.
+
+### Added
+
+- **A language server.** `lumen lsp` speaks the Language Server Protocol on
+  stdio: diagnostics as you type, hover with types and documentation,
+  completion, go to definition, and formatting. `editors/vscode` is a client
+  for it, installed with a symlink.
+
+  Neither side has a dependency, including no `vscode-languageclient`. LSP is
+  JSON-RPC over a stream and the framing is a few dozen lines; taking a library
+  for it would have broken the promise the rest of the project is built on.
+
+  Everything the editor knows, `lumen check` knows — the same parser, resolver
+  and type checker, so an editor can never tell you something the command line
+  disagrees with. Two hooks were added for it, both recording what was already
+  being computed and thrown away: `CheckOptions.record` hands over the type of
+  every expression, and `ResolveOptions.reference` hands over where every name
+  was declared. Working either out again in the server would have been a second
+  implementation of the same question, free to answer differently.
+
+  Completion after a `.` offers the methods on the receiver's type, which is
+  worth having only because the library declares its types. It also *repairs*
+  the document first: completion is always asked for on source that does not
+  parse — `s.` is not an expression yet — so a server that only understands
+  complete documents has no receiver type at exactly the moment it needs one.
+
+- **A `lumen` launcher in a checkout**, for macOS, Linux and Windows.
+  `lumen run app.lm` appeared throughout the documentation and existed nowhere
+  in the repository, so `./lumen run app.lm` — the first thing anyone tries
+  after cloning — failed with "not recognized".
+
+- **The version is checked for being the same in all seven places it is
+  written**, which nothing compared before: `lumen --version` could have said
+  one thing while the packages said another.
+
+### Language
+
+- **`x |> f(a)` is type-checked.** §4.7 says `x.f(a)`, `f(x, a)` and `x |> f(a)`
+  are one expression; the checker used to agree about two of them. The pipeline
+  arm typed both halves, discarded the result and answered `Any`, so the one
+  spelling the language calls interchangeable with the others was the one
+  nothing checked. Both spellings go through the same code now, which is the
+  only way they can be guaranteed to stay in step, and a pipeline's value has
+  the function's return type rather than `Any`.
+
+- **A rest parameter's declared type applies to every argument it collects.**
+  `fn log(..parts: Str)` called as `log(1, 2, 3)` reported the `1` and said
+  nothing about the rest: the parameter walk stepped past the rest parameter
+  after one match and paired everything after it with nothing. A rest parameter
+  is also correctly optional now — `log()` is a legal call of it.
+
+- **A `fn(...)` annotation's parameters have no names**, rather than the
+  invented `p0`, `p1` they used to carry. A call writing `f(p0: 1)` could match
+  one by accident, and a diagnostic about one named a parameter nobody had
+  written. They pair positionally, and a diagnostic says "argument 1".
+
+- **`**` raises to a power.** `2 ** 10` is `1024`. It binds tighter than `*` and
+  is the only right-associative binary operator, so `2 ** 3 ** 2` is
+  `2 ** (3 ** 2)` — 512, which is what the notation means in mathematics and in
+  every language that has the operator.
+
+  A unary operator directly before it is **refused**, not resolved: `-2 ** 2` is
+  `PA018`. Python reads it as `-(2 ** 2)`, which is -4; binding the unary first,
+  as Lumen's precedence table otherwise would, gives 4. Both readings have a
+  language behind them, so a reader arriving from either one is entitled to
+  assume theirs, and picking a side quietly means somebody's arithmetic is
+  wrong with nothing to point at. JavaScript made the same call. A unary
+  operator on the right is unambiguous and allowed: `2 ** -1` is `0.5`.
+
+  `0` to a negative power is `1 / 0` by another spelling and reports `RT018`
+  rather than `Infinity`. A negative number to a fractional power is `RT048`:
+  `(0 - 8) ** (1 / 3)` is -2 in arithmetic and `NaN` in IEEE 754, and Lumen has
+  only real numbers, so it says so instead of handing back a value that is not
+  equal to itself. `cbrt` in `std/math` is the function that answers it.
+
+- **`return`, `break` and `continue` are expressions.** They produce no value —
+  they leave — so they can now appear wherever a value is expected, which is
+  what lets a `match` arm bail out:
+
+  ```lumen
+  match line.toNum() {
+    Ok(n)  => n,
+    Err(_) => continue,
+  }
+  ```
+
+  Previously this was `PA010: expected an expression, found 'return'`, and
+  since `match` is the main way to branch in an expression-oriented language,
+  that was a hole in the middle of it. The statement forms are unchanged and
+  mean exactly the same thing.
+
+### Performance
+
+- **The synchronous fast path recurses, and the benchmarks are 15-26% faster.**
+  `evalLeaf` evaluated an expression without allocating a promise, but only
+  literals and plain names — so in `xs[i] * 2 - 1` the leaves were fast and
+  every node joining them still allocated one. It now handles `Binary`,
+  `Unary`, `Logical`, `IndexExpr`, `MemberExpr`, `ListLit` and `MapLit` as
+  well, each only when every part of it also resolves synchronously, returning
+  `undefined` to fall back the moment one does not.
+
+  Calls stay asynchronous, deliberately and permanently: any call may do I/O,
+  which is the whole point of Lumen having no async colouring.
+
+  Measured by interleaving two bundles, best of five — `loop.lm` −26%,
+  `structs.lm` −17%, `fib.lm` −15%, `strings.lm` −6%, `collections.lm`
+  unchanged, about −18% over the suite. `collections.lm` is unchanged because it
+  spends its time in library calls, which stay on the async path. Promise
+  machinery is now about 22% of non-library ticks on the `while` benchmark,
+  down from the 37% the roadmap has been quoting.
+
+  The measurement is the interesting part. The first run of it said
+  `collections.lm` had **regressed 31%**, which was entirely an artifact of
+  comparing the built CLI (thirty-odd ES modules) against a bundle (one
+  CommonJS file). `scripts/bench.mjs` now takes `--this` as well as `--against`
+  so that like is compared with like, and interleaves the two builds — A then B,
+  then B then A — so that whatever the machine is doing lands on both.
+
+- **Leaf expressions no longer allocate a promise.** Number, string and boolean
+  literals, `nil`, and plain names cannot suspend, so they are evaluated
+  synchronously and every caller falls back to the async path for anything
+  else. They are most of what a tight loop evaluates — `while i < 300000 {
+  total += i * 2 - 1 }` has six per iteration, each previously allocating a
+  promise that resolved immediately. Best-of-three on `npm run bench` went from
+  2.86s to 2.39s (about 16%; nearer 25% comparing medians), with the profile's
+  garbage-collection share falling accordingly. This is a narrow, contained
+  piece of the `Value | Promise<Value>` change the roadmap costs out — the rest
+  of which remains deliberately undone, because it is a continuation-passing
+  rewrite that a bytecode VM would discard.
+
+### Static checks
+
+- **The standard library declares its own types, so calling it is checked.**
+  `upper(1)`, `"abc".padStart("x")`, `[1, 2].take("two")` and `{a: 1}.get(1)`
+  all passed every static check and failed when they ran. They are `TY001` now.
+
+  This is the largest thing the checker has gained, because a program that
+  writes no annotations of its own still calls the library on nearly every
+  line: the type checker had no channel to it at all, so every standard call
+  was `Any` in and `Any` out.
+
+  It still has no channel — `packages/core` imports nothing, which is the rule
+  the whole project rests on. It is *told*: whoever builds an interpreter hands
+  the static passes the type of every prelude name, every module export and
+  every method, as data. The signatures live beside the implementations they
+  describe, in the language's own annotation syntax, and are parsed with the
+  real parser:
+
+  ```text
+  upper      (s: Str) -> Str
+  padStart   (s: Str, width: Num, fill: Str = " ") -> Str
+  split      (s: Str, separator: Str) -> List<Str>
+  ```
+
+  All 200 functions carry one. `tests/unit/signatures.test.ts` checks every one
+  against the function it describes — same parameter names, same order, same
+  ones optional — because a signature that has drifted is worse than none: a
+  named argument would silently stop being checked.
+
+  Three restraints keep it sound, all the no-false-positives rule. A function
+  with no signature stays `Any`. Nothing is narrowed past what the
+  implementation accepts — `contains(xs, value)` takes a list of anything, and
+  `slice`'s `end` defaults to nil and means "to the end". And a variadic
+  declares nothing at all: `min` and `max` take a list *or* the numbers
+  themselves, which no fixed parameter list describes.
+
+- **Method calls are checked.** `x.f(a)` is a call whose callee is a member
+  expression, so giving the member its real type was the whole change — the
+  three spellings of a call (§4.7) share one code path and cannot disagree
+  about what they accept.
+
+- **`TY007` and `TY008`: the wrong number of arguments.** Once a function's
+  parameters are known, so is how many arguments a call may have. `[1].push()`
+  and `"abc".upper(1)` are static errors now; so is `add(1)` for a two-parameter
+  `add`.
+
+  Reported only for a function that was actually *declared*. A `fn(Num, Num) ->
+  Num` annotation records no defaults, so a value of that type may well be
+  `fn(a, b = 1)` and a one-argument call is fine. And they stay quiet the moment
+  an argument is named, because the interpreter then has a better answer than a
+  count: `greet(nmae: "Ada")` is a typo in `nmae`, not a missing `name`.
+
+- **`accepts` compares one `fn` type against another**, having returned `true`
+  for every pair of them since it was written. Covariant in the result,
+  contravariant in the parameters, and deliberately silent about arity, which a
+  call reports where it happens and with a span pointing at it.
+
+- **`RS009` and `RS010`: an import that names something that is not there.**
+  `import { nope } from "std/list"` and `import { map } from "std/lst"` used to
+  pass every static check and fail at run time, which made a mistyped import the
+  one typo `lumen check` could not see.
+
+  The checker still cannot *read* a module — `packages/core` depends on nothing,
+  which is the rule the whole project rests on — so it is told instead, through
+  `ResolveOptions.moduleExports`. That option had been declared and documented
+  since the resolver was written, and read nowhere.
+
+  A caller also names the namespaces it knows the whole of, so `std/lst` is a
+  typo while `./helper` is a file nobody has read and stays trusted. That is the
+  same no-false-positives rule as every other check here, and `RT002` and
+  `RT042` still answer for a local module at run time.
+
+- **`TY005`: an operator whose operands cannot be what they are.** `fn f(a: Num)
+  { a + "x" }` passed every check and failed when it ran. The checker had both
+  types in hand and threw them away, because the `Binary` case only asked whether
+  they were *both* Num or *both* Str and answered `Any` otherwise.
+
+  It fires only when **both** types are known: `1 - "x"` is reported, `a - "x"`
+  for an unannotated `a` is not. That restraint is what makes the check sound
+  rather than merely useful — `Num - Str` has no reading under which it works, so
+  reporting it can never be wrong, while guessing about an `Any` could be. The
+  rules are the ones the interpreter already enforced, moved earlier. `==` and
+  `!=` still accept anything, deliberately: comparing values of different types is
+  `false`, not an error.
+
+- **`TY006`: an assignment that does not match the target's declared type.** An
+  annotation is a promise about every value a binding will hold, and it was being
+  kept only for the first. `var v: Num = 1` followed by `v = "text"` passed, which
+  made the annotation decorative after line one — and a `var` is precisely where
+  a second value turns up. Struct fields too: `p.x = "text"` where `P.x` is `Num`.
+
+  A compound assignment is an operator as well as an assignment, so `total += "x"`
+  on a `Num` is now caught by `TY005` — which needed doing here rather than in the
+  `Binary` case, because the AST holds `+=` as one node and not as an addition
+  followed by a store. An unannotated `var` stays `Any`, so reassigning it to
+  another type is still silent and still legal: a `var` really can hold anything.
+
+- **The type checker was not declaring loop or pattern bindings.** Found
+  immediately by TY005, which reported `x * 2` inside `for x in [1, 2]` as
+  multiplying a `Str` — because an outer `let x = "outer"` was still what `x`
+  meant. Both `for` and `match` opened a scope and put nothing in it. They now
+  declare what they bind: a loop variable takes the list's element type where it
+  is known, and pattern bindings are `Any`, which is always safe.
+
+- **One problem is now reported once.** A function's last statement is checked
+  twice on purpose — once as a statement, once as the function's value — so
+  `fn f(a: Num) -> Num { a + "x" }` reported the same message at the same place
+  twice. Deduplicating in `report` rather than restructuring the walk, so any
+  later pass that revisits an expression is covered without knowing about this
+  one.
+
+- **`main()` at the top level of a module that defines `main` is now `RS008`.**
+  A module that declares `fn main` has it called once the file has been read, so
+  writing the call as well ran the whole program twice. Nothing raised — the
+  output simply appeared twice — and the call at the bottom is exactly how it is
+  done in Python, which is where the habit comes from. Found by writing
+  `examples/schedule.lm` and wondering why its output was duplicated.
+
+### Fixed
+
+- **`std/str.replace` had a parameter no Lumen program could declare.** It was
+  called `from`, which is a keyword: you can pass it by name, because the parser
+  is lenient about a keyword before a `:` in a call, but `fn replace(s, from,
+  to)` is a syntax error. So the standard library had a function that could not
+  have been written in the language the standard library is for. It is
+  `replace(s, old, new)` now, which is also what Python calls it. Every
+  parameter in the library is now checked for being an identifier.
+
+- **`help()` says what a parameter is, not only what it is called.**
+  `help(range)` was `range(start, end = ..., step = ...)`; it is
+  `range(start: Num, end = ..., step: Num = ...) -> List<Num>`. A bound method
+  drops as many leading parameters from its signature as the value itself has
+  dropped, so `help("a,b".split)` is `split(separator: Str) -> List<Str>`. The
+  generated reference in `docs/stdlib.md` is regenerated from the same source.
+
+- **`parseExpression` threw an internal exception.** It was the one entry point
+  that did not catch the parser's own unwinding signal, so a bad expression
+  escaped as a `ParseAbort` instead of the `LumenError` its signature promises,
+  and a caller had no way to render it. It also had no test and a docstring
+  claiming the REPL used it, which is how that went unnoticed for so long.
+
+- **`exit()` went around the host.** It called `process.exit()` from inside the
+  standard library — the one place a Node API was reached for directly rather
+  than through `Host`, and so the one thing that could not work in a browser or
+  a worker, or in an embedding that would rather not have the program it runs
+  take the whole process down. It is `Host.exit` now, optional like `readLine`:
+  a host without one gets a plain "not available here" rather than a surprise.
+
+- **A conformance fixture could not import a file beside it.** Fixtures are
+  parsed under their bare name so goldens read `thing.lm:3:1` on every machine,
+  which also meant a relative import resolved against the working directory.
+  `createNodeResolver` now takes the directory to resolve from and reports
+  imported files relative to it, so a diagnostic raised *inside* an imported
+  module is both correctly located and machine-independent.
+
+- **`pointSpan` is gone**, exported and unused since the day it was written.
+
+- **`:ast` in the REPL printed raw JSON where `lumen ast` printed a tree.** Two
+  renderings of one structure, and the worse one in the place you reach for it
+  most: twenty-eight lines for `1 + 2 ** 3` where the tree is seven. It now uses
+  the same renderer, so the two cannot disagree.
+
+- **`lumen ast` printed `(node)` where an argument, a match arm or a parameter
+  should be.** Seven AST types are structure rather than syntax — there is no
+  `Arg` in the grammar, only a call with things in it — so they carry no `kind`,
+  and the dumper had nothing to label them with. In the one command whose whole
+  job is showing how Lumen read a file, that spent a line saying nothing.
+
+  A wrapper with a single child is now rendered straight through, so a positional
+  argument appears as its own expression, and every element of a list carries a
+  `-`. Without the marker two match arms printed as `pattern: body: pattern:
+  body:` and the reader had no way to see where the first ended. Marking only the
+  multi-part elements was tried and read worse — an argument list then had some
+  bulleted and some not, which looks like a distinction and is not.
+
+  Neither `ast` nor `tokens` had a single test, which is how this survived:
+  nothing in the language breaks when a debugging tool goes vague. Both have them
+  now, including one that simply asserts the output never says `(node)`.
+
+- **A value that contains itself no longer crashes four operations.** `print` has
+  always shown `a.push(a)` as `[1, [...]]`, so the language had already decided
+  such a value is real — but `==`, `clone`, `stringify` and set membership each
+  overflowed the stack on one, reported as "a function is probably recursing
+  without a base case" when no function of the reader's was involved. Lists, maps
+  and structs are mutable, so building one takes a single line, deliberately or by
+  accident.
+
+  Each now does the right thing for what it is. `==` records the pairs it is
+  comparing and calls a lined-up cycle equal, which is both the standard reading
+  and the one that terminates. `clone` registers each copy before filling it in,
+  so a cyclic value clones to a copy with its own cycle — and a value shared twice
+  inside another stays one value in the copy rather than becoming two, because
+  copying a value should not change its shape. `std/set` emits a back-reference to
+  where the cycle closes, so two cycles built the same way key the same way.
+
+  `stringify` is the one that has to refuse — JSON has no syntax for "the value we
+  are already inside" — so it says so and names the path where the cycle closes
+  (`$[2]`) rather than failing somewhere inside the host's own serialiser.
+
+  One limit is stated rather than hidden: `==` calls `a = [a]` equal to
+  `b = [[b]]`, since nothing distinguishes them however far they unroll, while
+  `std/set` keys them differently and can hold both. Agreeing there needs a
+  canonical form for infinite trees.
+
+  `clone` being a **deep** copy is now documented, too. It always was; the
+  reference listed the signature and said nothing, which is the one thing anybody
+  needs to know about a clone.
+
+- **`TY005` and `TY006` shipped without reaching the specification.** The §6 table
+  lists the type checks exhaustively — it had `TY001` through `TY004` — and two
+  more were added to the implementation without being added to it. The patch that
+  was meant to do so silently matched nothing, and nothing noticed, so for several
+  commits the document that defines the language did not mention two of the checks
+  it performs.
+
+  Both are now in the table with the prose that was meant to accompany them, and
+  `check-counts.mjs` compares every `RS` and `TY` code the implementation can emit
+  against the spec, so it cannot happen again. Only those two families: §8 says
+  "selected codes" of `LX`, `PA` and `RT` and means it — there are eighty, and
+  tabulating every one would make a worse document — but the static checks are the
+  set a reader needs complete, because they are what `lumen check` can say about a
+  program that has not run.
+
+- **The README was telling three lies, and now cannot.** It claimed "207 tests, 74
+  conformance fixtures" when there were 799 and 116; it said type annotations were
+  "parsed but not yet enforced", which stopped being true when TY001 landed; and it
+  said the suite was "green on Node 20/22/24 across Linux, macOS and Windows" on a
+  repository where GitHub Actions has never managed to start a run. The first was
+  staleness, the second a leftover, the third a claim that was never checkable.
+
+  All three are corrected, and `scripts/check-counts.mjs` — a new sixteenth CI
+  check — now compares every count against the repository, verifies that each
+  `examples/*.lm` has a row in the README's table and that each `std/*` module is
+  mentioned in the reference. `--fix` rewrites the counts. Written for the same
+  reason as `check-doc-output.mjs`: documentation that is checked rather than
+  merely written.
+
+- **ROADMAP.md contradicted itself.** One row said "type annotations are not
+  enforced" and the next said they are enforced where written — the first had been
+  left behind by the type checker landing. Another said "no methods on built-in
+  types: `len(x)`, not `x.len()`", which the method work made false a long time
+  ago; the real limit is that a `struct` you define gets no methods, since method
+  syntax is a calling convention rather than an object model and there is nowhere
+  to register one. The file's opening line also read "nothing in this file is
+  implemented today" over a table describing how v0.1 behaves *now*, which is the
+  opposite of nothing.
+
+- **`did you mean …?` no longer offers a different word as a typo.** The
+  threshold allowed two edits on any name, so `nope` "meant" `type` — two of its
+  four letters — and `import { nope }` "meant" `pop`. It now scales with length:
+  one edit up to five characters, two up to eight, three beyond, so roughly a
+  third of a name may differ and no more.
+
+  Tightening it alone would have lost the real typos, because plain Levenshtein
+  charges two for a transposition and transposing is the commonest slip there is.
+  So `editDistance` now counts a swap of neighbours as one edit
+  (Damerau-Levenshtein, restricted). `cuont` still finds `count` and `tets` still
+  finds `test`, while `nope` finds nothing and gets the list of what does exist
+  instead — which is the more useful answer for a name that was never a typo.
+
+- **`args()` no longer depends on how the program was started.** It was
+  `process.argv.slice(3)`, a fixed offset that is one word further along for
+  `lumen run app.lm a b` than for `lumen app.lm a b` — so the first spelling
+  handed the program its own path as `args()[0]` and the second did not. The same
+  script therefore saw different arguments depending on which way it was
+  launched, silently.
+
+  The offset was never knowable from the standard library: only the CLI knows how
+  many words of the command line were its own. So `args` joins the `Host`
+  interface alongside `getEnv` and `now`, the CLI supplies it after parsing, and
+  a host with no notion of arguments — a browser, a build step — omits it and
+  gets an empty list rather than a wrong one. Both spellings are now tested
+  through the real command, since a test covering one of them would have gone on
+  passing.
+
+- **`serve` on a port already in use now says so.** It reported `internal error`
+  followed by a Node stack trace through `node:net`, which answers a question
+  about the machine with a trace into the runtime. It is by a wide margin the
+  commonest way starting a server fails — the last one is still running — and now
+  reads as a diagnostic pointing at the `serve` call, suggesting the next port.
+  `EACCES` (a port below 1024) and `EADDRNOTAVAIL` (a host that is not this
+  machine) get the same treatment.
+
+- **`stringify` renders `Option` as JSON's own optional.** `Some(v)` was
+  `{"variant": "Some", "values": [v]}` and `None` was the string `"None"`, so
+  every consumer of an API built with Lumen had to unwrap a field that JSON
+  already knows how to spell. Now `Some(v)` is `v` and `None` is `null`.
+
+  `Result` deliberately keeps the tagged form: JSON has no agreed shape for
+  "succeeded or failed", and unlike `Option` both of its arms carry something the
+  reader has to tell apart, so collapsing it would lose what matters. The enum's
+  variant names are checked as well as its name, so somebody's own
+  `enum Option { A, B }` is untouched.
+
+- **A struct field or enum variant written twice was accepted in silence.**
+  `struct Book { title: Str, pages: Num, title: Num }` ran, with the second
+  `title` quietly deciding the type. Neither a field nor a variant is a scope
+  binding, so `RS004` never saw them. They are `RS007` now, pointing at the
+  second one and naming the line of the first.
+- **Enum diagnostics named parameters that do not exist.** `Shape.Rect(1)` said
+  "missing a value for `field1`" and "it takes: field0, field1" — implementation
+  detail, since a variant's payload is positional and `Shape.Rect(3, 4)` has no
+  `field0` in it. Those messages now count values instead, and passing one by
+  name says so directly rather than suggesting a name that was never real.
+  Ordinary functions are unchanged, suggestions included.
+- **`lumen test` and `lumen check` printed `../../../tmp/…`** for a target
+  outside the working directory, which is both longer than the absolute path and
+  harder to read. They now print whichever is shorter.
+- **A declared return type was unenforced on almost every function.** `TY002`
+  only ever looked at `return` statements — but a Lumen function's value is the
+  value of its last statement, and `return` is the exception rather than the
+  rule, so `fn f() -> Num { "text" }` was accepted without comment. It is
+  checked now. Silence is kept where silence is right: an unannotated helper is
+  `Any` and stays uncomplained-about, and a body ending in a loop or a
+  declaration yields `nil` and is left alone, since that is a function whose
+  value nobody uses rather than a type error. Verified against every Lumen
+  program in the repository — 24 files, none newly flagged.
+
+- **A function body may name declarations that come later.** `fn greet() {
+  name }` followed by `let name = "world"` runs correctly and always has, but
+  the resolver rejected it with `RS001` — the one failure a static check must
+  not have. It also ruled out mutual recursion, since the second of two
+  functions is never declared yet when the first names it. Lookups from inside
+  a function body now see what the enclosing scope is going to declare;
+  statement-level code, which really does run where it is written, is
+  unchanged. A typo is still caught, and can now suggest a name from further
+  down the file.
+- **`break` and `continue` outside a loop said `internal error [object
+  Object]`.** They are now `RS006`, reported before the program runs, with a
+  note pointing at `return`. A function boundary counts: a `break` inside a
+  lambda cannot leave the loop the lambda was written in.
+- **Piped input dropped every line after the first.** A pipe delivers all its
+  lines at once, well before a program asks for the second one, and the host
+  read one and let the rest fall on the floor — so `printf 'a\nb\n' | lumen
+  run script.lm` saw only `a`. Lines are queued as they arrive now. Reading at
+  a terminal is unchanged.
+- **`isServer()` always returned `true`,** whether the file was started with
+  `lumen serve` or `lumen run`, which made it useless for the thing its name
+  promises. `serve` and `run` are now genuinely different, and `isServer()`
+  says which one you are in — so one file can serve its routes and also print
+  them for inspection.
+
+- **Runaway recursion hung instead of failing.** Every call is a promise rather
+  than a stack frame, so `fn f() { f() }` allocated quietly until the process
+  died — no stack to overflow, no diagnostic, no end. Calls are limited to
+  10,000 deep and report `RT045`, which takes about a quarter of a second.
+  Legal deep recursion is unaffected; nothing reasonable comes close.
+- **A struct literal in a control-flow header produced nine errors.** `match
+  Point { x: 1, y: 2 } { ... }` is ambiguous — in a header a `{` starts the
+  body — and the parser used to silently take the identifier alone and then
+  report on the wreckage. It now says so once, as `PA015`, with the fix
+  (parentheses), and parses the struct literal anyway so nothing after it
+  cascades. `if ready {}` is untouched: an empty brace pair in a header is far
+  more likely a body than a struct.
+- **Six ordinary identifiers were syntax errors.** `let valueOf = 1` failed
+  with `expected an identifier, found function valueOf() { [native code] }`,
+  and so did `toString`, `constructor`, `hasOwnProperty`, `__proto__` and
+  `isPrototypeOf`. The keyword table was an object literal, so looking a name
+  up in it answered with whatever JavaScript's `Object.prototype` carries. It
+  is a `Map` now, which has no inherited keys. Three more leaks of the same
+  kind went with it: `stringify` silently dropped a `__proto__` key, an
+  `import` of one of those names crashed the interpreter instead of reporting
+  an unknown module, and HTTP header maps were built on objects that could be
+  written through. A language whose pitch is that the host is invisible cannot
+  have the host's method names showing through its syntax.
+- **Two values that both printed `NaN` compared unequal — sometimes.** `a == a`
+  was true and `a == b` false for two identical computations, because equality
+  short-circuits on object identity and `NaN === NaN` is false underneath. That
+  leaked the host's object identity into a language where numbers have none.
+  Rather than patch equality, `NaN` is no longer a Lumen value at all: any
+  arithmetic that would produce one is `RT046`, and `pow(-8, 0.5)` reports that
+  it has no real answer, as `sqrt(-1)` and `log(0)` already did. `Infinity` is
+  untouched — it means something, is equal to itself, and orders consistently.
+- **Deeply nested source crashed with a message about the wrong thing.** A
+  thousand nested parentheses exhausted the host stack, and what came out was
+  `stack overflow — a function is probably recursing without a base case`,
+  which names a cause that does not apply and nothing anyone could act on. The
+  parser now refuses to build a tree more than 250 levels deep and reports
+  `PA016` with a span. The same limit bounds every later walk of the tree, so
+  none of them can meet something deeper than the parser was willing to build.
+- **A long source line buried the caret it was pointing at.** A diagnostic on a
+  minified or generated line printed the whole line, pushing the `^` off the
+  screen. Lines past 120 characters are now shown as a window around the caret.
+- **`RS005` gave advice that could not be followed.** Assigning to a parameter
+  said "use `var` if it needs to", but a parameter cannot be declared `var`.
+  The label and the note now depend on where the binding came from: a parameter
+  reads as "a parameter, which the caller supplies", with advice to copy it
+  into a `var` of its own. It also no longer splices a binding kind into
+  backticks, which rendered as ``declared with `pattern binding` `` — syntax
+  nobody ever wrote.
+- **The REPL could not be escaped from a half-written line.** Typing `1 +` put
+  it into continuation mode, and every line after that — `:quit` included — was
+  swallowed as more of the same expression. A blank line abandons it now.
+- **A mistyped command was reported as a missing file.** `lumen tets` said
+  `cannot read \`tets\``, sending the reader hunting for a file they never meant
+  to create. It says `unknown command \`tets\` — did you mean \`test\`?`. An
+  unknown option after a command (`lumen run --weird app.lm`) was read as the
+  filename; it is now reported as an option.
+- **`std/fs` leaked Node's error text.** `ENOENT: no such file or directory,
+  open '/x'` names an errno, a syscall and a quoting style that vary by
+  platform and version — so the same Lumen program said different things on
+  Windows. The messages are Lumen's now, mapped from the stable error code.
+  `std/http` names the failing request instead of only "fetch failed".
+
+### Added, continued
+
+- **`std/http` has executable coverage**, for the first time: it was the only
+  standard module with no fixture, no unit test and no example, so the client
+  half of "you can build a website with this" had never once run. A Lumen server
+  using `std/web` and a Lumen client using `std/http`, over a real socket, with
+  nothing stubbed.
+
+- **A pass's header comment is checked against what it emits.** Both had
+  drifted — `resolver.ts` listed RS001–RS007 while emitting RS008, `types.ts`
+  listed TY001–TY004 while emitting TY005 and TY006 — and the check added for
+  exactly this could not see it, because a code can be in the specification and
+  still missing from the file that raises it.
+
+- **Five methods on every value: `str`, `inspect`, `type`, `clone`, `isNil`.**
+  Their subject is genuinely any value, so there was no type to attach them to
+  and no reason to leave them off one. `42.str()` was `RT027`, and
+  `n.str().padStart(3)` — a chain that has somewhere to put the conversion, which
+  `"${n}"` does not — could not be written at all. `p.str()` on a struct had no
+  spelling.
+
+  Not a general fallback to whatever is in scope, and the difference is about
+  error messages. Under a general fallback `[1, 2].upper()` would call `upper`
+  with a `List` and fail somewhere inside `std/str`; as it is, it stays
+  `RT027: List has no method \`upper\`` with the ones it does have listed. A
+  per-type method of the same name still wins, so nothing existing changed
+  meaning.
+
+- **`examples/logs.lm`**, reading a log file and reporting on it — the job
+  everybody has. It does the three parts people skip: it counts and shows the
+  lines that do not parse (real logs contain half-written lines and wrapped stack
+  traces), it prints the hours with **nothing** in them (the most interesting hour
+  in an outage is exactly the row a `groupBy` drops), and it orders everything by
+  something the data decides so two runs over one file agree.
+
+- **`std/time`.** `now()` gave milliseconds and there was no way to turn one into
+  a date, which left every log line, filename and guestbook entry stuck with a
+  raw number.
+
+  An instant is a `Num` of milliseconds — no date type — so `later - earlier` is
+  the elapsed time, `<` compares two instants, and `sorted()` sorts a list of
+  them with this module uninvolved. `iso`, `date`, `time`, `parts`, `fromParts`,
+  `parseIso`, `plus`, `startOfDay`, `weekdayName`, `monthName`, `weekdayNames`,
+  `monthNames`, `format`, `describe`, `offsetMinutes`.
+
+  **Everything is UTC**, deliberately. Local time means time-zone names, which
+  means the IANA database — a few hundred kilobytes that changes several times a
+  year — and a program following the machine's zone would print different things
+  on different computers, so a golden file or a date-stamped filename would
+  depend on where it ran. `offsetMinutes(instant)` is the one door to local time:
+  what this machine believes its offset is *at that instant*, so daylight saving
+  is accounted for, and adding it leaves the assumption visible at the point it
+  is made.
+
+  `format` replaces `YYYY MM DD hh mm ss SSS` and leaves everything else exactly
+  as written, in one left-to-right pass so a substituted value cannot be re-read
+  as a placeholder. No escaping rules, at the price of not being able to write a
+  literal `MM`.
+
+  `fromParts` works around a host trap worth naming: `Date.UTC` still applies a
+  rule written for two-digit years in the nineties, reading years 0–99 as
+  1900 + the year, so `fromParts(50)` would have answered 1950. It computes four
+  hundred years later and subtracts them back, which is exact because the
+  Gregorian calendar repeats every 400 years to the day — and unlike patching the
+  year afterwards, it survives a month or day that rolls over into the next year.
+
+- **`router` and `route` in `std/web`.** A site no longer needs a chain of
+  `if req.path == ...`:
+
+  ```lumen
+  let app = router([
+    route("GET", "/", fn(req) { html("<h1>home</h1>") }),
+    route("GET", "/post/:slug", fn(req) { postPage(req.params.slug) }),
+    route("GET", "/static/*path", fn(req) { file(req.params.path, root: "public") }),
+  ])
+  serve(handler: app, port: 3000)
+  ```
+
+  `:name` matches one segment and `*name` the rest of the path; both arrive in
+  `req.params`, percent-decoded, so every handler keeps the same one-argument
+  shape. A route may name several methods separated by spaces. Patterns are
+  compiled once when the router is built, not per request.
+
+  Two things it gets right that the chain in `examples/website.lm` did not. A
+  request whose path matches but whose method does not now gets **405 with an
+  `allow` header**, not 404 — a client debugging against a 404 cannot tell a
+  wrong URL from a wrong verb. And **a trailing slash is not a different
+  route**, because links and browsers add and remove it freely.
+
+  `examples/website.lm` is rewritten to use it, which removed a
+  `slice(req.path, 6)` whose 6 had to be recounted by hand every time the
+  `/post/` prefix was edited.
+
+- **`std/set`, set operations over lists.** `of`, `has`, `add`, `remove`,
+  `union`, `intersection`, `difference`, `symmetricDifference`, `isSubset`,
+  `isSuperset`, `isDisjoint`, `equals`, `size`, `isSet`, `duplicates`.
+
+  There is no new `Set` value: a set here is an ordinary `List` with no
+  duplicates, so `map`, `filter`, `sorted`, `len` and `for … in` all still work
+  on one, `print` shows it the way you would write it, and `type()` answers
+  `List` rather than a polite fiction. Every function keeps the order of its
+  first argument, because a program that prints a set has to print it in some
+  order and "the order you built it in" is the only one that is stable across
+  runs.
+
+  The bulk operations index one side and walk the other, so they are linear
+  rather than quadratic — which is the reason the module exists, since the same
+  thing written with `filter` and `contains` is quadratic and quietly so. The
+  single-element operations still have to build that index to answer one
+  question, and the module says so rather than implying an `O(1)` it does not
+  have.
+
+  Membership follows `==` exactly, including the case that makes it hard:
+  `inspect` prints a map's entries in insertion order, so `{x: 1, y: 2}` and
+  `{y: 2, x: 1}` have different text despite being `==`, and using it as the key
+  would have put both in the same set. The key sorts them. That property — two
+  values share a key exactly when `==` calls them equal — is not observable from
+  Lumen, so it is tested directly over every ordered pair of a list of values
+  chosen to break it.
+
+- **More of `std/list`:** `groupBy`, `partition`, `chunk`, `windows`, `flatMap`,
+  `scan`, `intersperse`, `insert`, `removeAt`, `concat`, `minimum`, `maximum`,
+  `minBy`, `maxBy`. `groupBy` and `partition` are the two that were most missed:
+  both are awkward to write with `reduce` and both are one line to use.
+
+- **More of `std/map`:** `update`, `mapValues`, `filter`, `invert`, `pick`,
+  `omit`. `update` takes a fallback for a missing key, so a word counter is
+  `counts.update(word, fn(n) { n + 1 }, 0)` rather than a `get`, a `match` and a
+  `set`.
+
+- **More of `std/str`:** `trimStart`, `trimEnd`, `capitalize`, `title`, `count`,
+  `splitOnce`, `words`, `center`, `removePrefix`, `removeSuffix`. `splitOnce` is
+  the one `split` cannot do: `"key=a=b"` splits into three pieces and loses where
+  the key ended, where `splitOnce` gives `["key", "a=b"]`.
+
+- **More of `std/math`:** `asin`, `acos`, `atan`, `atan2`, `cbrt`, `hypot`,
+  `gcd`, `lcm`, `randomInt`, and the constants `TAU` and `INFINITY`. `INFINITY`
+  is not a value any literal can name — `1e400` is a lexer error — so a
+  comparison against "no limit" had no way to be written.
+
+- **`examples/schedule.lm`**, a topological sort written with set operations:
+  build order as waves of tasks that can run at once, with the two failures that
+  matter — a cycle, naming the tasks caught in it, and a dependency on a task
+  that does not exist.
+
+- **`lumen fmt`, a formatter that only touches indentation.** `lumen fmt [path]`
+  rewrites leading whitespace in place; `lumen fmt --check [path]` writes
+  nothing, names the files that need it, and exits non-zero, which is what CI
+  and a pre-commit hook want.
+
+  The scope is the interesting decision. It does not move line breaks — a line
+  break ends a statement in Lumen, so moving one changes what the program means
+  — and it does not touch spacing inside a line, so a table lined up by hand
+  stays lined up. Two rules do the work: a level is added by **a line** that
+  leaves a bracket open rather than by each bracket, so `print(match c {`
+  indents its body once and not twice; and each open bracket remembers the
+  indentation of the line that opened it, so a `}` closing mid-line returns to
+  the right place, which a depth counter cannot do. Column alignment is
+  recognised rather than overruled — a row starting at the column of the first
+  element above it is kept there, and shifts with that line if the line moves.
+
+  It is specified in [docs/spec.md](docs/spec.md) §1.3 rather than left to the
+  implementation, and three properties are asserted for every one of the 125
+  `.lm` files in the repository, and for ten randomly mangled variants of each:
+  only whitespace changes, the token stream comes out identical, and running it
+  twice is running it once. The second is the one that matters, because
+  whitespace inside a multi-line string is part of its value — which is why a
+  line beginning inside a string, an interpolation or a block comment is emitted
+  byte for byte, and why a file that does not lex is returned unmodified.
+
+  Every file in the repository was already formatted when the tool was finished,
+  which is the result worth reporting: the rules were derived from what the code
+  already did rather than imposed on it. Flattening all 125 files to the left
+  margin and reformatting restores 114 of them byte for byte; the other 11 use
+  column alignment, which flattening destroys for good.
+
+- **Variadic functions.** `fn shout(..parts)` collects every remaining
+  positional argument into a `List`, empty if there are none — the same `..`
+  a list pattern already used, in the one place a function shape needed it.
+  Native functions could always do this, which is why `print` takes any number
+  of arguments; nothing anyone wrote could. At most one, always last, never
+  with a default: `PA017` for either mistake. `help()` shows the `..`, and
+  shows default values too, which it had been quietly omitting.
+- **`npm run docs` runs every documented example and checks what it prints.**
+  `tests/unit/docs.test.ts` already checked that each ```lumen block parses,
+  which catches a block that is not Lumen and nothing else. What actually
+  happens is that the language moves underneath prose nobody re-runs. On its
+  first run this found three: the tutorial teaching `RT029` for a mistake the
+  static checker had started catching as `RS005`, a list of string methods
+  missing `len` added long afterwards, and a column of figures padded by hand
+  and padded wrong. All three are fixed. A block that cannot run on its own is
+  skipped with `<!-- no-run: reason -->`, and the reason is required, so
+  skipping is a decision somebody made rather than something that quietly
+  happened. `docs/tour.md` and `docs/from-python.md` use a second convention,
+  the result in a trailing comment, and 27 of those are checked as well —
+  everything before an em dash is the claim. Where a block's prints do not
+  produce one output line each the mapping is a guess, so those are counted as
+  unchecked rather than guessed at, and the summary says how many, which keeps
+  the number it reports honest about what was actually verified.
+- **`docs/learn.md` caught up with the language.** Destructuring, swapping,
+  `..` parameters, `getOr` and `fixed` are all things a beginner now reaches
+  for and none of them were in the guide that teaches beginners.
+- **`std/web.file(path, root)`.** A site could not serve a stylesheet, an image
+  or a font — which makes "you can build a website with this" a stretch. The
+  content type comes from the extension, a directory resolves to its
+  `index.html`, percent-encoding is decoded so `/my%20file.txt` finds the file
+  it names, and binary content comes back byte for byte (the server now writes
+  a non-text body as latin1, since a Lumen `Str` is code points and writing one
+  as utf8 doubles every byte above 127).
+
+  `root` is enforced as a boundary rather than documented as one. Writing this
+  by hand is where people put a path-traversal hole, so the path is decoded
+  first, resolved, and then compared against the resolved root — a 404 for
+  anything outside, the same answer a missing file gets, because saying which
+  of the two happened is itself information. Six spellings of the attack are in
+  the test suite, each asserted not to return the file they are reaching for.
+- **`LUMEN_AI_MOCK_REPLY`**, and `examples/triage.lm` to go with it. The AI
+  slice could show a call being made but not a program surviving the answer,
+  which is the part that is actually hard: a reply is text, so asking for JSON
+  still gets you prose, an apology, or JSON in a code fence, and the call can
+  fail outright. The example classifies support tickets — asking for JSON,
+  unwrapping a fence, checking every field, falling back to its own keyword
+  rule when the reply is not usable, and retrying with backoff when the call
+  fails. Under the mock provider the fallback is what you watch working, which
+  is the honest thing for an example to show; the new variable scripts the
+  mock's reply so the other paths are reachable with no key. Six tests drive
+  all of them. The mock still never reads the prompt to decide what to say.
+- **`std/option` and `std/result`,** and their methods. `match` is the honest
+  way to handle absence or failure and will always be there, but a great many
+  uses are one of three shapes — turn the value into another value, supply a
+  default, ask which one you have — and writing each as a two-armed `match`
+  buries the interesting line in ceremony. `find(notes, id).map(title)
+  .unwrapOr("(none)")` is now available alongside it. Found by writing a test
+  that naturally wanted `.map` on an Option and discovering the type had no
+  methods at all, which for a language whose errors are values was a hole in
+  the middle of it.
+- **A keyword can be a name where nothing else could be.** `{ if: 1 }`, `m.for`,
+  `struct Config { while: Bool }` — a keyword is only a keyword where a
+  statement or an expression could begin, and after a `.`, before the `:` of a
+  map entry, or as a struct field there is nothing else it could be. This
+  matters because data does not know Lumen's keywords: `parse('{"if": 1}')`
+  produces a map with a key called `if`, and there was previously no way to
+  write that key or to reach it with a dot. Even `true` was affected. A binding
+  name stays the exception — it must be readable as a bare expression later, so
+  `fn f(in)` is still an error.
+- **`examples/notes/` — a program in three files,** which no single-file example
+  could show: a store that returns values and prints nothing, a renderer that
+  knows nothing about storage, and a main that decides the order. The split
+  earns itself in `store_test.lm`, which tests the whole data layer with
+  ordinary comparisons and no captured output. CI runs it.
+- **`lumen check [path]`.** Parse, resolve and type-check a whole tree without
+  running any of it. It is what an editor, a pre-commit hook or a CI step wants:
+  running a program to find out whether it has a typo is a poor trade when the
+  program writes files or serves a port. Three CI steps now use it, over
+  `examples/`, `tests/lumen/` and `bench/` — deliberately not over
+  `tests/conformance/`, where many fixtures are wrong on purpose.
+- **Destructuring bindings.** `let [lo, hi] = minMax(xs)` — the same pattern
+  language `match` and `for` already used, now on the left of a `let` or `var`,
+  nested patterns and `..rest` included. It is how a function returns more than
+  one thing without a wrapper struct. A pattern that does not fit is `RT047`,
+  because a `let` has no second arm to fall through to. Found by writing
+  `let [i, values] = mostConstrained(grid)` in an example and discovering the
+  language could not say it.
+- **Destructuring assignment.** `[p, q] = [q, p]` — a swap in one line, with no
+  temporary, because the right side is evaluated in full before anything is
+  written. Each element is a place in its own right, so fields, indices and
+  nested lists all work, and a `let` binding among them is refused as it would
+  be anywhere else. `docs/from-python.md` listed "no tuple assignment and no
+  swapping" under what Python does better; that line is gone.
+- **`fixed(n, places)`**, in the prelude: a number as text with exactly that
+  many decimals. `round(n * 100) / 100` rounds the value but cannot make `4.5`
+  print as `4.50`, because the trailing zero is not part of the number — so a
+  column of money or percentages had no way to line up. Every example that
+  printed a figure was working around this; four of them are now a line
+  shorter. Width stays a separate job: `fixed(x, 2).padStart(8)`.
+- **`Num` methods.** `2.pow(10)`, `(2.7).round()`, `(9).sqrt()`,
+  `(4.5).fixed(2)` — the `std/math` functions whose first argument is the
+  number itself. Listed explicitly rather than taken wholesale, because
+  `random()` takes no number and `PI` is not a function.
+- **`getOr(m, key, fallback)`** on maps. `m[key]` gives `nil` for a missing
+  key, which a counter then has to test for on every increment;
+  `counts[word] = counts.getOr(word, 0) + 1` is the line people actually want.
+  `get` still returns an `Option`, for when absence is the interesting case.
+- **`enumerate(xs, start: 1)`.** Numbering a printed list from one is at least
+  as common as indexing from zero, and writing `i + 1` at every use is worse.
+- **`std/web.form(req)`** reads the fields a form submitted, whichever way the
+  page sent them: the query string for `method="get"`, the urlencoded body for
+  `method="post"`. A handler no longer has to know which, and percent- and
+  plus-encoding are decoded on the way through. A request carrying anything
+  else comes back empty, with `req.body` still there to parse.
+- **Eight worked examples** — `fizzbuzz`, `wordcount`, `bank`, `calculator`,
+  `stats`, `caesar`, `matrix` and `adventure`. Each is a program someone might
+  actually write rather than a feature demonstration, and each is run by CI.
+  The calculator is a recursive-descent parser for arithmetic written in
+  Lumen; the adventure plays itself when there is nothing on stdin, so running
+  it in CI exercises the whole game rather than its first room. `guestbook` is
+  one file that is both a site and a script — `lumen serve` serves its routes,
+  `lumen run` calls the same handler with requests written by hand and asserts
+  that what a visitor typed reaches the page as text rather than as a tag.
+  `inventory` parses JSON, groups and totals it, writes the summary back out
+  and reads it in again.
+
 ## [0.1.0] — 2026-09-13
 
 The first working version. Everything below runs today.
@@ -25,6 +2927,85 @@ The first working version. Everything below runs today.
 - `if` as an expression; `while`, `for`, `break`, `continue`
 - Modules: `import`/`export`, `std/*` modules and relative `.lm` files
 - No async colouring — I/O is awaited implicitly
+
+### Fixed
+
+- `"abc".len()` raised while `[1, 2].len()` worked. `std/str` had no `len`, so
+  strings were the one container without the method. They now agree.
+- `any` and `all` required a predicate, so `any([true, false])` — the form a
+  Python programmer reaches for first — was an error. The predicate is now
+  optional and the elements are tested directly without one.
+- `docs/tour.md` documented `for [k, v] in { a: 1 }`, which does not parse: in a
+  loop header a `{` starts the body, so the map needs parentheses. The example
+  is corrected and the rule is now explained where it bites.
+- The prelude table in `docs/stdlib.md` still listed ten names when there were
+  thirty-eight. It is generated from a live interpreter now, so it cannot go
+  stale again, and the core built-ins carry documentation so `help()` is
+  complete.
+
+### Types
+
+Annotations are enforced where they are written, before the program runs.
+
+- `TY001` an argument that does not match the parameter's declared type
+- `TY002` a returned value that does not match the declared return type
+- `TY003` an initialiser that does not match a binding's declared type
+- `TY004` a struct literal field that does not match the field's declared type
+
+The checking is gradual: anything the checker cannot determine is `Any`, and
+`Any` is compatible with everything, so a program that writes no annotations is
+never type-checked and cannot produce a single diagnostic.
+
+There is no inference, with one sound exception: an unannotated `let` takes the
+type of its value. That is safe precisely because `let` is immutable — the
+binding can never later hold something else, so the inferred type cannot become
+wrong. A `var` stays `Any`.
+
+Verified the same way as the resolver: every Lumen file in the repository was
+checked before the pass was wired in. 66 files, none flagged.
+
+### Static checks
+
+Programs are now checked before they run, so a mistake is reported whether or
+not execution happens to reach it.
+
+- `RS001` a name that is not defined anywhere in scope, with a suggestion
+- `RS002` a `match` over an enum that misses a variant. A guarded arm does not
+  count as covering one, because the guard may be false
+- `RS003` a `match` arm that can never be reached
+- `RS004` a name declared twice in one scope
+- `RS005` assignment to a binding introduced with `let`
+
+The guiding rule is no false positives: anything the resolver cannot be certain
+about it leaves to the interpreter, which still enforces every one of these at
+run time as a backstop. Verified against every Lumen file in the repository —
+56 valid programs, none flagged.
+
+Diagnostic suggestions were also tightened. The "did you mean" threshold now
+caps at an edit distance of 3, so a long name can no longer match something
+unrelated; a confident wrong suggestion costs more than none.
+
+### Ergonomics
+
+- **Method-call syntax.** `x.f(a)` means `f(x, a)`. Because every standard-library
+  function takes its subject first, `x.f(a)`, `f(x, a)` and `x |> f(a)` are three
+  spellings of one thing, and every existing library function gained method syntax
+  without a line of new library code. Methods are available on `Str`, `List` and
+  `Map`. On a map, a real key always wins over a method of the same name, so no
+  existing lookup changes meaning.
+- **A prelude worth having.** `range`, `sum`, `sorted`, `reversed`, `min`, `max`,
+  `abs`, `round`, `floor`, `ceil`, `map`, `filter`, `reduce`, `enumerate`, `zip`,
+  `any`, `all`, `join`, `split` and `input` now need no import. Previously even
+  `map` and `filter` did, which was a lot of ceremony before a beginner had done
+  anything. A user binding of the same name still shadows the prelude one.
+- **`help()`.** `help()` lists everything in scope, `help(value)` shows a value's
+  type and the methods available on it, `help(fn)` shows a signature and
+  description, and `help("std/list")` lists a module. Standard-library functions
+  carry one-line documentation.
+- **`input(prompt)`** reads a line from the console, as `Some(line)` or `None` at
+  end of input, so interactive scripts are possible.
+- `min` and `max` accept either a list or several numbers, because guessing which
+  one a language chose is a bad first experience.
 
 ### Tooling
 
@@ -55,12 +3036,12 @@ The first working version. Everything below runs today.
 - `npm run dist` builds both tiers
 - The bundler, `scripts/bundle.mjs`, is purpose-built, so single-file
   distribution still costs no dependency
-- Builds record SHA-256 checksums in `build/SHA256SUMS.txt`
+- Binary builds record SHA-256 checksums in `build/SHA256SUMS.txt`
 
 ### Project
 
 - Zero runtime dependencies
-- 133 tests and 50 conformance fixtures, green on Node 20/22/24 across Linux,
+- 207 tests and 74 conformance fixtures, green on Node 20/22/24 across Linux,
   macOS and Windows
 - Specification, tour, standard-library reference and design rationale
 - Proprietary licence; every package marked private, enforced by CI

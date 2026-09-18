@@ -1,0 +1,185 @@
+// Renaming a folder full of files, safely.
+//
+//   lumen run examples/rename.lm
+//
+// The job everybody has done by hand at three in the morning: a directory of
+// files named by whatever produced them, and a naming scheme you would rather
+// have. It is worth writing down because the obvious version is dangerous, and
+// the dangerous parts are all in what it *does not* do.
+//
+//   - **It plans before it acts.** Every rename is worked out first, checked
+//     as a whole, and only then performed — so a collision found halfway
+//     through is found before anything has moved rather than after.
+//   - **It refuses to overwrite.** Two files that would land on the same name
+//     is the failure mode that loses data, and it is easy to produce: strip
+//     enough from `a (1).txt` and `a (2).txt` and they are both `a.txt`.
+//   - **It stays inside the directory.** A name rewritten from the file's own
+//     contents can contain anything, `../` included, and a rename that escapes
+//     the folder it was pointed at is a program writing where nobody asked.
+//   - **It can be run twice.** A file already correctly named is left alone
+//     rather than renamed to itself, so running it again does nothing.
+//
+// Nothing here is destructive by accident: it works in a temporary directory
+// it creates, and says what it would do before doing it.
+
+import { write, walk, rename, remove, isFile } from "std/fs"
+import { join, base, dir, ext, stem, isInside, normalize } from "std/path"
+import { replace, captures } from "std/regex"
+import { of } from "std/set"
+
+// A rename, decided but not yet done.
+struct Move {
+  from:   Str,
+  to:     Str,
+  reason: Str,
+}
+
+// The files this example makes for itself, so it never touches anything real.
+let SAMPLE = [
+  "IMG_20260913_084512.jpg",
+  "IMG_20260913_084513.jpg",
+  "Screen Shot 2026-09-13 at 08.45.14.png",
+  "notes FINAL (2).txt",
+  "notes FINAL.txt",
+  "already-fine.txt",
+  "nested/IMG_20260101_000000.jpg",
+]
+
+// ---------------------------------------------------------------- the scheme
+
+// `IMG_20260913_084512.jpg` becomes `2026-09-13-084512.jpg`, and a screenshot
+// becomes the same shape. Anything that matches neither keeps its own name,
+// tidied: lowercase, spaces to dashes, and no repeated punctuation.
+fn plannedName(name) {
+  let extension = ext(name).lower()
+  let body = stem(name)
+
+  let camera = captures(body, "^IMG_(\\d{4})(\\d{2})(\\d{2})_(\\d{6})$").unwrapOr(None)
+  match camera {
+    Some(parts) => return "${parts[0]}-${parts[1]}-${parts[2]}-${parts[3]}${extension}",
+    None => nil,
+  }
+
+  let shot = captures(body, "^Screen Shot (\\d{4})-(\\d{2})-(\\d{2}) at (\\d{2})\\.(\\d{2})\\.(\\d{2})$").unwrapOr(None)
+  match shot {
+    Some(parts) => return "${parts[0]}-${parts[1]}-${parts[2]}-${parts[3]}${parts[4]}${parts[5]}${extension}",
+    None => nil,
+  }
+
+  // The general tidy. Each step is one substitution, which is the only way to
+  // read a chain of them later.
+  let lowered = body.lower()
+  let dashed = replace(lowered, "[^a-z0-9]+", "-").unwrapOr(lowered)
+  let trimmed = replace(dashed, "^-+|-+$", "").unwrapOr(dashed)
+  "${trimmed}${extension}"
+}
+
+// ------------------------------------------------------------------ planning
+
+// Every file under `root`, with the name it should have. Nothing is moved.
+fn plan(root, files) {
+  var moves = []
+  for relative in files {
+    let from = join(root, relative)
+    let wanted = plannedName(base(relative))
+    let to = join(dir(from), wanted)
+
+    // A file already correctly named is not a rename. Without this, running
+    // the program twice reports every file as "moved" and does nothing.
+    if normalize(from) == normalize(to) { continue }
+
+    moves = moves.push(Move { from: from, to: to, reason: "scheme" })
+  }
+  moves
+}
+
+// The two ways a plan can be wrong, found before anything has moved.
+fn problems(root, moves) {
+  var found = []
+
+  // A destination outside the directory we were pointed at. A name derived
+  // from a file's own contents can contain anything at all.
+  for move in moves {
+    if !isInside(root, move.to) {
+      found = found.push("${base(move.from)} would leave the folder: ${move.to}")
+    }
+  }
+
+  // Two files landing on the same name, which is the failure that loses data.
+  // `groupBy` finds them in one pass; the singletons are the ones that are fine.
+  let byDestination = moves.groupBy(fn(m) { m.to })
+  for pair in byDestination.entries().sortBy(fn(e) { e[0] }) {
+    if pair[1].len() > 1 {
+      let names = pair[1].map(fn(m) { base(m.from) }).sorted().join(", ")
+      found = found.push("${names} would all become ${base(pair[0])}")
+    }
+  }
+
+  // A destination that already exists and is *not* itself being moved away.
+  // `a.txt -> b.txt` is fine when `b.txt` is becoming `c.txt` in the same run,
+  // and destroys a file when it is not — which is the difference between a
+  // rename tool and a shredder.
+  let leaving = of(moves.map(fn(m) { normalize(m.from) }))
+  for move in moves {
+    if isFile(move.to) and !leaving.contains(normalize(move.to)) {
+      found = found.push("${base(move.to)} already exists and is not being moved")
+    }
+  }
+
+  found
+}
+
+// ------------------------------------------------------------------- running
+
+fn main() {
+  let root = join(".", "lumen-rename-demo")
+
+  // Start from nothing, so the example says the same thing every time.
+  remove(root)
+  for relative in SAMPLE {
+    write(join(root, relative), "sample\n")
+  }
+
+  let files = walk(root).unwrapOr([])
+  print("${files.len()} files under ${root}")
+  print("")
+
+  let moves = plan(root, files)
+  let stuck = problems(root, moves)
+
+  print("Planned")
+  for move in moves.sortBy(fn(m) { m.from }) {
+    print("  ${base(move.from).padEnd(42)} -> ${base(move.to)}")
+  }
+  let untouched = files.len() - moves.len()
+  print("  (${untouched} already correctly named)")
+  print("")
+
+  if stuck.len() > 0 {
+    print("Refusing to rename anything:")
+    for problem in stuck.sorted() { print("  ${problem}") }
+    print("")
+    print("Nothing was moved. Fix the collisions and run it again.")
+    remove(root)
+    return nil
+  }
+
+  var done = 0
+  for move in moves {
+    match rename(move.from, move.to) {
+      Ok(_)    => done = done + 1,
+      Err(why) => print("  failed: ${why}"),
+    }
+  }
+  print("Renamed ${done} of ${moves.len()}")
+
+  // Running the plan again must produce nothing to do. That is the property
+  // worth checking, and the one a program like this usually fails.
+  let after = walk(root).unwrapOr([])
+  print("Second pass would move ${plan(root, after).len()} files")
+  print("")
+  print("After")
+  for relative in after.sorted() { print("  ${relative}") }
+
+  remove(root)
+}

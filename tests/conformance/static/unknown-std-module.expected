@@ -1,0 +1,7 @@
+error[RS010]: there is no module "std/lst"
+ --> unknown-std-module.lm:7:1
+  |
+7 | import { map } from "std/lst"
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no such module
+  |
+  = note: did you mean "std/list"?

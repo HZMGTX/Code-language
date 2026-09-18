@@ -1,0 +1,45 @@
+// Everything here passes TY012, and that is the point: it mirrors what the
+// interpreter does, branch for branch, and says nothing where it cannot know.
+import { max } from "std/math"
+let xs = [3, 1, 2]
+print(xs.sorted())
+print(xs.len())
+print(xs.str())
+// A method with no signature is still a method: `Num.max` has none.
+print(3.max(5))
+print(max(3, 5))
+// The five every value has, on every kind of value.
+print(1.str())
+print(true.type())
+print(nil.isNil())
+print([1].clone())
+print(Some(1).inspect())
+print(Ok(1).isNil())
+fn f() { 1 }
+print(f.type())
+// A missing Map key reads as nil by design.
+let m = { a: 1 }
+print(m.a)
+print(m.b)
+print(m.keys())
+// A `var` is Any, so a name it once held says nothing about what it holds now.
+var v = [1]
+v = "text"
+print(v.upper())
+// A struct's own field, and its universal methods.
+struct P { x: Num, y }
+let p = P { x: 1, y: "two" }
+print(p.x)
+print(p.y)
+print(p.str())
+// An enum's variants are reached through the type, which the checker does not
+// type as a value.
+enum Shape { Circle, Rect(Num, Num) }
+print(Shape.Circle)
+print(Shape.Rect(1, 2))
+// `?.` on nil reads nothing at all.
+let nothing = nil
+print(nothing?.anything)
+// A parameter is Any, so its members are trusted.
+fn tail(list) { list.drop(1) }
+print(tail(xs))

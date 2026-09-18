@@ -1,0 +1,51 @@
+warning[RS012]: this can never run
+  --> unreachable.lm:11:3
+   |
+11 |   print("never runs")
+   |   ^^^^^^^^^^^^^^^^^^^ unreachable
+   |
+   = note: the line above always leaves, so nothing after it in this block runs
+
+warning[RS012]: this can never run
+  --> unreachable.lm:18:3
+   |
+18 |   print("never runs either")
+   |   ^^^^^^^^^^^^^^^^^^^^^^^^^^ unreachable
+   |
+   = note: the line above always leaves, so nothing after it in this block runs
+
+warning[RS012]: this can never run
+  --> unreachable.lm:24:5
+   |
+24 |     print("never")
+   |     ^^^^^^^^^^^^^^ unreachable
+   |
+   = note: the line above always leaves, so nothing after it in this block runs
+
+warning[RS012]: this can never run
+  --> unreachable.lm:28:5
+   |
+28 |     print("never")
+   |     ^^^^^^^^^^^^^^ unreachable
+   |
+   = note: the line above always leaves, so nothing after it in this block runs
+
+warning[RS012]: this can never run
+  --> unreachable.lm:36:3
+   |
+36 |   print("unreachable")
+   |   ^^^^^^^^^^^^^^^^^^^^ unreachable
+   |
+   = note: the line above always leaves, so nothing after it in this block runs
+
+warning[RS012]: this can never run
+  --> unreachable.lm:45:3
+   |
+45 |   print("unreachable too")
+   |   ^^^^^^^^^^^^^^^^^^^^^^^^ unreachable
+   |
+   = note: the line above always leaves, so nothing after it in this block runs
+
+1
+0
+poszero

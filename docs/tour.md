@@ -42,6 +42,24 @@ let m       = { host: "localhost", port: 8080 }
 **Only `nil` and `false` are falsy.** `0`, `""` and `[]` are all true — which
 means an empty value never quietly takes the wrong branch.
 
+Something that hands back more than one value can be named in one line, and the
+same shape on the left of a plain `=` is how you swap:
+
+```lumen
+fn minMax(xs) { [min(xs), max(xs)] }
+
+let [lo, hi] = minMax([3, 1, 4, 1, 5])
+print("${lo} to ${hi}")          // 1 to 5
+
+let [first, ..rest] = [1, 2, 3]
+print(rest)                      // [2, 3]
+
+var a = 1
+var b = 2
+[a, b] = [b, a]
+print([a, b])                    // [2, 1]
+```
+
 ## Strings
 
 ```lumen
@@ -61,7 +79,17 @@ fn greet(name, greeting = "Hello") { "${greeting}, ${name}!" }
 
 print(greet("Ada"))                 // Hello, Ada!
 print(greet("Ada", "Yo"))           // Yo, Ada!
-print(greet(greeting: "Hi", name: "Bob"))   // arguments by name
+print(greet(greeting: "Hi", name: "Bob"))   // Hi, Bob!   — arguments by name
+```
+
+A final `..` parameter takes every remaining argument as a list, empty if there
+are none:
+
+```lumen
+fn shout(..parts) { parts.join(" ").upper() + "!" }
+
+print(shout("hello", "there"))   // HELLO THERE!
+print(shout())                   // !
 ```
 
 Declarations are hoisted, so order does not matter and mutual recursion just
@@ -96,9 +124,14 @@ while i < 3 { i += 1 }
 
 for x in [1, 2, 3] { print(x) }
 for ch in "abc" { print(ch) }
-for [key, value] in { a: 1 } { print("${key}=${value}") }
+for [key, value] in ({ a: 1 }) { print("${key}=${value}") }   // parenthesised: see below
 for i in 0..5 { print(i) }          // 0 to 4
 ```
+
+The parentheses around that map are required. Inside the header of an `if`,
+`while`, `for` or `match`, a `{` starts the body, so a map literal there has to
+be wrapped to say which you meant. It is the one place the brace is ambiguous,
+and Lumen asks rather than guesses.
 
 ## Pipelines
 
@@ -119,6 +152,39 @@ print(total)   // 60
 
 A line break before `|>` is not a statement break, so pipelines can go down the
 page.
+
+## Methods
+
+Every standard-library function takes its subject first, and `x.f(a)` simply
+means `f(x, a)`. So the same call has three spellings, and you can pick whichever
+reads best:
+
+```text
+x.f(a)        f(x, a)        x |> f(a)
+```
+
+That means chaining works without importing anything:
+
+```lumen
+print("  Hello World  ".trim().lower().split(" ").join("_"))   // hello_world
+print([3, 1, 2].sorted())                                       // [1, 2, 3]
+print([1, 2, 3, 4].filter(fn(n) { n % 2 == 0 }).sum())          // 6
+print({ a: 1, b: 2 }.keys())                                    // ["a", "b"]
+```
+
+`Str`, `List` and `Map` have methods. There is no object model underneath — no
+`self`, no inheritance, no dynamic dispatch — just the calling convention.
+
+If you forget what is available, ask:
+
+```lumen
+help("abc")     // Str, and every method you can call on it
+help(range)     // a signature and what it does
+```
+
+One rule worth knowing: on a map, a real key always beats a method of the same
+name, so `{ keys: "mine" }.keys` is `"mine"`. That way adding methods can never
+change what an existing lookup returns.
 
 ## Structs
 
@@ -209,6 +275,24 @@ fn addBoth(a, b) {
 `Option` works the same way, with `Some` and `None`, for "there might not be
 one" rather than "this might fail".
 
+`match` is the honest answer when the two cases genuinely differ. When they do
+not — turn the value into another value, supply a default, ask which one you
+have — `std/option` and `std/result` have the shape already:
+
+```lumen
+let prices = { apple: 120 }
+
+print(prices.get("apple").map(fn(p) { fixed(p / 100, 2) }).unwrapOr("n/a"))
+print(prices.get("durian").map(fn(p) { fixed(p / 100, 2) }).unwrapOr("n/a"))
+print(Err("no file").mapErr(fn(e) { "loading config: ${e}" }))
+```
+
+```
+1.20
+n/a
+Err("loading config: no file")
+```
+
 ## Modules
 
 ```lumen
@@ -218,8 +302,22 @@ import { helper } from "./helper.lm"
 export fn publicThing() { 1 }
 ```
 
-Ten standard modules ship with the language: `core`, `str`, `list`, `map`,
-`math`, `json`, `fs`, `http`, `web`, `ai`. See [stdlib.md](stdlib.md).
+Nineteen standard modules ship with the language:
+
+| | |
+|---|---|
+| Text and data | `std/str`, `std/regex`, `std/json`, `std/csv` |
+| Collections | `std/list`, `std/map`, `std/set` |
+| Numbers and time | `std/math`, `std/time` |
+| Values | `std/option`, `std/result`, `std/core` |
+| The machine | `std/fs`, `std/path`, `std/process`, `std/crypto` |
+| The network | `std/http`, `std/web`, `std/ai` |
+
+See [stdlib.md](stdlib.md) for every function in them.
+
+`examples/notes/` is a program in three files — a store that prints nothing, a
+renderer that knows nothing about storage, and a main that decides the order —
+with its own tests, which is what the split buys.
 
 ## A website
 
@@ -261,8 +359,25 @@ Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` for a real answer.
 Notice there is no `await` anywhere above. Lumen awaits I/O for you, so a
 function that calls the network composes exactly like one that does not.
 
+## In an editor
+
+```bash
+lumen lsp
+```
+
+A language server: diagnostics as you type, hover with types and
+documentation, completion, signature help, go to definition, find references,
+rename, and formatting. `editors/vscode` is a client for it.
+
+Everything it knows, `lumen check` knows — same parser, same resolver, same
+type checker — so the editor can never tell you something the command line
+disagrees with. Warnings included: an unused import is a yellow squiggle in the
+editor and a warning on the command line, and never one without the other.
+
 ## Where next
 
+- [learn.md](learn.md) — a gentler, longer introduction if this went too fast
+- [from-python.md](from-python.md) — if you already know Python
 - [spec.md](spec.md) — the precise rules
 - [stdlib.md](stdlib.md) — every function
 - [../ROADMAP.md](../ROADMAP.md) — what is not built yet, stated plainly

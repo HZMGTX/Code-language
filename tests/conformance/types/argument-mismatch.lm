@@ -1,0 +1,2 @@
+fn add(a: Num, b: Num) -> Num { a + b }
+print(add("one", 2))

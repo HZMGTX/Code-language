@@ -1,0 +1,29 @@
+// The standard library's own types, enforced.
+//
+// Until the library declared them, every one of these passed `lumen check`
+// clean and failed when it ran: the checker had no channel to the library at
+// all, so `upper(1)` was `Any` in and `Any` out. `packages/core` still imports
+// nothing — it is *told* the signatures, as data, by whoever builds the
+// interpreter.
+import { upper, padStart } from "std/str"
+import { take, sortBy } from "std/list"
+import { get } from "std/map"
+
+// A free function, an imported name.
+print(upper(1))
+
+// A method, which is the same call written differently (§4.7) and so checked by
+// the same code.
+print("abc".padStart("x"))
+print([1, 2].take("two"))
+print({a: 1}.get(1))
+
+// A higher-order parameter: `sortBy` wants a function, and a Str is not one.
+print([2, 1].sortBy("nope"))
+
+// The pipeline spelling, for completeness.
+print(1 |> upper())
+
+// A return type, so a mistake downstream of a correct call is caught too.
+print("abc".len() - "x")
+print(padStart("a", 3).len() + [1].len())

@@ -1,0 +1,3 @@
+// Universal methods are not a fallback to every function in scope: a method
+// that does not belong to the type is still an error naming the ones that do.
+print([1, 2].upper())

@@ -1,0 +1,10 @@
+// The other half: more arguments than there is anywhere to put.
+//
+// The standard library's own signatures make this work on methods too, which is
+// where it matters most — `upper` takes nothing beyond the string it is called
+// on, and nothing could know that until the library said so.
+fn one(a) { a }
+
+print(one(1, 2))
+print("abc".upper(1))
+print([1, 2].len(0))

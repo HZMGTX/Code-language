@@ -1,0 +1,7 @@
+error[PA017]: a `..` parameter must be the last one
+ --> rest-parameter-not-last.lm:5:11
+  |
+5 | fn f(..a, b, c, d, e, g, h) { a }
+  |           ^ nothing can follow it
+  |
+  = note: it takes every remaining argument, so there are none left

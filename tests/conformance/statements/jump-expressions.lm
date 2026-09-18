@@ -1,0 +1,44 @@
+// `return`, `break` and `continue` are expressions as well as statements, so
+// a match arm or an if branch can leave rather than produce a value.
+
+fn addOne(r) {
+  match r {
+    Ok(n)  => n + 1,
+    Err(e) => return Err(e),
+  }
+}
+
+print(addOne(Ok(1)))
+print(addOne(Err("boom")))
+
+// continue skips a line, break stops early, and the arm that produced a value
+// carries on to the push.
+fn scan(xs) {
+  var out = []
+  for x in xs {
+    let kept = match x {
+      0 => continue,
+      n if n > 10 => break,
+      n => n * 2,
+    }
+    out.push(kept)
+  }
+  out
+}
+
+print(scan([1, 0, 2, 99, 3]))
+
+// A return in an if branch, with the value taken at the lowest precedence.
+fn firstNegative(xs) {
+  for x in xs {
+    if x < 0 { return Some(x - 0) }
+  }
+  None
+}
+
+print(firstNegative([1, -2, 3]))
+print(firstNegative([1, 2, 3]))
+
+// A bare return yields nil, exactly as the statement form does.
+fn nothing() { return }
+print(nothing())

@@ -1,0 +1,7 @@
+error[TY001]: `greet` expects Num for `times` but was given Str
+ --> named-argument-mismatch.lm:2:33
+  |
+2 | print(greet(name: "Ada", times: "three"))
+  |                                 ^^^^^^^ expected Num
+  |
+  = note: the parameter is declared as `times: Num`

@@ -1,0 +1,11 @@
+// A module of one's own.
+//
+// Local imports were exercised only by `examples/notes`, which is a whole
+// program; this is the smallest version, so the mechanism has a golden that
+// fails loudly rather than being noticed three files later.
+import { greet, twice } from "./helpers/say"
+import { greet as hello } from "./helpers/say"
+
+print(greet("world"))
+print(hello("again"))
+print(twice("ping"))

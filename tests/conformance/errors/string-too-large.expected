@@ -1,0 +1,7 @@
+error[RT035]: padding to a width of 600000000 characters is too large
+  --> string-too-large.lm:20:7
+   |
+20 | print(padStart("x", 600000000))
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: the longest string is 536870888 characters

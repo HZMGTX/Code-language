@@ -1,0 +1,3 @@
+// -8 has a real cube root, but IEEE 754 says NaN for a negative base and a
+// fractional exponent. Lumen says so rather than handing back a NaN.
+print((0 - 8) ** (1 / 3))

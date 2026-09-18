@@ -1,0 +1,13 @@
+// A string inside an interpolation may itself interpolate, and the braces in
+// that inner string are the outer scan's braces too. The scan that was meant
+// to skip a nested string counted its braces anyway, so the spec's own example
+// — a string containing a `}` — stopped lexing as soon as it appeared one
+// level down.
+fn pick(s) { s }
+print("outer ${ "inner ${ pick("}") }" }")
+print("a ${ "b ${ "c ${ pick("}") }" }" }")
+print("${ "${ "${ 1 + 1 }" }" }")
+// And the plain cases still work.
+let name = "world"
+print("hello ${name}")
+print("brace: ${ pick("{") }${ pick("}") }")

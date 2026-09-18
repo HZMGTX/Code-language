@@ -1,0 +1,7 @@
+error[TY001]: `double` expects Num for `n` but was given Str
+  --> let-is-inferred.lm:18:14
+   |
+18 | print(double(person.name))
+   |              ^^^^^^^^^^^ expected Num
+   |
+   = note: the parameter is declared as `n: Num`

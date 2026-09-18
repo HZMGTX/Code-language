@@ -1,0 +1,34 @@
+import { of, has, add, remove, union, intersection, difference,
+         symmetricDifference, isSubset, isSuperset, isDisjoint, equals,
+         size, isSet, duplicates } from "std/set"
+
+print(of([3, 1, 2, 3, 1]))
+print(union([3, 1], [1, 4, 2]))
+print(intersection([3, 1, 2], [2, 3]))
+print(difference([3, 1, 2], [2, 3]))
+print(symmetricDifference([1, 2], [2, 3]))
+print([has([1, 2], 2), has([1, 2], 9)])
+print(add([1, 2], 3))
+print(add([1, 2], 2))
+print(remove([1, 2], 1))
+print(remove([1, 2], 9))
+print([isSubset([], [1]), isSubset([1], [1, 2]), isSubset([1, 2], [1])])
+print([isSuperset([1, 2], [1]), isDisjoint([1], [2]), isDisjoint([1], [1])])
+print([equals([1, 2], [2, 1]), equals([1, 1, 2], [2, 1]), equals([1], [1, 2])])
+print([size([1, 1, 2]), isSet([1, 2]), isSet([1, 1])])
+print(duplicates([1, 2, 1, 3, 2, 1]))
+print(duplicates([1, 2, 3]))
+
+// Membership follows `==`, so structs and enums count by value.
+struct P { x: Num, y: Num }
+enum C { Red, Custom(Num) }
+print(size([P { x: 1, y: 2 }, P { x: 1, y: 2 }, P { x: 1, y: 3 }]))
+print(size([C.Red, C.Red, C.Custom(1), C.Custom(1), C.Custom(2)]))
+
+// Values of different types that print alike are still different values.
+print(size([1, "1", true, "true", nil, "nil"]))
+print(size([["a,b"], ["a", "b"]]))
+
+// `equals` answers what `==` cannot: same members, any order.
+print([1, 2] == [2, 1])
+print(equals([1, 2], [2, 1]))

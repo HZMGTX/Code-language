@@ -1,0 +1,14 @@
+// `let c = c` is one mistake, and used to be reported as two.
+//
+// The initialiser is resolved before the name is declared, so `c` on the right
+// is genuinely undefined — that is the RS001, and it is right. But `use`
+// declares the name as a recovery binding so the same typo is not reported at
+// every later use, and `declare` then mistook that for a real declaration and
+// added a false RS004 claiming `c` was declared twice — with a note citing the
+// line of the *use* as "the earlier one". Across lines that note named a line
+// which declares nothing at all.
+//
+// A recovery binding is not a declaration. The same two kinds are already
+// paired this way where assignment checks mutability.
+let c = c
+print(c)

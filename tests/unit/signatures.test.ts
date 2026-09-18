@@ -1,0 +1,235 @@
+/**
+ * The standard library's declared types, against the functions they describe.
+ *
+ * A signature is a second statement of something the implementation already
+ * says — the parameter list — and two statements of one fact drift. A signature
+ * whose parameter names do not match is worse than none at all: a named
+ * argument would stop being checked, silently, and nothing would notice.
+ *
+ * So every signature is checked against the native it belongs to, for the same
+ * names in the same order and the same parameters being optional. Nothing here
+ * asserts *which* types are declared — that is a judgement, and `types.test`
+ * and the conformance fixtures are where it is exercised — only that a
+ * signature describes the function it is attached to.
+ */
+
+import { strict as assert } from 'node:assert';
+import { describe, it } from 'node:test';
+
+import { parse, signatureTy, type NativeValue, type Param, type ParamTy, type Value } from '@lumen-lang/core';
+import {
+  STD_MODULES,
+  stdMethodSignatures,
+  stdSignatures,
+  unmatchedSignaturesForTesting,
+} from '@lumen-lang/stdlib';
+
+/**
+ * A default value as a signature would spell it.
+ *
+ * Only the shapes a default actually takes — a literal, an empty list, an empty
+ * map. Anything else has no agreed spelling, and a check that guessed one would
+ * be asserting its own guess.
+ */
+function showDefault(value: Value): string {
+  switch (value.k) {
+    case 'nil':
+      return 'nil';
+    case 'bool':
+      return value.v ? 'true' : 'false';
+    case 'num':
+      return String(value.v);
+    case 'str':
+      return JSON.stringify(value.v);
+    case 'list':
+      return value.items.length === 0 ? '[]' : '<list>';
+    case 'map':
+      return value.entries.size === 0 ? '{}' : '<map>';
+    default:
+      return '<' + value.k + '>';
+  }
+}
+
+/** Every native in the library, with the path it is reached by. */
+function everyNative(): { where: string; value: NativeValue }[] {
+  const found: { where: string; value: NativeValue }[] = [];
+  for (const [moduleName, factory] of STD_MODULES) {
+    for (const [name, value] of factory()) {
+      if (value.k === 'native') found.push({ where: moduleName + '.' + name, value });
+    }
+  }
+  return found;
+}
+
+describe('standard library signatures', () => {
+  const natives = everyNative();
+
+  it('finds natives to check', () => {
+    assert.ok(natives.length > 150, 'expected the whole library, got ' + natives.length);
+  });
+
+  /**
+   * Every parameter name is one a Lumen program could have written.
+   *
+   * The library is written in TypeScript, so nothing stops it naming a
+   * parameter `from` — and `std/str.replace` did, which is a keyword. A
+   * program can pass it by name (the parser is lenient about a keyword before
+   * a `:` in a call) but could never declare the function it belongs to, so
+   * the library had a parameter that could not have been written in the
+   * language the library is for. This is the general form of that bug.
+   */
+  it('names its parameters in the language it is for', () => {
+    for (const { where, value } of natives) {
+      for (const param of value.params) {
+        assert.doesNotThrow(
+          () => parse('fn __check(' + param.name + ') {}', '<check>'),
+          where + ' has a parameter named `' + param.name + '`, which is not an identifier',
+        );
+      }
+    }
+  });
+
+  it('every signature parses', () => {
+    // A signature that does not parse is a build failure rather than a function
+    // that quietly stops being checked, which is the point of parsing them with
+    // the real parser instead of a notation of their own.
+    for (const { where, value } of natives) {
+      if (value.signature === undefined) continue;
+      assert.doesNotThrow(() => signatureTy(value.signature ?? ''), where + ': ' + value.signature);
+    }
+  });
+
+  it('names the same parameters the implementation does', () => {
+    for (const { where, value } of natives) {
+      if (value.signature === undefined) continue;
+      const ty = signatureTy(value.signature);
+      assert.equal(ty.k, 'fn', where);
+      const declared = (ty as { params: readonly ParamTy[] }).params;
+      assert.deepEqual(
+        declared.map((p) => p.name),
+        value.params.map((p) => p.name),
+        where + ' declares ' + value.signature + ' but takes (' +
+          value.params.map((p) => p.name).join(', ') + ')',
+      );
+    }
+  });
+
+  it('agrees about which parameters may be left out', () => {
+    for (const { where, value } of natives) {
+      if (value.signature === undefined) continue;
+      const declared = (signatureTy(value.signature) as { params: readonly ParamTy[] }).params;
+      assert.deepEqual(
+        declared.map((p) => p.optional),
+        value.params.map((p) => p.defaultValue !== undefined),
+        where + ' disagrees with its signature about which parameters are optional',
+      );
+    }
+  });
+
+  /**
+   * And about what those left-out parameters then are.
+   *
+   * The check above says a parameter is optional in both places; this one says
+   * they mean the same thing by it. `std/time.time` declared `seconds: Bool =
+   * false` and defaulted to `true`, so the generated reference told everybody
+   * that `time(t)` gives `12:34` when it gives `12:34:56` — a signature that
+   * parsed, named the right parameters, and was still wrong.
+   *
+   * The defaults are compared as the source text a reader sees, because that is
+   * what is wrong when they disagree: the signature is documentation, and
+   * documentation that says `false` where the code says `true` is the bug
+   * whether or not the two are the same shape inside.
+   */
+  it('agrees about what a left-out parameter defaults to', () => {
+    for (const { where, value } of natives) {
+      if (value.signature === undefined) continue;
+      // The signature is parsed as a real declaration, which is what puts the
+      // default expressions in reach: they are ordinary Lumen expressions.
+      // Exactly how `signatureTy` reads one, so the two cannot disagree about
+      // what a signature is. Stripping the return type first would be wrong
+      // anyway: `f: fn(Any) -> Any` has an arrow inside a parameter.
+      const source = 'fn __signature' + value.signature + ' {}';
+      const module = parse(source, '<signature>');
+      const declaration = module.stmts[0];
+      if (declaration === undefined || declaration.kind !== 'FnDecl') {
+        assert.fail(where + ' did not parse as a declaration: ' + value.signature);
+      }
+      declaration.params.forEach((param: Param, i: number) => {
+        const given = value.params[i]?.defaultValue;
+        if (param.defaultValue === undefined || given === undefined) return; // the check above
+        const written = source.slice(param.defaultValue.span.start.offset, param.defaultValue.span.end.offset);
+        assert.equal(
+          written,
+          showDefault(given),
+          where + ' declares `' + (value.params[i]?.name ?? '?') + ' = ' + written +
+            '` but defaults to `' + showDefault(given) + '`',
+        );
+      });
+    }
+  });
+
+  /**
+   * Coverage, as a number that may only go up.
+   *
+   * Not a demand that everything be typed — `map(xs, f)` has nothing useful to
+   * say without type variables, and forcing a signature onto it would be worse
+   * than leaving it alone. This is here so the work cannot silently stall, and
+   * so removing a signature is a decision somebody has to make on purpose.
+   */
+  it('has no signature naming a function that does not exist', () => {
+    // A mistyped key in a signature table costs nothing visible: the function
+    // simply stays `Any`, and the only symptom is a coverage number one lower
+    // than it should be. `std/path` had exactly one — an entry for `join`,
+    // which is variadic and therefore cannot carry a signature at all.
+    assert.deepEqual([...unmatchedSignaturesForTesting()], []);
+  });
+
+  it('types most of the library', () => {
+    const typed = natives.filter((n) => n.value.signature !== undefined).length;
+    assert.ok(
+      typed >= 170,
+      'only ' + typed + ' of ' + natives.length + ' natives carry a signature',
+    );
+  });
+
+  it('exposes the maps the checker is given', () => {
+    const globals = stdSignatures();
+    const methods = stdMethodSignatures();
+    assert.ok(globals.size > 0, 'no global signatures');
+    assert.ok(methods.size > 0, 'no method signatures');
+
+    // A method's receiver is already supplied, so its type has one parameter
+    // fewer than the function it comes from. Getting this wrong would check
+    // every argument of every method call against the wrong parameter.
+    const upper = methods.get('Str.upper');
+    assert.ok(upper !== undefined && upper.k === 'fn', 'Str.upper has no type');
+    assert.equal(upper.params.length, 0);
+
+    const split = methods.get('Str.split');
+    assert.ok(split !== undefined && split.k === 'fn', 'Str.split has no type');
+    assert.deepEqual(
+      split.params.map((p) => p.name),
+      ['separator'],
+    );
+  });
+
+  it('keeps a method and the function it comes from in step', () => {
+    // `"a,b".split(",")` and `split("a,b", ",")` are the same call (§4.7), so
+    // the method's parameters must be the function's without the first.
+    const globals = stdSignatures();
+    const methods = stdMethodSignatures();
+    for (const [key, method] of methods) {
+      const [, name] = key.split('.');
+      const whole = globals.get(name ?? '');
+      if (whole === undefined || whole.k !== 'fn' || method.k !== 'fn') continue;
+      assert.deepEqual(
+        method.params.map((p) => p.name),
+        whole.params.slice(1).map((p) => p.name),
+        key + ' and the global `' + String(name) + '` disagree',
+      );
+    }
+  });
+});
+
+/** Kept so the import of `Value` is used, and the file states what it walks. */
+void (undefined as Value | undefined);

@@ -1,0 +1,35 @@
+// A number with no value cannot be made, and that is a language-wide property
+// rather than a habit kept function by function.
+//
+// docs/spec.md: "any arithmetic that would produce one is RT046". The reason is
+// that a NaN is equal to nothing — including itself — and is neither less than
+// nor greater than anything, so one that gets into a value silently breaks
+// every comparison it later reaches. Sorting, set membership, `minimum`,
+// `maximum` and `groupBy` all rest on comparison behaving, and none of them is
+// written to cope with a value that compares false against itself.
+//
+// It was being kept by hand, and three holes turned up in an hour: compound
+// assignment had its own arithmetic and went round the guard; `asin` and `acos`
+// are defined only on [-1, 1] and answered NaN outside it; `sin`, `cos` and
+// `tan` answered NaN at Infinity. The guard now sits on the helper that builds
+// every unary numeric function, so a function added later cannot reopen it.
+import { asin, acos, atan, sin, cos, tan, exp, round, trunc, sign, abs, floor, ceil, cbrt, sqrt, log, hypot } from "std/math"
+
+let inf = 1e308 * 10
+
+// Infinity is an ordinary value. It means "larger than we can say", it compares
+// consistently, and it is equal to itself — so every function with a defined
+// answer at it still gives one.
+print("${round(inf)} ${trunc(inf)} ${sign(inf)} ${abs(inf)}")
+print("${floor(inf)} ${ceil(inf)} ${exp(inf)} ${cbrt(inf)}")
+print("${atan(inf)} ${sqrt(inf)} ${hypot(inf, inf)}")
+print("${inf == inf} ${inf > 0} ${0 - inf < 0}")
+
+// The ordinary domain of each guarded function, untouched.
+print("${asin(0)} ${asin(1)} ${asin(0 - 1)}")
+print("${acos(0)} ${acos(1)} ${acos(0 - 1)}")
+print("${sin(0)} ${cos(0)} ${tan(0)}")
+print("${sqrt(4)} ${log(1)} ${cbrt(8)} ${cbrt(0 - 8)}")
+
+// And the edges, which are inside the domain.
+print("${asin(1) == acos(0)} ${acos(1)}")

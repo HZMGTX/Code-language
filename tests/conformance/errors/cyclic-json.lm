@@ -1,0 +1,6 @@
+// JSON is the one thing that has to refuse: there is no syntax for "the value we
+// are already inside". So it says so, and says where the cycle closes.
+import { stringify } from "std/json"
+var a = [1, 2]
+a.push(a)
+print(stringify(a))

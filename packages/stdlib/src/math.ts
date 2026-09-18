@@ -1,11 +1,213 @@
 /** `std/math` — numeric helpers and constants. */
 
-import { num, type Value } from '@lumen-lang/core';
-import { arg, expectNum, fn, moduleOf } from './support.js';
+import {
+  NIL,
+  list,
+  num,
+  str,
+  typeName,
+  type CallCtx,
+  type NativeValue,
+  type Value,
+} from '@lumen-lang/core';
+import { None, Some, arg, expectInt, expectList, expectNum, fn, moduleOf, withDocs, withSignatures } from './support.js';
+
+/**
+ * Reduce over either a single list or the arguments themselves, so that both
+ * `min([3, 1, 2])` and `min(3, 1, 2)` work — Python accepts both, and guessing
+ * wrong about which one a beginner meant is a bad first experience.
+ *
+ * This lives here, in the module the functions belong to, and the prelude takes
+ * it from here. It used to live in the prelude with `std/math` keeping a
+ * narrower pair of its own, which is the one thing the prelude's own header
+ * says must not happen: "so there is one implementation, not two".
+ */
+function extremum(which: 'min' | 'max') {
+  return (args: readonly Value[], ctx: CallCtx): Value => {
+    const first = args[0] ?? NIL;
+    const items = args.length === 1 && first.k === 'list' ? first.items : args;
+    if (items.length === 0) {
+      return ctx.panic(which + '() needs at least one value', [
+        'it takes either a list, as ' + which + '([1, 2, 3]), or several numbers',
+      ]);
+    }
+    let best: number | undefined;
+    for (const item of items) {
+      if (item.k !== 'num') {
+        return ctx.panic(which + '() needs Nums, found ' + typeName(item));
+      }
+      if (best === undefined) best = item.v;
+      else best = which === 'min' ? Math.min(best, item.v) : Math.max(best, item.v);
+    }
+    return num(best ?? 0);
+  };
+}
+
+/** A native that takes any number of arguments, and so declares no signature. */
+function variadicFn(
+  name: string,
+  doc: string,
+  call: (args: readonly Value[], ctx: CallCtx) => Value,
+): NativeValue {
+  return { k: 'native', name, params: [], variadic: true, doc, call };
+}
+
+/**
+ * Every function's type. `Num` throughout, which is the whole of this module.
+ *
+ * `randomInt` and `fixed` are the only ones that answer with something else,
+ * and `fixed` is the reason `n.fixed(2)` reads as text: it is a rendering, not
+ * a rounding.
+ */
+const SIGNATURES: Readonly<Record<string, string>> = {
+  abs: '(n: Num) -> Num',
+  floor: '(n: Num) -> Num',
+  ceil: '(n: Num) -> Num',
+  round: '(n: Num) -> Num',
+  trunc: '(n: Num) -> Num',
+  sign: '(n: Num) -> Num',
+  sin: '(n: Num) -> Num',
+  cos: '(n: Num) -> Num',
+  tan: '(n: Num) -> Num',
+  exp: '(n: Num) -> Num',
+  asin: '(n: Num) -> Num',
+  acos: '(n: Num) -> Num',
+  atan: '(n: Num) -> Num',
+  cbrt: '(n: Num) -> Num',
+  sqrt: '(n: Num) -> Num',
+  atan2: '(y: Num, x: Num) -> Num',
+  hypot: '(a: Num, b: Num) -> Num',
+  gcd: '(a: Num, b: Num) -> Num',
+  lcm: '(a: Num, b: Num) -> Num',
+  log: '(n: Num, base: Num = 2.718281828459045) -> Num',
+  pow: '(base: Num, exponent: Num) -> Num',
+  clamp: '(n: Num, low: Num, high: Num) -> Num',
+  fixed: '(n: Num, places: Num = 2) -> Str',
+  random: '() -> Num',
+  randomInt: '(low: Num, high: Num) -> Num',
+  seed: '(value: Num) -> Nil',
+  shuffle: '(xs: List) -> List',
+  choice: '(xs: List) -> Option',
+};
+
+/**
+ * The generator behind `random`, so a program can make itself reproducible.
+ *
+ * `undefined` means `Math.random`, which is what you want by default: a
+ * language whose randomness is the same on every run by default is a language
+ * where somebody ships a shuffle that always deals the same hand. Calling
+ * `seed` replaces it, and there is deliberately no way to ask what the current
+ * seed is — that would only ever be used to "restore" it, and a program that
+ * needs two independent streams needs two generators, not one it keeps
+ * winding back.
+ *
+ * Module-level rather than per-instance, because `stdMath()` is called once by
+ * the interpreter factory and the seed must outlive the call that set it.
+ */
+let generator: (() => number) | undefined;
+
+/**
+ * mulberry32: 32 bits of state, a period of 2^32, and about ten operations.
+ *
+ * Not cryptographic, and nothing here claims otherwise — `seed` exists so a
+ * test can be repeated and a demo can be the same twice, which wants
+ * determinism and speed rather than unpredictability. Anyone choosing a nonce
+ * with this deserves to be told plainly, so `docs/stdlib.md` says so too.
+ *
+ * Chosen over the obvious `(a * 1103515245 + 12345) % 2^31` because a linear
+ * congruential generator's low bits cycle with a period of two or four, which
+ * makes `randomInt(0, 1)` alternate — a bug that looks like randomness until
+ * somebody plots it.
+ */
+function mulberry32(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** A number in [0, 1), from the seeded generator or from the host. */
+function nextRandom(): number {
+  return generator === undefined ? Math.random() : generator();
+}
+
+/** One line each, for `help()` and the generated reference. */
+const DOCS: Readonly<Record<string, string>> = {
+  abs: 'The distance from zero: `abs(-3)` is 3.',
+  floor: 'Round down to the nearest whole number.',
+  ceil: 'Round up to the nearest whole number.',
+  round: 'Round to the nearest whole number; a half rounds up.',
+  trunc: 'Drop the fraction, toward zero: `trunc(-2.7)` is -2.',
+  sign: '`-1`, `0` or `1`, by the sign of a number.',
+  sin: 'The sine of an angle in radians.',
+  cos: 'The cosine of an angle in radians.',
+  tan: 'The tangent of an angle in radians.',
+  exp: '`E` raised to a power.',
+  asin: 'The angle in radians whose sine this is, for a number from -1 to 1.',
+  acos: 'The angle in radians whose cosine this is, for a number from -1 to 1.',
+  atan: 'The angle in radians whose tangent this is.',
+  cbrt: 'The cube root, which negative numbers have too.',
+  atan2: 'The angle in radians to the point (x, y), with the quadrant right.',
+  hypot: '`sqrt(a*a + b*b)`, without the overflow that spelling can hit.',
+  gcd: 'The greatest common divisor of two whole numbers, always positive.',
+  lcm: 'The least common multiple of two whole numbers; `lcm(n, 0)` is 0.',
+  sqrt: 'The square root; a negative number is an error rather than a NaN.',
+  log: 'The logarithm of `n`, natural unless a `base` is given.',
+  pow: '`base` raised to `exponent`; a negative base needs a whole-number exponent.',
+  clamp: 'Hold `n` within `low` and `high`.',
+  fixed: 'A number as text with exactly `places` decimals: `fixed(4.5)` is "4.50".',
+  random: 'A number from 0 up to, but not including, 1.',
+  seed: 'Make every later `random` reproducible from this seed.',
+  randomInt: 'A whole number from `low` to `high`, both included.',
+  shuffle: 'A shuffled copy of a list; the original is untouched.',
+  choice: 'One element of a list at random, or `None` for an empty list.',
+};
 
 export function stdMath(): Map<string, Value> {
+  /**
+   * A unary numeric function, guarded against handing back a NaN.
+   *
+   * None of these has a NaN as a real answer, so one means the input was
+   * outside anything the function can say about it — `tan`, `sin` and `cos` at
+   * `Infinity`, for instance, where the value oscillates and has no limit. The
+   * guard is on the helper rather than on each function because that is what
+   * makes the invariant structural: `sqrt` and `log` were guarded by hand,
+   * `asin` and `acos` were missed, and `tan` was missed after that. A function
+   * added later cannot reopen the hole.
+   *
+   * `Infinity` is untouched — `round(Infinity)` and `exp(Infinity)` are
+   * `Infinity`, which is a value that compares consistently and is equal to
+   * itself. It is only a NaN that this language will not produce.
+   */
   const unary = (name: string, op: (n: number) => number) =>
-    fn(name, ['n'], (a, c) => num(op(expectNum(arg(a, 0), c, name + '(n)'))));
+    fn(name, ['n'], (a, c) => {
+      const n = expectNum(arg(a, 0), c, name + '(n)');
+      const result = op(n);
+      if (Number.isNaN(result) && !Number.isNaN(n)) {
+        c.panic(name + ' has no answer for ' + n, [
+          'a number with no value is equal to nothing, including itself, so every',
+          'comparison it later reached would quietly be false — see `RT046`',
+        ]);
+      }
+      return num(result);
+    });
+
+  /** A unary function defined only on [-1, 1], which is `asin` and `acos`. */
+  const domainLimited = (name: string, op: (n: number) => number) =>
+    fn(name, ['n'], (a, c) => {
+      const n = expectNum(arg(a, 0), c, name + '(n)');
+      if (n < -1 || n > 1) {
+        c.panic(name + ' needs a number between -1 and 1, got ' + n, [
+          'outside that range there is no angle whose ' +
+            (name === 'asin' ? 'sine' : 'cosine') + ' this is',
+        ]);
+      }
+      return num(op(n));
+    });
 
   const exports = moduleOf(
     unary('abs', Math.abs),
@@ -18,6 +220,47 @@ export function stdMath(): Map<string, Value> {
     unary('cos', Math.cos),
     unary('tan', Math.tan),
     unary('exp', Math.exp),
+    // `asin` and `acos` are defined only on [-1, 1]; outside it IEEE 754 answers
+    // NaN, and a NaN is the one value this language will not hand back. Every
+    // sibling that can produce one already refuses — `sqrt(-1)`, `log(0)`,
+    // `pow(-8, 0.5)`, `gcd(Infinity, 2)` — and these two were the last two
+    // routes to a NaN left in the language once compound assignment was
+    // guarded. `atan` needs nothing: it is defined for every real number.
+    domainLimited('asin', Math.asin),
+    domainLimited('acos', Math.acos),
+    unary('atan', Math.atan),
+    // Defined for every real number, unlike `sqrt`: every number has one real
+    // cube root, including the negative ones.
+    unary('cbrt', Math.cbrt),
+
+    /** The angle to the point (x, y), in radians, with the quadrant right. */
+    fn('atan2', ['y', 'x'], (a, c) =>
+      num(Math.atan2(expectNum(arg(a, 0), c, 'atan2(y)'), expectNum(arg(a, 1), c, 'atan2(x)'))),
+    ),
+
+    /** `sqrt(a*a + b*b)`, without the overflow that spelling can hit. */
+    fn('hypot', ['a', 'b'], (a, c) =>
+      num(Math.hypot(expectNum(arg(a, 0), c, 'hypot(a)'), expectNum(arg(a, 1), c, 'hypot(b)'))),
+    ),
+
+    /** The greatest common divisor of two whole numbers. Always positive. */
+    fn('gcd', ['a', 'b'], (a, c) => {
+      let x = Math.abs(expectInt(arg(a, 0), c, 'gcd(a)'));
+      let y = Math.abs(expectInt(arg(a, 1), c, 'gcd(b)'));
+      while (y !== 0) [x, y] = [y, x % y];
+      return num(x);
+    }),
+
+    /** The least common multiple. `lcm(n, 0)` is 0, which is the convention. */
+    fn('lcm', ['a', 'b'], (a, c) => {
+      const x = Math.abs(expectInt(arg(a, 0), c, 'lcm(a)'));
+      const y = Math.abs(expectInt(arg(a, 1), c, 'lcm(b)'));
+      if (x === 0 || y === 0) return num(0);
+      let g = x;
+      let h = y;
+      while (h !== 0) [g, h] = [h, g % h];
+      return num((x / g) * y);
+    }),
 
     fn('sqrt', ['n'], (a, c) => {
       const n = expectNum(arg(a, 0), c, 'sqrt(n)');
@@ -33,17 +276,48 @@ export function stdMath(): Map<string, Value> {
       return num(Math.log(n) / Math.log(base));
     }),
 
-    fn('pow', ['base', 'exponent'], (a, c) =>
-      num(Math.pow(expectNum(arg(a, 0), c, 'pow base'), expectNum(arg(a, 1), c, 'pow exponent'))),
-    ),
+    fn('pow', ['base', 'exponent'], (a, c) => {
+      const base = expectNum(arg(a, 0), c, 'pow base');
+      const exponent = expectNum(arg(a, 1), c, 'pow exponent');
+      // A negative base with a fractional exponent has no real answer. IEEE
+      // 754 says NaN; Lumen says so out loud, as `sqrt` and `log` already do.
+      if (base < 0 && !Number.isInteger(exponent)) {
+        return c.panic(
+          'pow(' + base + ', ' + exponent + ') has no real answer',
+          ['a negative base needs a whole-number exponent'],
+        );
+      }
+      const raised = Math.pow(base, exponent);
+      // Structural rather than a second enumerated case. The guard above was
+      // written for `pow(-8, 0.5)` and missed `pow(1, INFINITY)`, which IEEE
+      // 754 also calls NaN — an indeterminate form, not a number — and which
+      // reached a program as a `Num` that compares false against everything
+      // including itself. The operator spelling already refused it (`RT046`),
+      // so the two spellings of one expression disagreed. Asking the result
+      // instead of listing the inputs cannot miss the next one.
+      if (Number.isNaN(raised)) {
+        return c.panic('pow(' + base + ', ' + exponent + ') has no answer', [
+          'it is an indeterminate form: there is no single number it could be',
+          'a number with no value is equal to nothing, including itself — see `RT046`',
+        ]);
+      }
+      return num(raised);
+    }),
 
-    fn('min', ['a', 'b'], (a, c) =>
-      num(Math.min(expectNum(arg(a, 0), c, 'min a'), expectNum(arg(a, 1), c, 'min b'))),
-    ),
-
-    fn('max', ['a', 'b'], (a, c) =>
-      num(Math.max(expectNum(arg(a, 0), c, 'max a'), expectNum(arg(a, 1), c, 'max b'))),
-    ),
+    // `min` and `max` are the prelude's, which the prelude takes from here —
+    // one native, not two. They were two, with different contracts: this
+    // module's took exactly two Nums and the prelude's takes a list *or* the
+    // numbers themselves, so `max([3, 1, 4])` worked until somebody wrote
+    // `import { sqrt, min, max } from "std/math"` and the narrower one took
+    // over. A working program stopped compiling because of an import, and
+    // `std/math` is exactly where a reader goes looking for `min`.
+    //
+    // A variadic carries no signature — see `withSignatures`, which refuses to
+    // give one to one — precisely so the checker's argument-count rule can
+    // never be wrong about them. The narrow pair had one, which is what made
+    // the rule wrong.
+    variadicFn('min', 'The smallest of a list, or of the numbers given.', extremum('min')),
+    variadicFn('max', 'The largest of a list, or of the numbers given.', extremum('max')),
 
     fn('clamp', ['n', 'low', 'high'], (a, c) => {
       const n = expectNum(arg(a, 0), c, 'clamp n');
@@ -53,11 +327,93 @@ export function stdMath(): Map<string, Value> {
       return num(Math.min(high, Math.max(low, n)));
     }),
 
+    /**
+     * A number as text with exactly `places` decimals — `£${fixed(4.5, 2)}`
+     * gives `£4.50`.
+     *
+     * `round(n * 100) / 100` rounds the value but cannot make `3.5` print as
+     * `3.50`, because the trailing zero is not part of the number. Money,
+     * percentages and any column of figures need it, so this is the one piece
+     * of number formatting worth having before a full format-specifier
+     * syntax exists.
+     */
+    fn('fixed', ['n', { name: 'places', defaultValue: num(2) }], (a, c) => {
+      const n = expectNum(arg(a, 0), c, 'fixed(n)');
+      const places = expectNum(arg(a, 1), c, 'fixed places');
+      if (!Number.isInteger(places) || places < 0 || places > 20) {
+        return c.panic(
+          'fixed needs a whole number of places from 0 to 20, got ' + places,
+          ['that is the range a double can actually distinguish'],
+        );
+      }
+      if (!Number.isFinite(n)) return str(String(n));
+      return str(n.toFixed(places));
+    }),
+
     /** Uniform in `[0, 1)`. Not cryptographically secure. */
-    fn('random', [], () => num(Math.random())),
+    fn('random', [], () => num(nextRandom())),
+
+    /**
+     * Make every later `random` reproducible, from this seed.
+     *
+     * Without it there was no way to write a test over randomised input that
+     * could be repeated when it failed, which is most of what randomised tests
+     * are for. Seeding with the same number gives the same sequence on every
+     * machine and every version of Node, because the generator is written here
+     * rather than borrowed from the host.
+     *
+     * Not cryptographic. It is for repeatability, not for secrets.
+     */
+    fn('seed', ['value'], (a, c) => {
+      generator = mulberry32(expectInt(arg(a, 0), c, 'seed(value)'));
+      return NIL;
+    }),
+
+    /**
+     * A whole number from `low` to `high`, both included.
+     *
+     * `floor(random() * n)` is the spelling everyone writes and half of them
+     * get wrong at one end, so it is worth having written once.
+     */
+    fn('randomInt', ['low', 'high'], (a, c) => {
+      const low = expectInt(arg(a, 0), c, 'randomInt(low)');
+      const high = expectInt(arg(a, 1), c, 'randomInt(high)');
+      if (low > high) return c.panic('randomInt low (' + low + ') is above high (' + high + ')');
+      return num(low + Math.floor(nextRandom() * (high - low + 1)));
+    }),
+
+    /**
+     * A shuffled copy. The original is untouched, as everywhere else here.
+     *
+     * Fisher-Yates, which is the one that is uniform. The spelling everybody
+     * reaches for first — `sortBy(fn(_) { random() })` — is not: a comparison
+     * sort asks about the same pair more than once and gets different answers,
+     * so the result is biased in a way that is invisible without counting.
+     */
+    fn('shuffle', ['xs'], (a, c) => {
+      const items = [...expectList(arg(a, 0), c, 'shuffle(xs)').items];
+      for (let i = items.length - 1; i > 0; i -= 1) {
+        const j = Math.floor(nextRandom() * (i + 1));
+        const held = items[i] as Value;
+        items[i] = items[j] as Value;
+        items[j] = held;
+      }
+      return list(items);
+    }),
+
+    /** One element, or `None` for an empty list — there is nothing to pick. */
+    fn('choice', ['xs'], (a, c) => {
+      const items = expectList(arg(a, 0), c, 'choice(xs)').items;
+      if (items.length === 0) return None;
+      return Some(items[Math.floor(nextRandom() * items.length)] as Value);
+    }),
   );
 
   exports.set('PI', num(Math.PI));
   exports.set('E', num(Math.E));
-  return exports;
+  exports.set('TAU', num(Math.PI * 2));
+  // Not a literal anyone can write: `1e400` is a lexer error, and this is the
+  // only way to name the value that comparisons against "no limit" want.
+  exports.set('INFINITY', num(Infinity));
+  return withSignatures(withDocs(exports, DOCS), SIGNATURES);
 }

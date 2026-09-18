@@ -1,0 +1,18 @@
+// Two places where an ordinary program met the host's stack rather than a
+// Lumen answer. `flatten` pushed an inner list with `push(...items)`, and an
+// argument list is bounded by the stack — so flattening a list of 150,000
+// answered "stack overflow … please report the file" about a program with no
+// recursion and no nesting in it. Rendering had the mirror of the same
+// problem, walking a value's depth on the host stack.
+let rows = [range(150000), [1, 2]]
+print(rows.flatten().len())
+print(range(200000).map(fn(x) { [x] }).flatten().len())
+print([[1, 2], [3]].flatMap(fn(x) { x }))
+
+// A value nested far deeper than the host can walk, built by an ordinary fold.
+let nested = reduce(range(0, 2500), fn(acc, x) { [acc, x] }, [])
+print(len(nested))
+print(nested.str().len() > 0)
+print(nested.inspect().len() > 0)
+// And a shallow one still renders in full.
+print([1, [2, [3]]])

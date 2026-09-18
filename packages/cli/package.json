@@ -1,6 +1,6 @@
 {
   "name": "@lumen-lang/cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "The `lumen` command line interface.",
   "license": "SEE LICENSE IN ../../LICENSE",
@@ -10,9 +10,12 @@
   "bin": {
     "lumen": "./dist/index.js"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "dependencies": {
-    "@lumen-lang/core": "0.1.0",
-    "@lumen-lang/stdlib": "0.1.0"
+    "@lumen-lang/core": "0.2.0",
+    "@lumen-lang/stdlib": "0.2.0",
+    "@lumen-lang/lsp": "0.2.0"
   }
 }

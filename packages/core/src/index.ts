@@ -8,13 +8,12 @@
  * rewrite.
  */
 
-export const VERSION = '0.1.0';
+export const VERSION = '0.2.0';
 
 export {
   LumenError,
   formatDiagnostic,
   joinSpans,
-  pointSpan,
   pos,
   span,
   type Diagnostic,
@@ -29,14 +28,33 @@ export {
   OPERATORS,
   describe,
   describeToken,
+  type Comment,
   type TemplatePart,
   type Token,
   type TokenKind,
 } from './token.js';
 
-export { Lexer, lex } from './lexer.js';
+export { Lexer, lex, lexWithComments } from './lexer.js';
+
+export { format } from './format.js';
 
 export { Parser, parse, parseExpression } from './parser.js';
+
+export { resolve, checkModule, type Reference, type ResolveOptions } from './resolver.js';
+
+export {
+  UNIVERSAL,
+  accepts,
+  checkTypes,
+  methodTy,
+  showSignature,
+  showTy,
+  signatureTy,
+  typeNameOf,
+  type CheckOptions,
+  type ParamTy,
+  type Ty,
+} from './types.js';
 
 export type * as ast from './ast.js';
 export type {
@@ -102,3 +120,11 @@ export {
   type ModuleResolver,
   type ResolvedModule,
 } from './interp.js';
+export {
+  FOREIGN_KEYWORDS,
+  FOREIGN_METHODS,
+  FOREIGN_NAMES,
+  STRING_PREFIXES,
+  methodHintNote,
+  type MethodHint,
+} from './hints.js';

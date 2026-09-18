@@ -1,0 +1,10 @@
+// The point of checking before running: this branch never executes, so until
+// now the typo sat there undetected. It is reported anyway.
+fn describe(n) {
+  if n > 1000 {
+    "huge, according to " + treshold
+  } else {
+    "ordinary"
+  }
+}
+print(describe(1))

@@ -1,0 +1,23 @@
+{
+  "name": "@lumen-lang/lsp",
+  "version": "0.2.0",
+  "private": true,
+  "description": "The Lumen language server: diagnostics, hover, completion, definitions and formatting over LSP.",
+  "license": "SEE LICENSE IN ../../LICENSE",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@lumen-lang/core": "0.2.0",
+    "@lumen-lang/stdlib": "0.2.0"
+  }
+}

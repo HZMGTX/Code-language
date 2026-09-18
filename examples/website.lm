@@ -5,9 +5,8 @@
 //
 // `serve` keeps running until you stop it with Ctrl-C.
 
-import { serve, page, json, notFound, escape } from "std/web"
+import { serve, router, route, page, json, notFound, escape, url } from "std/web"
 import { map, join, find } from "std/list"
-import { startsWith, slice } from "std/str"
 
 struct Post {
   slug:  Str,
@@ -28,8 +27,12 @@ let posts = [
   },
 ]
 
+// `escape` for the text, `url` for the link. These slugs are the program's own
+// and could go in bare, but an `href` built by interpolation is exactly where
+// the habit has to already be — `escape` cannot make a link safe, because there
+// is nothing in `javascript:alert(1)` to escape.
 fn postLink(p) -> Str {
-  "<li><a href='/post/${p.slug}'>${escape(p.title)}</a></li>"
+  "<li><a href='${url("/post/" + p.slug)}'>${escape(p.title)}</a></li>"
 }
 
 fn indexPage() {
@@ -53,16 +56,28 @@ fn postPage(slug) {
   }
 }
 
-fn handle(req) {
-  if req.path == "/" {
-    indexPage()
-  } else if req.path == "/health" {
-    json({ ok: true, posts: len(posts) })
-  } else if startsWith(req.path, "/post/") {
-    postPage(slice(req.path, 6))
-  } else {
+// `router` rather than a chain of `if req.path == ...`. Three things come with
+// it that the chain got wrong or left out:
+//
+//   - `:slug` names the captured piece, where the chain had `slice(req.path, 6)`
+//     — a 6 that had to be recounted every time the prefix was edited.
+//   - A POST to a page that only answers GET gets 405 with an `allow` header,
+//     not 404. "Wrong URL" and "wrong verb" are different mistakes, and a client
+//     cannot tell them apart if both come back the same.
+//   - `/post/why-lumen/` and `/post/why-lumen` are one route. Links and browsers
+//     add and remove that slash freely.
+//
+// Order matters: the specific route goes above the one with the hole in it, or
+// `/post/:slug` would answer for `/post/new` too.
+let handle = router(
+  [
+    route("GET", "/",            fn(req) { indexPage() }),
+    route("GET", "/health",      fn(req) { json({ ok: true, posts: len(posts) }) }),
+    route("GET", "/post/:slug",  fn(req) { postPage(req.params.slug) }),
+  ],
+  notFound: fn(req) {
     notFound("<h1>404</h1><p>Nothing at <code>${escape(req.path)}</code>.</p>")
-  }
-}
+  },
+)
 
 serve(handler: handle, port: 3000)

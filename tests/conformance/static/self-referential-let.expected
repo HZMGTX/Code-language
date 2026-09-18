@@ -1,0 +1,6 @@
+error[RS001]: `c` is not defined
+  --> self-referential-let.lm:13:9
+   |
+13 | let c = c
+   |         ^ not found in this scope
+   |

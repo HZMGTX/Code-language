@@ -25,7 +25,11 @@ check("join", join(["a", "b"], "-"), "a-b")
 
 // Failure is a Result, not an exception.
 check("json round trip", parse(stringify({ a: 1 })), Ok({ a: 1 }))
-check("json failure", parse("nope"), Err("invalid JSON"))
+check(
+  "json failure",
+  parse("nope"),
+  Err("invalid JSON at line 1, column 1: `nope` is not a value JSON knows — a key or a word has to be in double quotes"),
+)
 check("toNum ok", toNum("42"), Ok(42))
 check("toNum err", toNum("abc"), Err("`abc` is not a number"))
 

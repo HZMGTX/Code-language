@@ -1,0 +1,8 @@
+// String building and interpolation.
+var out = ""
+var i = 0
+while i < 20000 {
+  out = "${out}${i % 10}"
+  i += 1
+}
+print(out.len())

@@ -1,0 +1,27 @@
+// `fn f(..rest)` takes every remaining positional argument as a list — the
+// same `..` that a list pattern uses, in the one place a function shape needed
+// it. Until now only native functions could do this, which meant `print` could
+// take any number of arguments and nothing you wrote could.
+
+fn shout(..parts) { parts.map(fn(p) { str(p).upper() }).join(" ") + "!" }
+print(shout("hello", "world"))
+print(shout("one"))
+print(shout())               // an empty list, not an error
+
+// Fixed parameters first, and they still take named arguments.
+fn tag(name, ..children) { "<${name}>${children.join("")}</${name}>" }
+print(tag("ul", "<li>a</li>", "<li>b</li>"))
+print(tag("p"))
+print(tag(name: "br"))
+
+// A lambda can be variadic too.
+let total = fn(..ns) { ns.sum() }
+print(total(1, 2, 3, 4))
+print(total())
+
+// A default before the rest parameter still works.
+fn join3(separator = "-", ..parts) { parts.join(separator) }
+print(join3("+", "a", "b"))
+
+// help() shows the shape, `..` and all.
+help(shout)

@@ -1,0 +1,2 @@
+fn total(xs: List<Num>) -> Num { 0 }
+print(total(["a", "b"]))

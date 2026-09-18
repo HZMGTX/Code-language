@@ -1,0 +1,20 @@
+// A match guard is not a control-flow header: `=>` follows it, never a block,
+// so a `{` there can only be a literal. Suppressing brace literals in guards
+// rejected these valid programs with a note saying the brace "starts the
+// body", which is not true in this one position.
+struct P { x: Num }
+let v = 1
+
+print(match v {
+  _ if { a: 1 }["a"] == v => "map literal",
+  _ => "no",
+})
+
+print(match v {
+  _ if P { x: 1 }.x == v => "struct literal",
+  _ => "no",
+})
+
+// A brace literal in a real header is still refused, which is the rule this
+// one is an exception to: see `parser-errors/map-in-header.lm`.
+if v == 1 { print("header still reads its brace as a block") }

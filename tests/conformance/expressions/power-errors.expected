@@ -1,0 +1,7 @@
+error[RT018]: division by zero
+ --> power-errors.lm:2:7
+  |
+2 | print(0 ** -1)
+  |       ^^^^^^^ 0 raised to a negative power
+  |
+  = note: `0 ** -1` is 1 / 0, which has no value

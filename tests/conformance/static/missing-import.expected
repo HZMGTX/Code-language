@@ -1,0 +1,7 @@
+error[RS009]: module "std/list" has no export named `nope`
+ --> missing-import.lm:1:10
+  |
+1 | import { nope } from "std/list"
+  |          ^^^^ not exported
+  |
+  = note: it exports: all, any, at, chunk, concat, contains, count, drop, enumerate, filter, find, first, flatMap, flatten, groupBy, indexOf, insert, intersperse, isEmpty, join, last, len, map, maxBy, maximum, minBy, minimum, partition, pop, push, reduce, removeAt, reverse, scan, slice, sort, sortBy, sum, take, unique, windows, zip

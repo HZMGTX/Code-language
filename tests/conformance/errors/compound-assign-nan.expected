@@ -1,0 +1,7 @@
+error[RT046]: the result of Infinity - Infinity is undefined
+  --> compound-assign-nan.lm:14:1
+   |
+14 | a -= inf
+   | ^^^^^^^^ no number answers this
+   |
+   = note: this comes from infinities cancelling, which usually means an earlier result overflowed

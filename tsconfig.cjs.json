@@ -39,19 +39,25 @@
     // `await` is legal. Keep emitting through the diagnostic.
     "noEmitOnError": false,
 
-    // The cross-package imports are the bare specifiers `@lumen-lang/core` and
-    // `@lumen-lang/stdlib`. Point them at real sources so tsc reads the .ts
-    // files instead of the workspace links in node_modules. tsc does not
-    // rewrite the specifier on emit, so the bundler's require shim carries a
-    // matching alias table.
+    // The cross-package imports are the bare specifiers `@lumen-lang/core`,
+    // `@lumen-lang/stdlib` and `@lumen-lang/lsp`. Point them at real sources so
+    // tsc reads the .ts files instead of the workspace links in node_modules.
+    // tsc does not rewrite the specifier on emit, so the bundler's require shim
+    // carries a matching alias table.
     "baseUrl": ".",
     "paths": {
       "@lumen-lang/core": ["packages/core/src/index.ts"],
-      "@lumen-lang/stdlib": ["packages/stdlib/src/index.ts"]
+      "@lumen-lang/stdlib": ["packages/stdlib/src/index.ts"],
+      "@lumen-lang/lsp": ["packages/lsp/src/index.ts"]
     },
 
     "types": ["node"]
   },
 
-  "include": ["packages/core/src/**/*.ts", "packages/stdlib/src/**/*.ts", "packages/cli/src/**/*.ts"]
+  "include": [
+    "packages/core/src/**/*.ts",
+    "packages/stdlib/src/**/*.ts",
+    "packages/lsp/src/**/*.ts",
+    "packages/cli/src/**/*.ts"
+  ]
 }

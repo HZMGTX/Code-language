@@ -1,0 +1,145 @@
+// Solving a Sudoku by backtracking: the whole of the search is six lines,
+// and the rest is saying what "legal" means and drawing the grid.
+//
+//   lumen run examples/sudoku.lm
+//
+// The grid is a flat list of 81 numbers, 0 for a blank. Flat rather than nine
+// rows of nine because every rule below is about a *set* of nine cells — a
+// row, a column, a box — and with one index those three are arithmetic rather
+// than three different shapes of loop.
+
+let SIZE = 9
+let BLANK = 0
+
+// A newspaper-grade puzzle: thirty given numbers.
+//
+// Seventeen is the fewest a Sudoku can have and still have exactly one answer,
+// and a 17-clue puzzle takes this solver thousands of guesses rather than
+// dozens — minutes rather than a moment. That is worth knowing about the
+// interpreter as much as about the algorithm: the search below is fine, and
+// every guess is still a few hundred interpreted operations.
+let puzzle = [
+  5, 3, 0,  0, 7, 0,  0, 0, 0,
+  6, 0, 0,  1, 9, 5,  0, 0, 0,
+  0, 9, 8,  0, 0, 0,  0, 6, 0,
+
+  8, 0, 0,  0, 6, 0,  0, 0, 3,
+  4, 0, 0,  8, 0, 3,  0, 0, 1,
+  7, 0, 0,  0, 2, 0,  0, 0, 6,
+
+  0, 6, 0,  0, 0, 0,  2, 8, 0,
+  0, 0, 0,  4, 1, 9,  0, 0, 5,
+  0, 0, 0,  0, 8, 0,  0, 7, 9,
+]
+
+fn rowOf(i) { floor(i / SIZE) }
+fn colOf(i) { i % SIZE }
+
+// The nine cells a given cell shares a rule with, computed once per call. The
+// box is the only awkward one: round the row and column down to a multiple of
+// three to find its top-left corner, then walk the three by three from there.
+fn peers(i) {
+  let r = rowOf(i)
+  let c = colOf(i)
+  let boxRow = r - r % 3
+  let boxCol = c - c % 3
+
+  var out = []
+  for k in range(SIZE) {
+    out.push(r * SIZE + k)                                    // its row
+    out.push(k * SIZE + c)                                    // its column
+    out.push((boxRow + floor(k / 3)) * SIZE + boxCol + k % 3) // its box
+  }
+  out.unique().filter(fn(j) { j != i })
+}
+
+// Worked out once for all 81 cells rather than on every one of the hundreds of
+// thousands of guesses the search makes. This one line is most of the speed.
+let PEERS = range(SIZE * SIZE).map(peers)
+
+// What could go in this cell: 1 to 9, less whatever its peers already hold.
+// One walk of the twenty peers, not one walk per value — the difference is
+// ninefold, and this is the innermost thing the search does.
+fn candidates(grid, i) {
+  var taken = {}
+  for j in PEERS[i] {
+    let v = grid[j]
+    if v != BLANK { taken[str(v)] = true }
+  }
+  range(1, SIZE + 1).filter(fn(v) { taken[str(v)] == nil })
+}
+
+// Try the cell with the fewest candidates first, and hand them back with it so
+// the search does not work them out again. A cell with one candidate is a
+// certainty, and taking those first collapses most of the puzzle before any
+// real guessing begins — the difference between a second and a morning.
+fn mostConstrained(grid) {
+  var best = -1
+  var bestValues = []
+  for i in range(len(grid)) {
+    if grid[i] == BLANK {
+      let values = candidates(grid, i)
+      if best < 0 || len(values) < len(bestValues) {
+        best = i
+        bestValues = values
+      }
+      // Nothing beats a cell with one candidate, so stop looking.
+      if len(bestValues) <= 1 { break }
+    }
+  }
+  [best, bestValues]
+}
+
+// The search. `grid` is mutated in place and the move undone on the way out,
+// so there is one grid for the whole search rather than a copy per branch.
+var guesses = 0
+fn solve(grid) {
+  let [i, values] = mostConstrained(grid)
+  if i < 0 { return true }   // nothing blank left: solved
+
+  for value in values {
+    guesses += 1
+    grid[i] = value
+    if solve(grid) { return true }
+    grid[i] = BLANK          // that value led nowhere; take it back
+  }
+  false                      // no value fits here, so an earlier guess was wrong
+}
+
+fn show(grid) {
+  for r in range(SIZE) {
+    if r % 3 == 0 && r > 0 { print("  ------+-------+------") }
+    var line = ""
+    for c in range(SIZE) {
+      if c % 3 == 0 && c > 0 { line = line + " |" }
+      let v = grid[r * SIZE + c]
+      line = line + " " + if v == BLANK { "." } else { str(v) }
+    }
+    print("  ${line}")
+  }
+}
+
+// A solution is only a solution if every rule holds everywhere, so check it
+// rather than trusting the search that produced it.
+fn verify(grid) {
+  let complete = grid.all(fn(v) { v != BLANK })
+  let legal = range(len(grid)).all(fn(i) { PEERS[i].all(fn(j) { grid[j] != grid[i] }) })
+  complete && legal
+}
+
+fn main() {
+  var grid = puzzle.map(fn(v) { v })   // a copy, so the puzzle stays printable
+
+  print("Puzzle — ${puzzle.count(fn(v) { v != BLANK })} given\n")
+  show(puzzle)
+
+  if solve(grid) {
+    print("\nSolved after ${guesses} guesses\n")
+    show(grid)
+    print("")
+    print(if verify(grid) { "Checked: every row, column and box holds 1-9 once." }
+          else { "The search returned something that is not a solution." })
+  } else {
+    print("\nThis puzzle has no solution.")
+  }
+}

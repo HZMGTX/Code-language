@@ -1,0 +1,6 @@
+error[LX001]: unexpected character `😀`
+ --> astral-character.lm:5:5
+  |
+5 | let 😀 = 1
+  |     ^^ not valid here
+  |

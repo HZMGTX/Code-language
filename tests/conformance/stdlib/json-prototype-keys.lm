@@ -1,0 +1,19 @@
+// A key that names something on the host language's prototype chain is a key
+// like any other, on the way out as well as in.
+
+import { parse, stringify } from "std/json"
+
+print(stringify({ "__proto__": 1, "b": 2 }))
+print(stringify({ "constructor": 3, "toString": 4 }))
+
+match parse("{\"__proto__\": {\"nested\": true}, \"ok\": 1}") {
+  Ok(v)  => print(v),
+  Err(e) => print("failed: ${e}"),
+}
+
+// A round trip keeps every key it started with.
+let original = { "__proto__": "kept", "valueOf": "also kept" }
+match parse(stringify(original)) {
+  Ok(back) => print(back == original),
+  Err(e)   => print("failed: ${e}"),
+}

@@ -1,0 +1,43 @@
+// `pop` gives an Option, and the signature now says so.
+//
+// It said `-> List`, while the docstring said "Some(x), or None if empty" and
+// the implementation returned exactly that. Only the signature disagreed — and
+// a signature is not documentation that can be quietly wrong, it is what the
+// checker believes. So the idiomatic use was *rejected*:
+//
+//     error[TY001]: `unwrapOr` expects Option for `option` but was given List
+//
+// which is a false positive on correct code, the one thing docs/philosophy.md
+// says gradual typing must never do. The converse was live too: code that
+// really did treat the answer as a list was approved.
+import { pop, push } from "std/list"
+import { unwrapOr, isSome } from "std/option"
+
+var xs = [1, 2, 3]
+print(pop(xs))
+print(xs)
+
+print(unwrapOr(pop(xs), 0))
+print(unwrapOr(pop([]), 0))
+print(isSome(pop([1])))
+print(isSome(pop([])))
+
+match pop([9]) {
+  Some(v) => print("got ${v}"),
+  None    => print("empty"),
+}
+match pop([]) {
+  Some(v) => print("got ${v}"),
+  None    => print("empty"),
+}
+
+// `push` is the documented other half: it changes the list in place and hands
+// it back, so it chains. `let` freezes the binding, not the value.
+let ys = [1]
+print(push(push(ys, 2), 3))
+print(ys)
+
+// And the run-time note names a Lumen type rather than the interpreter's own
+// internal tag — there is no type called `list` in this language.
+fn hand(v) { unwrapOr(v, 0) }
+print(hand(Some(7)))

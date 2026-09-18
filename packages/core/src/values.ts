@@ -110,8 +110,30 @@ export interface NativeValue {
   readonly k: 'native';
   readonly name: string;
   readonly params: readonly NativeParam[];
+  /** One-line description, shown by `help()`. */
+  readonly doc?: string;
   /** When true, surplus positional arguments are collected into a list. */
   readonly variadic?: boolean;
+  /**
+   * True when the parameters have no names a program could use — an enum
+   * variant's payload, which is positional. Diagnostics then say how many
+   * values are wanted rather than listing `field0, field1`, which is an
+   * implementation detail nobody wrote and cannot act on.
+   */
+  readonly positional?: boolean;
+  /**
+   * Its type, written in Lumen's own annotation syntax: `'(s: Str) -> Str'`.
+   *
+   * A string rather than a `Ty`, so declaring one costs a standard-library
+   * author nothing but the sentence they would write in the documentation
+   * anyway, and so it is spelled in exactly the syntax a user writes. The
+   * checker parses it with the real parser — see `signatureTy`.
+   *
+   * Optional, and absent means `Any`: the 204 natives can be typed one at a
+   * time, and an untyped one is exactly as unchecked as it was before any of
+   * them were typed.
+   */
+  readonly signature?: string;
   call(args: readonly Value[], ctx: CallCtx): Value | Promise<Value>;
 }
 
@@ -196,10 +218,65 @@ export function typeName(v: Value): string {
   }
 }
 
-/** Structural equality. Functions and modules compare by identity. */
-export function valuesEqual(a: Value, b: Value): boolean {
+/**
+ * Structural equality. Functions and modules compare by identity.
+ *
+ * `pairs` records which two containers are already being compared, so a cyclic
+ * value can be compared at all: `inspect` prints `[1, [...]]` for a list that
+ * contains itself, so the language has already decided such a value is a real
+ * one, and answering it with a stack overflow would be the odd thing.
+ *
+ * Assuming a pair equal while it is still being checked is the standard reading
+ * of equality on cyclic structures: two values are equal when nothing about them
+ * distinguishes them, and a cycle that lines up distinguishes nothing. It also
+ * terminates, which the alternative does not.
+ *
+ * The bookkeeping costs about 4% on a loop doing two hundred thousand
+ * comparisons of small lists, measured interleaved against the version without
+ * it. Deferring it until the recursion is deep enough for a cycle to be possible
+ * was tried, on the reasoning that ordinary data cannot cycle: measured the same
+ * way it saved nothing at all, so it was removed rather than kept for the story.
+ * Scalars already skip it — only containers can recur — and `a === b` short-
+ * circuits the identical case before anything else happens.
+ */
+export function valuesEqual(a: Value, b: Value, pairs = new Set<string>()): boolean {
   if (a === b) return true;
   if (a.k !== b.k) return false;
+
+  // Only containers can recur, so only they need the bookkeeping.
+  const recursive = a.k === 'list' || a.k === 'map' || a.k === 'struct' || a.k === 'enum';
+  let pairKey = '';
+  if (recursive) {
+    pairKey = String(identityOf(a)) + ':' + String(identityOf(b));
+    if (pairs.has(pairKey)) return true;
+    pairs.add(pairKey);
+  }
+  try {
+    return compareShape(a, b, pairs);
+  } finally {
+    if (recursive) pairs.delete(pairKey);
+  }
+}
+
+/**
+ * A stable number per container, for the pair bookkeeping above.
+ *
+ * A `WeakMap` rather than anything on the value itself, so a `Value` stays a
+ * plain tagged object with no hidden fields, and nothing is kept alive by being
+ * compared once.
+ */
+const identities = new WeakMap<object, number>();
+let nextIdentity = 0;
+
+function identityOf(value: object): number {
+  const seen = identities.get(value);
+  if (seen !== undefined) return seen;
+  nextIdentity += 1;
+  identities.set(value, nextIdentity);
+  return nextIdentity;
+}
+
+function compareShape(a: Value, b: Value, pairs: Set<string>): boolean {
   switch (a.k) {
     case 'nil':
       return true;
@@ -214,7 +291,7 @@ export function valuesEqual(a: Value, b: Value): boolean {
       if (a.items.length !== other.items.length) return false;
       return a.items.every((item, i) => {
         const rhs = other.items[i];
-        return rhs !== undefined && valuesEqual(item, rhs);
+        return rhs !== undefined && valuesEqual(item, rhs, pairs);
       });
     }
     case 'map': {
@@ -222,7 +299,7 @@ export function valuesEqual(a: Value, b: Value): boolean {
       if (a.entries.size !== other.entries.size) return false;
       for (const [key, value] of a.entries) {
         const rhs = other.entries.get(key);
-        if (rhs === undefined || !valuesEqual(value, rhs)) return false;
+        if (rhs === undefined || !valuesEqual(value, rhs, pairs)) return false;
       }
       return true;
     }
@@ -231,7 +308,7 @@ export function valuesEqual(a: Value, b: Value): boolean {
       if (a.typeName !== other.typeName || a.fields.size !== other.fields.size) return false;
       for (const [key, value] of a.fields) {
         const rhs = other.fields.get(key);
-        if (rhs === undefined || !valuesEqual(value, rhs)) return false;
+        if (rhs === undefined || !valuesEqual(value, rhs, pairs)) return false;
       }
       return true;
     }
@@ -241,7 +318,7 @@ export function valuesEqual(a: Value, b: Value): boolean {
       if (a.values.length !== other.values.length) return false;
       return a.values.every((value, i) => {
         const rhs = other.values[i];
-        return rhs !== undefined && valuesEqual(value, rhs);
+        return rhs !== undefined && valuesEqual(value, rhs, pairs);
       });
     }
     default:
@@ -258,8 +335,64 @@ function formatNumber(n: number): string {
   return String(n);
 }
 
+/**
+ * A string as Lumen source would write it.
+ *
+ * `JSON.stringify` covers `"`, `\` and the control characters, and misses the
+ * one escape that is Lumen's own: `${` begins an interpolation, so
+ * `inspect("${name}")` produced source that means something else entirely. The
+ * lexer has had `\$` for exactly this since it was written; nothing was using
+ * it.
+ *
+ * Only a `$` that is followed by `{` is escaped. A bare one needs nothing, and
+ * escaping every `$` would make every price and every shell snippet harder to
+ * read for no gain.
+ */
 function quote(s: string): string {
-  return JSON.stringify(s);
+  let out = '"';
+  // By code point, so a surrogate pair is one character and cannot be split.
+  for (const ch of s) {
+    if (ch === '"') out += '\\"';
+    else if (ch === '\\') out += '\\\\';
+    else if (ch === '\n') out += '\\n';
+    else if (ch === '\t') out += '\\t';
+    else if (ch === '\r') out += '\\r';
+    else {
+      const code = ch.codePointAt(0) as number;
+      // The C0 controls, and a lone surrogate — which a regex without the `u`
+      // flag can hand back half of. Both have to be escaped: raw, one would be
+      // a control character sitting in the middle of a quoted string and the
+      // other is not valid text at all.
+      const lone = code >= 0xd800 && code <= 0xdfff;
+      out += code < 0x20 || lone ? '\\u{' + code.toString(16).toUpperCase() + '}' : ch;
+    }
+  }
+  // Last, and on the assembled text: the escape depends on the *next*
+  // character, which the loop above cannot see. Nothing it emits can create a
+  // false `${` — an escape always puts a `\\` between the two.
+  return out.replace(/\$(?=\{)/g, '\\$') + '"';
+}
+
+/** A `Map` key may be written bare exactly when it is a plain name. */
+const BARE_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/**
+ * A key as a map literal would write it: bare when it can be, quoted when not.
+ *
+ * Keys were concatenated raw, which made the rendering of an ordinary map
+ * wrong in three ways at once — `{"a-b": 1}` came out as `{a-b: 1}`, which
+ * reads back as a subtraction; a key with a quote in it was ambiguous; and a
+ * key with a **newline** in it broke the output across lines and corrupted
+ * whatever was printing it. None of that needs a strange program: a `Map` key
+ * is an arbitrary string, and `std/csv.records`, `std/json.parse` and
+ * `std/web.form` all build maps whose keys a stranger chose.
+ *
+ * List elements were already quoted (`[1, "a"]` rather than `[1, a]`) for
+ * exactly this reason, so keys not being was an inconsistency inside one
+ * function.
+ */
+function keyOf(key: string): string {
+  return BARE_KEY.test(key) ? key : quote(key);
 }
 
 /**
@@ -275,7 +408,24 @@ export function display(v: Value): string {
 const PRELUDE_ENUMS: ReadonlySet<string> = new Set(['Result', 'Option']);
 
 /** Rendering for the REPL and for values nested inside collections. */
-export function inspect(v: Value, seen = new Set<unknown>()): string {
+/**
+ * How deep a rendering will walk before it stops describing the contents.
+ *
+ * A value can be nested far deeper than the host's stack: `reduce(range(0,
+ * 2500), fn(acc, x) { [acc, x] }, [])` is an ordinary program with no
+ * recursion in it and no nesting in its source, and printing what it built
+ * ended in a host stack overflow that asked the reader to report their file.
+ *
+ * So rendering stops, the way it already stops for a value that contains
+ * itself, and says so with the same marker. A thousand levels is past anything
+ * anybody reads and comfortably inside what the host can walk.
+ */
+const MAX_RENDER_DEPTH = 1000;
+
+export function inspect(v: Value, seen = new Set<unknown>(), depth = 0): string {
+  if (depth > MAX_RENDER_DEPTH) {
+    return v.k === 'list' ? '[...]' : v.k === 'map' ? '{...}' : v.k === 'struct' ? v.typeName + ' {...}' : '...';
+  }
   switch (v.k) {
     case 'nil':
       return 'nil';
@@ -288,7 +438,7 @@ export function inspect(v: Value, seen = new Set<unknown>()): string {
     case 'list': {
       if (seen.has(v)) return '[...]';
       seen.add(v);
-      const body = v.items.map((item) => inspect(item, seen)).join(', ');
+      const body = v.items.map((item) => inspect(item, seen, depth + 1)).join(', ');
       seen.delete(v);
       return '[' + body + ']';
     }
@@ -296,7 +446,7 @@ export function inspect(v: Value, seen = new Set<unknown>()): string {
       if (seen.has(v)) return '{...}';
       seen.add(v);
       const body = [...v.entries]
-        .map(([key, value]) => key + ': ' + inspect(value, seen))
+        .map(([key, value]) => keyOf(key) + ': ' + inspect(value, seen, depth + 1))
         .join(', ');
       seen.delete(v);
       return '{' + body + '}';
@@ -304,8 +454,11 @@ export function inspect(v: Value, seen = new Set<unknown>()): string {
     case 'struct': {
       if (seen.has(v)) return v.typeName + ' {...}';
       seen.add(v);
+      // A struct's field names come from its declaration and so are always
+      // plain names; going through `keyOf` anyway costs nothing and means
+      // there is one answer to "how is a key written" rather than two.
       const body = [...v.fields]
-        .map(([key, value]) => key + ': ' + inspect(value, seen))
+        .map(([key, value]) => keyOf(key) + ': ' + inspect(value, seen, depth + 1))
         .join(', ');
       seen.delete(v);
       return v.typeName + ' {' + body + '}';
@@ -316,7 +469,7 @@ export function inspect(v: Value, seen = new Set<unknown>()): string {
       // variant is written `Enum.Variant`, so that is how it renders.
       const prefix = PRELUDE_ENUMS.has(v.enumName) ? '' : v.enumName + '.';
       if (v.values.length === 0) return prefix + v.variant;
-      const body = v.values.map((value) => inspect(value, seen)).join(', ');
+      const body = v.values.map((value) => inspect(value, seen, depth + 1)).join(', ');
       return prefix + v.variant + '(' + body + ')';
     }
     case 'fn':
@@ -339,21 +492,30 @@ export interface Slot {
   readonly mutable: boolean;
 }
 
-/** A lexical scope. Lookup walks the parent chain. */
+/**
+ * A lexical scope. Lookup walks the parent chain.
+ *
+ * The slot table is allocated on first declaration rather than in the
+ * constructor. Most scopes never hold anything — a loop body creates one per
+ * iteration, and a block inside it creates another — so allocating a Map
+ * eagerly meant two throwaway Maps per iteration of every loop. Profiling the
+ * `while` benchmark showed that cost as `MapConstructor` and
+ * `FindOrderedHashMapEntry`; an empty scope now costs one object.
+ */
 export class Env {
-  private readonly slots = new Map<string, Slot>();
+  private slots: Map<string, Slot> | undefined;
 
   constructor(readonly parent?: Env) {}
 
   /** Declare in this scope. Redeclaring the same name shadows the old slot. */
   declare(name: string, value: Value, mutable: boolean): void {
-    this.slots.set(name, { value, mutable });
+    (this.slots ??= new Map<string, Slot>()).set(name, { value, mutable });
   }
 
   lookup(name: string): Slot | undefined {
     let scope: Env | undefined = this;
     while (scope !== undefined) {
-      const slot = scope.slots.get(name);
+      const slot = scope.slots?.get(name);
       if (slot !== undefined) return slot;
       scope = scope.parent;
     }
@@ -365,19 +527,34 @@ export class Env {
     const names: string[] = [];
     let scope: Env | undefined = this;
     while (scope !== undefined) {
-      for (const key of scope.slots.keys()) names.push(key);
+      if (scope.slots !== undefined) for (const key of scope.slots.keys()) names.push(key);
       scope = scope.parent;
     }
     return names;
   }
 
   ownNames(): string[] {
-    return [...this.slots.keys()];
+    return this.slots === undefined ? [] : [...this.slots.keys()];
   }
 
   hasOwn(name: string): boolean {
-    return this.slots.has(name);
+    return this.slots?.has(name) ?? false;
   }
+}
+
+/**
+ * How many code points a string holds, without building a list of them.
+ *
+ * `[...s].length` was the obvious spelling and allocates an array as long as
+ * the string, so counting one the host had just made without trouble ran out of
+ * memory. Iterating a string yields its code points one at a time, so this is
+ * the same answer in constant space. `std/str` has the same helper for the same
+ * reason; `core` cannot import it, which is the rule this package is built on.
+ */
+export function codePointCount(text: string): number {
+  let n = 0;
+  for (const _ of text) n += 1;
+  return n;
 }
 
 /**
@@ -391,37 +568,119 @@ export interface Host {
   /** Environment variables, for things like AI provider keys. */
   getEnv(name: string): string | undefined;
   now(): number;
+  /**
+   * The arguments the program was given, not counting its own name.
+   *
+   * The host decides what those are, because only the host knows: a CLI has to
+   * work out how many words of its own command line it consumed, and a browser
+   * or a build step has none at all. Reading them from `process.argv` at a fixed
+   * offset looks like it works and does not — `lumen run x.lm a b` and
+   * `lumen x.lm a b` put them in different places, so the same program saw
+   * different arguments depending on how it was started.
+   *
+   * Optional: a host with no notion of arguments omits it, and `args()` is
+   * empty rather than wrong.
+   */
+  args?(): readonly string[];
+  /**
+   * Read one line from the console, without its trailing newline, or undefined
+   * at end of input. Optional: a host with no console (a browser, a build step)
+   * simply omits it, and `input()` reports that rather than hanging.
+   */
+  readLine?(prompt: string): Promise<string | undefined>;
+  /**
+   * Everything left on the input, as one string.
+   *
+   * The other half of reading: `readLine` is for a conversation and this is for
+   * a pipeline, and a program written for `cat file | prog` could not be
+   * written at all with only the first — `while input()` works, but it is four
+   * lines and an `Option` to say "read the input".
+   *
+   * Optional, like `readLine`, and for the same reason: a browser or a build
+   * step has no input to read.
+   */
+  readAll?(): Promise<string>;
+  /**
+   * Stop the program with an exit status.
+   *
+   * `exit()` used to call `process.exit()` from inside the standard library,
+   * which was the one place a Node API was reached for directly rather than
+   * through the host — and so the one thing that would not work in a browser,
+   * a worker or an embedding that wants to survive the program it is running.
+   *
+   * Optional, because not every host can stop. One that omits it makes `exit()`
+   * fail the way `input()` does without a console — saying so plainly beats
+   * pretending. A host that implements it is not expected to return.
+   */
+  exit?(code: number): never | void;
 }
 
 // ------------------------------------------------------------------ helpers
 
 /**
- * Levenshtein distance, capped for speed. Used only to suggest a name the user
- * probably meant.
+ * Edit distance, counting a swap of two neighbours as one edit.
+ *
+ * Plain Levenshtein charges two for a transposition, because it has to
+ * substitute both letters. But transposing is the commonest typo there is, and
+ * charging it double forces the suggestion threshold up to two — which on a
+ * four-letter word means half of it may differ, and `nope` starts "meaning"
+ * `type`. Counting the swap as one (Damerau-Levenshtein, the restricted form)
+ * separates the two cases properly: `cuont` is one edit from `count`, and `nope`
+ * is still two from `type`.
+ *
+ * Used only to suggest a name the reader probably meant.
  */
 export function editDistance(a: string, b: string): number {
-  const prev: number[] = Array.from({ length: b.length + 1 }, (_, i) => i);
-  const curr: number[] = new Array<number>(b.length + 1).fill(0);
+  // Three rows rather than two: a transposition needs the row before the
+  // previous one, which is what distinguishes this from Levenshtein.
+  let twoBack: number[] = new Array<number>(b.length + 1).fill(0);
+  let prev: number[] = Array.from({ length: b.length + 1 }, (_, i) => i);
+  let curr: number[] = new Array<number>(b.length + 1).fill(0);
+
   for (let i = 1; i <= a.length; i += 1) {
     curr[0] = i;
     for (let j = 1; j <= b.length; j += 1) {
       const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      curr[j] = Math.min(
+      let best = Math.min(
         (curr[j - 1] ?? 0) + 1,
         (prev[j] ?? 0) + 1,
         (prev[j - 1] ?? 0) + cost,
       );
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        best = Math.min(best, (twoBack[j - 2] ?? 0) + 1);
+      }
+      curr[j] = best;
     }
-    for (let j = 0; j <= b.length; j += 1) prev[j] = curr[j] ?? 0;
+    twoBack = prev;
+    prev = curr;
+    curr = new Array<number>(b.length + 1).fill(0);
   }
   return prev[b.length] ?? 0;
 }
 
-/** The closest candidate to `name`, if any is close enough to be worth showing. */
+/**
+ * The closest candidate to `name`, if any is close enough to be worth showing.
+ *
+ * A confident wrong suggestion costs more than no suggestion: it sends the
+ * reader after the wrong thing, and they trust it because the compiler said it.
+ * So the allowance scales with the length of the name and never exceeds three —
+ * roughly a third of it may differ, and no more:
+ *
+ *     up to 5 characters   one edit
+ *     6 to 8               two
+ *     9 or more            three
+ *
+ * Short names are where this matters. With a flat allowance of two, `nope`
+ * "meant" `type` — two of its four letters, which is a different word rather
+ * than a typo. One edit is enough for a short name precisely because
+ * `editDistance` counts a transposition as one, so `cuont` still finds `count`
+ * and `tets` still finds `test`. A one-edit match on a short name is kept:
+ * `abc` really might be a slip for `abs`.
+ */
 export function suggest(name: string, candidates: readonly string[]): string | undefined {
   let best: string | undefined;
   let bestScore = Number.POSITIVE_INFINITY;
-  const limit = Math.max(2, Math.floor(name.length / 2));
+  const limit = name.length <= 5 ? 1 : Math.min(3, Math.floor(name.length / 3));
   for (const candidate of candidates) {
     const score = editDistance(name.toLowerCase(), candidate.toLowerCase());
     if (score < bestScore && score <= limit) {

@@ -1,0 +1,28 @@
+// A character in Lumen is a code point. `len`, `slice`, `indexOf`, `chars`,
+// `reverse` and the padding functions all agreed about that; `split` with an
+// empty separator, `replace` with an empty needle, `capitalize` and `title`
+// did not, because the host cuts in UTF-16 units. An emoji is two of those, so
+// each of the four handed back halves of a character — values that are not
+// characters at all, which `len` then counted as one each.
+let s = "a😀b"
+print(len(s))
+print(s.chars())
+print(s.split(""))
+print(s.split("") == s.chars())
+print(len(s.split("")))
+print(s.replace("", "-"))
+
+// Cased letters outside the basic plane: Deseret and Adlam are alphabets with
+// ordinary words in them, and `upper` had always handled them.
+print("𐐨bc".upper())
+print("𐐨bc".capitalize())
+print("𞤢de".capitalize())
+print("𐐨bc 𞤢de".title())
+
+// The ordinary cases, unchanged.
+print("aDA".capitalize())
+print("ada lovelace".title())
+print("a,b,c".split(","))
+print("aXbXc".replace("X", "-"))
+print("héllo".len())
+print("héllo".upper())

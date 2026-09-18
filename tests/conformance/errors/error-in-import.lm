@@ -1,0 +1,8 @@
+// An error raised inside an imported module.
+//
+// The diagnostic must point at the file the fault is actually in, not at the
+// line that called into it — the first thing you want to know is where to look.
+import { half } from "./helpers/greet"
+
+print(half(10, 2))
+print(half(1, 0))

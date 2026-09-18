@@ -61,6 +61,7 @@ export type Expr =
   | RangeExpr
   | TryExpr
   | AwaitExpr
+  | JumpExpr
   | BlockExpr;
 
 export interface NumberLit extends NodeBase {
@@ -105,7 +106,7 @@ export interface Unary extends NodeBase {
 }
 
 export type BinaryOp =
-  | '+' | '-' | '*' | '/' | '%'
+  | '+' | '-' | '*' | '/' | '%' | '**'
   | '==' | '!=' | '<' | '<=' | '>' | '>=';
 
 export interface Binary extends NodeBase {
@@ -154,15 +155,25 @@ export type AssignOp = '=' | '+=' | '-=' | '*=' | '/=';
 export interface AssignExpr extends NodeBase {
   readonly kind: 'AssignExpr';
   readonly op: AssignOp;
-  /** Ident, MemberExpr, or IndexExpr — validated by the parser. */
+  /**
+   * Ident, MemberExpr, IndexExpr, or — for `=` only — a ListLit of those,
+   * which assigns positionally. Validated by the parser.
+   */
   readonly target: Expr;
   readonly value: Expr;
 }
 
 export interface Param extends NodeBase {
   readonly name: string;
+  /** Where the name itself is; see `LetDecl.nameSpan`. */
+  readonly nameSpan: Span;
   readonly type: TypeExpr | undefined;
   readonly defaultValue: Expr | undefined;
+  /**
+   * `fn log(..parts)` — collects every remaining positional argument into a
+   * `List`. At most one, always last, never with a default.
+   */
+  readonly rest: boolean;
 }
 
 export interface LambdaExpr extends NodeBase {
@@ -196,6 +207,13 @@ export interface FieldInit extends NodeBase {
 export interface StructLit extends NodeBase {
   readonly kind: 'StructLit';
   readonly name: string;
+  /**
+   * Where the type name itself is; see `LetDecl.nameSpan`.
+   *
+   * `RS001` for an undefined `Point { x: 1, y: 2 }` underlined the whole
+   * literal, fields and all, when the only thing not defined is `Point`.
+   */
+  readonly nameSpan: Span;
   readonly fields: readonly FieldInit[];
 }
 
@@ -250,6 +268,26 @@ export interface AwaitExpr extends NodeBase {
 }
 
 /**
+ * `return`, `break` or `continue` written where a value is expected.
+ *
+ * These never produce a value — they leave. Allowing them in expression
+ * position is what lets a `match` arm bail out:
+ *
+ *     match parse(line) {
+ *       Ok(n)  => n,
+ *       Err(e) => return Err(e),
+ *     }
+ *
+ * The statement forms are parsed separately and mean exactly the same thing.
+ */
+export interface JumpExpr extends NodeBase {
+  readonly kind: 'JumpExpr';
+  readonly jump: 'return' | 'break' | 'continue';
+  /** Only ever set for `return`, and only when a value was written. */
+  readonly value: Expr | undefined;
+}
+
+/**
  * A braced block used in expression position. The parser only produces this
  * where a `{` is unambiguously a block rather than a map literal — currently
  * match-arm bodies. Its value is the value of its last statement.
@@ -260,6 +298,20 @@ export interface BlockExpr extends NodeBase {
 }
 
 // ---------------------------------------------------------------- patterns
+
+/**
+ * The enums a `PEnum` may name without anything declaring them.
+ *
+ * `Result` and `Option` are the language's, not the library's — `?` is built on
+ * them and `Ok(v)` is matchable in a file that declares and imports nothing. It
+ * lives here, beside `PEnum`, because both the resolver and the type checker
+ * need it and stating it twice is how the two passes come to disagree about
+ * what a program means.
+ */
+export const BUILT_IN_ENUMS: ReadonlyMap<string, readonly string[]> = new Map([
+  ['Result', ['Ok', 'Err']],
+  ['Option', ['Some', 'None']],
+]);
 
 export type Pattern = PWildcard | PBinding | PLiteral | PEnum | PStruct | PList;
 
@@ -308,6 +360,7 @@ export interface PList extends NodeBase {
 
 export type Stmt =
   | LetDecl
+  | DestructureDecl
   | FnDecl
   | StructDecl
   | EnumDecl
@@ -329,14 +382,40 @@ export interface Block extends NodeBase {
 export interface LetDecl extends NodeBase {
   readonly kind: 'LetDecl';
   readonly name: string;
+  /**
+   * Where the name itself is, as opposed to the whole declaration.
+   *
+   * A diagnostic about a name should underline the name: `RS004` used to draw
+   * a caret under the whole of `let total = 2` to say that `total` was
+   * declared twice. It is also what a rename needs — replacing `span` would
+   * replace the declaration.
+   */
+  readonly nameSpan: Span;
   readonly mutable: boolean;
   readonly type: TypeExpr | undefined;
+  readonly value: Expr;
+}
+
+/**
+ * `let [a, b] = pair` — a binding whose left side is a pattern.
+ *
+ * Separate from `LetDecl` because the overwhelmingly common case is one name,
+ * and giving that case a plain `name` keeps every consumer of it simple. The
+ * pattern language is the same one `match` and `for` use, so a destructuring
+ * `let` needed no new matching rules.
+ */
+export interface DestructureDecl extends NodeBase {
+  readonly kind: 'DestructureDecl';
+  readonly pattern: Pattern;
+  readonly mutable: boolean;
   readonly value: Expr;
 }
 
 export interface FnDecl extends NodeBase {
   readonly kind: 'FnDecl';
   readonly name: string;
+  /** Where the name itself is; see `LetDecl.nameSpan`. */
+  readonly nameSpan: Span;
   readonly params: readonly Param[];
   readonly ret: TypeExpr | undefined;
   readonly body: Block;
@@ -350,6 +429,8 @@ export interface StructField extends NodeBase {
 export interface StructDecl extends NodeBase {
   readonly kind: 'StructDecl';
   readonly name: string;
+  /** Where the name itself is; see `LetDecl.nameSpan`. */
+  readonly nameSpan: Span;
   readonly fields: readonly StructField[];
 }
 
@@ -361,6 +442,8 @@ export interface EnumVariant extends NodeBase {
 export interface EnumDecl extends NodeBase {
   readonly kind: 'EnumDecl';
   readonly name: string;
+  /** Where the name itself is; see `LetDecl.nameSpan`. */
+  readonly nameSpan: Span;
   readonly variants: readonly EnumVariant[];
 }
 
@@ -398,6 +481,18 @@ export interface ExprStmt extends NodeBase {
 export interface ImportSpecifier extends NodeBase {
   readonly name: string;
   readonly alias: string | undefined;
+  /** Just the exported name, where `span` covers `name as alias` entire. */
+  readonly nameSpan: Span;
+  /**
+   * Just the local name: the alias where there is one, else the exported name.
+   *
+   * This is the span a *binding* lives at, and what an editor renames. The two
+   * are the same text for an unaliased import, and that is the trap: renaming
+   * `import { round }` in place rewrites which export is being asked for, and
+   * the file stops compiling. Knowing they are the same span is what lets the
+   * language server write `round as rounded` instead.
+   */
+  readonly localSpan: Span;
 }
 
 export interface ImportDecl extends NodeBase {

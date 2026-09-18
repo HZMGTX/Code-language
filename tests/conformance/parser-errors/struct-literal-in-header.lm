@@ -1,0 +1,6 @@
+// In a control-flow header a `{` starts the body, so a struct literal there is
+// ambiguous. The fix is parentheses, and the diagnostic says so.
+
+struct Point { x: Num, y: Num }
+
+print(match Point { x: 1, y: 2 } { _ => "never" })

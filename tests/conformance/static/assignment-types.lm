@@ -1,0 +1,15 @@
+// An annotation is a promise about every value a binding will hold, not only
+// its first — so TY006 checks assignments too, which is where a `var` gets its
+// second value.
+struct P { x: Num, name: Str }
+
+var v: Num = 1
+v = "text"
+
+var p: P = P { x: 1, name: "a" }
+p.x = "text"
+p.name = 2
+
+// A compound assignment is the operator and the assignment, so both are checked.
+var total: Num = 0
+total += "x"

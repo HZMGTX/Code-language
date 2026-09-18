@@ -15,7 +15,7 @@
  *    `tsc --build` output in `packages/*\/dist`.
  * 2. Every emitted module is wrapped in a factory and registered in a small
  *    map. A `require` shim resolves relative specifiers the way Node does
- *    (exact, then `.js`, then `/index.js`), maps the two `@lumen-lang/*`
+ *    (exact, then `.js`, then `/index.js`), maps the three `@lumen-lang/*`
  *    package specifiers to their entry modules, and falls through to the real
  *    `require` for `node:fs`, `node:path`, `node:http` and `node:readline`.
  *
@@ -41,12 +41,13 @@ const ENTRY = 'packages/cli/src/index.js';
 
 /**
  * `paths` in tsconfig teaches the type checker where the workspace packages
- * live, but tsc never rewrites the specifier it emits. These two bare names
+ * live, but tsc never rewrites the specifier it emits. These bare names
  * therefore survive into the output and the require shim resolves them.
  */
 const ALIASES = {
   '@lumen-lang/core': 'packages/core/src/index.js',
   '@lumen-lang/stdlib': 'packages/stdlib/src/index.js',
+  '@lumen-lang/lsp': 'packages/lsp/src/index.js',
 };
 
 /**
@@ -80,19 +81,25 @@ function compile() {
   if (result.error) fail('could not run tsc: ' + result.error.message);
 
   const output = (result.stdout ?? '') + (result.stderr ?? '');
-  const surprises = output
-    .split('\n')
-    .filter((line) => /error TS\d+:/.test(line))
-    .filter((line) => {
-      const code = /error (TS\d+):/.exec(line);
-      return code === null || !EXPECTED_DIAGNOSTICS.has(code[1]);
-    });
+  const diagnostics = output.split('\n').filter((line) => /error TS\d+:/.test(line));
+  const surprises = diagnostics.filter((line) => {
+    const code = /error (TS\d+):/.exec(line);
+    return code === null || !EXPECTED_DIAGNOSTICS.has(code[1]);
+  });
 
   if (surprises.length > 0) {
     fail('the CommonJS compile failed:\n' + surprises.join('\n'));
   }
-  if (result.status !== 0 && output.trim() === '') {
-    fail('tsc exited with status ' + result.status + ' and said nothing');
+  // The expected TS1378 already makes tsc exit non-zero, so a bad status only
+  // means trouble when it reported no diagnostic at all — a missing or crashed
+  // compiler, say. Report what it actually said instead of letting the next
+  // step complain about an empty build/cjs.
+  if (result.status !== 0 && diagnostics.length === 0) {
+    fail(
+      'tsc exited with status ' +
+        result.status +
+        (output.trim() === '' ? ' and said nothing' : ':\n' + output.trim()),
+    );
   }
 }
 
@@ -256,7 +263,13 @@ function bundle() {
   for (const id of ids) {
     const body = stripShebang(readFileSync(path.join(CJS_DIR, id), 'utf8'));
     const kind = factoryKind(body, id);
-    if (kind === 'async function') asyncModules += 1;
+    if (kind === 'async function') {
+      // Only the entry may await at the top level. Any other module would hand
+      // its importers a half-filled `exports` the moment it awaits, and nothing
+      // would say so — the bundle would just be quietly wrong.
+      if (id !== ENTRY) fail('`' + id + '` uses top-level await; only ' + ENTRY + ' may');
+      asyncModules += 1;
+    }
     parts.push(
       '\n__modules[' + JSON.stringify(id) + '] = ' + kind + ' (' + FACTORY_PARAMS.join(', ') + ') {\n',
       body.endsWith('\n') ? body : body + '\n',

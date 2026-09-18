@@ -1,0 +1,39 @@
+// `std/crypto` — hashing, HMAC, secure random, constant-time comparison.
+//
+// Four things, because a program that serves anything needs all four and gets
+// at least one of them wrong by hand: an ETag, a cache key, a webhook
+// signature to verify, a session token to issue.
+//
+// Every digest below is a published test vector, so this fixture checks the
+// implementation against the standard rather than against itself.
+import { sha256, sha512, sha1, md5, hmacSha256, token, equals } from "std/crypto"
+
+print(sha256("") == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+print(sha256("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+print(sha1("abc") == "a9993e364706816aba3e25717850c26c9cd0d89d")
+print(md5("abc") == "900150983cd24fb0d6963f7d28e17f72")
+print(sha512("abc").slice(0, 16) == "ddaf35a193617aba")
+
+// RFC 4231 gives this one, and a webhook is checked with exactly this call.
+print(hmacSha256("key", "The quick brown fox jumps over the lazy dog") == "f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8")
+
+// Text goes in as UTF-8, so a hash is the same here as anywhere else.
+print(sha256("café") == "850f7dc43910ff890f8879c0ed26fe697c93a067ad93a7d50f466a7028a9bf4e")
+print(sha256("café").len())
+
+// Hex, lowercase, always — the form every other tool prints and compares.
+print(sha256("x") == sha256("x"))
+print(sha256("x") == sha256("y"))
+
+// A token is from the operating system, never from `std/math.random`, and is
+// therefore never affected by `seed`. It is 2 hex characters per byte.
+print(token().len())
+print(token(8).len())
+print(token() != token())
+
+// Comparing a secret with `==` leaks how much of it matched, one character at
+// a time, which is a real vulnerability rather than a theoretical one.
+print(equals("abc", "abc"))
+print(equals("abc", "abd"))
+print(equals("abc", "abcd"))
+print(equals("", ""))

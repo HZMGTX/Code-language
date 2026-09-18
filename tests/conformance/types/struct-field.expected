@@ -1,0 +1,6 @@
+error[TY004]: `Point.y` is Num but is given Str
+ --> struct-field.lm:2:26
+  |
+2 | let p = Point { x: 1, y: "two" }
+  |                          ^^^^^ expected Num
+  |

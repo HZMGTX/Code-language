@@ -1,0 +1,79 @@
+// `std/regex` — regular expressions, as strings.
+//
+// There is no `/.../` literal, deliberately: it would be ambiguous with
+// division in a language whose newlines are significant, and every escape would
+// then have to be understood by the lexer as well as by the matcher.
+//
+// Every function that takes a pattern answers a `Result`, because a pattern
+// comes from somewhere — a config file, an argument, a person — and `(` is an
+// ordinary thing to type. `isValid` is the exception: asking whether something
+// is a pattern cannot itself fail.
+import { isValid, test, find, findAll, count, captures, replace, replaceFirst, split, escape } from "std/regex"
+
+print(isValid("\\d+"))
+print(isValid("(unclosed"))
+print(test("hello 42", "\\d+"))
+print(test("HELLO", "hello", ignoreCase: true))
+print(test("HELLO", "hello"))
+
+// A match carries what matched, where, and both kinds of capture.
+print(find("a=1 b=22", "(\\w)=(\\d+)"))
+print(find("nothing here", "\\d+"))
+print(findAll("a=1 b=22", "(\\w)=(\\d+)").unwrapOr([]).len())
+
+// A pattern that can match nothing returns an empty match at every position.
+// Without a guard, a global loop over one never ends — which is the classic
+// way to hang a program with this feature.
+print(count("abc", "x*"))
+print(count("aaa", "a"))
+
+// The shape a program destructuring a match actually wants.
+print(captures("2026-09-14", "(\\d{4})-(\\d{2})-(\\d{2})"))
+print(captures("nope", "(\\d+)"))
+
+print(replace("a1b2", "\\d", "#"))
+print(replaceFirst("a1b2", "\\d", "#"))
+print(replace("john smith", "(\\w+) (\\w+)", "$2, $1"))
+print(split("a1b22c", "\\d+"))
+
+// What you need when a pattern is built from something a person typed:
+// searching for `a.b` should find `a.b` and not `axb`.
+print(escape("a.b*c"))
+print(test("a.b", escape("a.b")))
+print(test("axb", escape("a.b")))
+
+// A pattern that does not compile is an answer, not a crash.
+print(test("x", "(unclosed"))
+
+// `multiline` and `dotAll`, which are most of what a regular expression is for
+// over plain string work. Without the first, `^` matches only the very start of
+// the text, so a pattern written to find something at the beginning of each
+// line finds it at most once — which is how this module shipped, and what
+// writing a program that needed it turned up.
+let lines = "alpha
+beta
+gamma"
+print(test(lines, "^beta$"))
+print(test(lines, "^beta$", multiline: true))
+print(count(lines, "^\\w+", multiline: true))
+print(replace(lines, "^", "> ", multiline: true))
+print(test("a\nb", "a.b"))
+print(test("a\nb", "a.b", dotAll: true))
+print(test("ALPHA", "^alpha$", ignoreCase: true, multiline: true))
+
+// `(?m)` is not the way to ask: JavaScript has no inline modifier group, so a
+// pattern written that way is a pattern that does not compile. The named
+// options are the way, and the error says so rather than silently matching
+// nothing.
+print(test(lines, "(?m)^beta$"))
+
+// Named groups, and the whole shape read out.
+match find("v1.2.3", "v(?<major>\\d+)\\.(?<minor>\\d+)") {
+  Ok(Some(m)) => print("${m.text} at ${m.at} major=${m.named.getOr("major", "?")} groups=${m.groups}"),
+  Ok(None)    => print("no match"),
+  Err(why)    => print("bad pattern: ${why}"),
+}
+
+// A group that did not take part is nil rather than missing, so the list is
+// always the same length whichever branch of an alternation fired.
+print(captures("b", "(a)|(b)"))

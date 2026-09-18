@@ -6,7 +6,6 @@
 // — including CI. Set ANTHROPIC_API_KEY or OPENAI_API_KEY for a real answer.
 
 import { chat, converse, message, provider } from "std/ai"
-import { join, map } from "std/list"
 
 // `?` hands any Err straight back to the caller, so the happy path stays flat.
 fn summarize(topic) {

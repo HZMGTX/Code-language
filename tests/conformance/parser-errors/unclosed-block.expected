@@ -1,0 +1,7 @@
+error[PA001]: expected `}` to close this block, found end of file
+ --> unclosed-block.lm:9:1
+  |
+9 | 
+  | ^ expected `}`
+  |
+  = note: it opened here (unclosed-block.lm:7:8)

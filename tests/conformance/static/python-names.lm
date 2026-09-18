@@ -1,0 +1,13 @@
+// Names that are words in another language. Each is `RS001`, as it always was;
+// the note is what changed.
+let t = True
+let f = False
+let n = null
+let d = dict()
+let xs = list()
+print(int("5"))
+println("x")
+count = 1
+fn g() { pass }
+print(length("abc"))
+print(t, f, n, d, xs)

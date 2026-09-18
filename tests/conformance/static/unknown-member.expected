@@ -1,0 +1,71 @@
+error[TY012]: List has no method `append`
+ --> unknown-member.lm:5:1
+  |
+5 | xs.append(3)
+  | ^^^^^^^^^ not available here
+  |
+  = note: did you mean `push`? `append` is what another language calls it
+
+error[TY012]: List has no method `lenght`
+ --> unknown-member.lm:6:7
+  |
+6 | print(xs.lenght())
+  |       ^^^^^^^^^ not available here
+  |
+  = note: available on List: all, any, at, choice, chunk, clone, concat, contains, count, drop, enumerate, filter, find, first, flatMap, flatten, groupBy, indexOf, insert, inspect, intersperse, isEmpty, isNil, join, last, len, map, maxBy, maximum, minBy, minimum, partition, pop, push, reduce, removeAt, reverse, reversed, scan, shuffle, slice, sort, sortBy, sorted, str, sum, take, type, unique, windows, zip
+
+error[TY012]: Str has no method `uppercase`
+ --> unknown-member.lm:8:7
+  |
+8 | print(s.uppercase())
+  |       ^^^^^^^^^^^ not available here
+  |
+  = note: available on Str: capitalize, center, chars, clone, contains, count, endsWith, indexOf, inspect, isEmpty, isNil, len, lines, lower, padEnd, padStart, removePrefix, removeSuffix, repeat, replace, reverse, slice, split, splitOnce, startsWith, str, title, toNum, trim, trimEnd, trimStart, type, upper, words
+
+error[TY012]: Num has no method `nope`
+ --> unknown-member.lm:9:7
+  |
+9 | print(1.floor().nope)
+  |       ^^^^^^^^^^^^^^ not available here
+  |
+  = note: available on Num: abs, acos, asin, atan, atan2, cbrt, ceil, clamp, clone, cos, exp, fixed, floor, gcd, hypot, inspect, isNil, lcm, log, max, min, pow, round, sign, sin, sqrt, str, tan, trunc, type
+
+error[TY012]: `P` has no field `z`
+  --> unknown-member.lm:12:7
+   |
+12 | print(p.z)
+   |       ^^^ unknown field
+   |
+   = note: did you mean `x`?
+
+error[TY012]: `P` has no field `helper`
+  --> unknown-member.lm:13:7
+   |
+13 | print(p.helper())
+   |       ^^^^^^^^ unknown field
+   |
+   = note: its fields are: x, y
+
+error[TY012]: Option has no method `unwrap`
+  --> unknown-member.lm:14:7
+   |
+14 | print(Some(1).unwrap())
+   |       ^^^^^^^^^^^^^^ not available here
+   |
+   = note: an Option is taken apart with `match`, or `unwrapOr(fallback)`, or `?` to pass `None` up
+
+error[TY012]: Result has no method `expect`
+  --> unknown-member.lm:15:7
+   |
+15 | print(Err("e").expect("a value"))
+   |       ^^^^^^^^^^^^^^^ not available here
+   |
+   = note: a Result is taken apart with `match`, or `unwrapOr(fallback)`, or `?` to pass the `Err` up
+
+error[TY012]: Nil has no method `foo`
+  --> unknown-member.lm:16:7
+   |
+16 | print(nil.foo)
+   |       ^^^^^^^ not available here
+   |
+   = note: available on Nil: clone, inspect, isNil, str, type

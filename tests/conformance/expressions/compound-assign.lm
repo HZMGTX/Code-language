@@ -1,0 +1,43 @@
+// Compound assignment, which must keep working exactly as it did.
+//
+// The guard added for the NaN case sits on the arithmetic path, so this file is
+// the other half: every ordinary use, and the two errors that were already
+// right.
+var n = 10
+n += 5
+print(n)
+n -= 3
+print(n)
+n *= 2
+print(n)
+n /= 4
+print(n)
+n += 0 - 0.5
+print(n)
+
+// Strings and lists concatenate with `+=`; neither goes near the arithmetic.
+var s = "a"
+s += "b"
+s += ""
+print(s)
+var xs = [1]
+xs += [2, 3]
+xs += []
+print(xs)
+
+// Infinity is a value, not an error — it means "larger than we can say", it
+// compares consistently and it is equal to itself. Only a NaN is refused.
+var big = 1e308
+big *= 10
+print(big)
+big += 1
+print(big)
+print(big == big)
+
+// An index and a field are targets too.
+var grid = [1, 2, 3]
+grid[0] += 10
+print(grid)
+var rec = { count: 1 }
+rec["count"] += 5
+print(rec)

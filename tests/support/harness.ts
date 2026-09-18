@@ -9,8 +9,14 @@
 import { promises as fsp } from 'node:fs';
 import * as path from 'node:path';
 
-import { Interpreter, LumenError, parse, type Host } from '@lumen-lang/core';
-import { createNodeResolver } from '@lumen-lang/stdlib';
+import {
+  LumenError,
+  checkModule,
+  formatDiagnostic,
+  parse,
+  type Host,
+} from '@lumen-lang/core';
+import { checkOptions, createInterpreter, createNodeResolver } from '@lumen-lang/stdlib';
 
 /** The environment every fixture sees. `mock` keeps `std/ai` offline. */
 const FIXED_ENV: Readonly<Record<string, string>> = {
@@ -23,25 +29,84 @@ export interface RunResult {
   readonly failed: boolean;
 }
 
-export function makeHost(collect: (text: string) => void): Host {
+/**
+ * A host with a scripted console.
+ *
+ * `stdin` supplies the lines `input()` will read; once they run out it reports
+ * end of input. Fixtures therefore exercise the real code path and stay
+ * deterministic, instead of blocking on a terminal that is not there.
+ */
+export function makeHost(collect: (text: string) => void, stdin: readonly string[] = []): Host {
+  const queue = [...stdin];
   return {
     writeOut: collect,
     writeErr: collect,
     getEnv: (name: string): string | undefined => FIXED_ENV[name],
     now: (): number => 0,
+    readLine: async (prompt: string): Promise<string | undefined> => {
+      collect(prompt);
+      return queue.shift();
+    },
+    readAll: async (): Promise<string> => queue.splice(0).join('\n'),
   };
 }
 
 /** Run Lumen source and capture everything it produced, errors included. */
-export async function runSource(source: string, fileName = 'fixture.lm'): Promise<RunResult> {
+export async function runSource(
+  source: string,
+  fileName = 'fixture.lm',
+  stdin: readonly string[] = [],
+  baseDir?: string,
+): Promise<RunResult> {
+  return await execute(source, fileName, stdin, true, baseDir);
+}
+
+/**
+ * Run without the static checks, the way a host that embedded the interpreter
+ * directly would.
+ *
+ * The specification promises the interpreter enforces operand types, arity and
+ * field names itself, so that such a host is not left unguarded (§6). Once the
+ * type checker started catching `"a" + 1` before it ran, nothing exercised that
+ * promise any more: every test went through `checkModule` first and saw the
+ * static error instead. This is how both layers get tested.
+ */
+export async function runUnchecked(
+  source: string,
+  fileName = 'fixture.lm',
+  stdin: readonly string[] = [],
+): Promise<RunResult> {
+  return await execute(source, fileName, stdin, false);
+}
+
+async function execute(
+  source: string,
+  fileName: string,
+  stdin: readonly string[],
+  check: boolean,
+  baseDir?: string,
+): Promise<RunResult> {
   let output = '';
   const host = makeHost((text) => {
     output += text;
+  }, stdin);
+  const interpreter = createInterpreter({
+    host,
+    ...(baseDir === undefined ? {} : { resolver: createNodeResolver({ base: baseDir }) }),
   });
-  const interpreter = new Interpreter({ host, resolver: createNodeResolver() });
 
   try {
     const module = parse(source, fileName);
+    if (check) {
+      // Warnings are part of what a fixture demonstrates, so they go into the
+      // captured output ahead of anything the program prints — which is where
+      // they appear on a terminal too, since checking finishes before running
+      // starts.
+      const warnings = checkModule(module, source, checkOptions(interpreter.globals.ownNames()));
+      for (const warning of warnings) {
+        output += formatDiagnostic(warning, source, fileName, false) + '\n\n';
+      }
+    }
     await interpreter.runModule(module, source);
     return { output, failed: false };
   } catch (error) {
@@ -53,10 +118,16 @@ export async function runSource(source: string, fileName = 'fixture.lm'): Promis
   }
 }
 
-/** Run a `.lm` fixture from disk. */
+/**
+ * Run a `.lm` fixture from disk.
+ *
+ * Parsed under its bare name so a golden file reads `thing.lm:3:1` and is the
+ * same on every machine, but resolved from its real directory, so a fixture may
+ * import a helper beside it.
+ */
 export async function runFixture(file: string): Promise<RunResult> {
   const source = await fsp.readFile(file, 'utf8');
-  return await runSource(source, path.basename(file));
+  return await runSource(source, path.basename(file), [], path.dirname(file));
 }
 
 /** Every `.lm` file under `root`, depth-first and sorted, for stable ordering. */

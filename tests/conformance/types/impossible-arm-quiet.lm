@@ -1,0 +1,105 @@
+// Every arm here can match, and the checker says nothing at all.
+//
+// The companion to `impossible-arm.lm`, and the more important of the two. An
+// arm that "can never be taken" is a claim about a type, and a check that gets
+// that wrong rejects a program that works — so each restraint TY009 is built on
+// has a case here. Every line runs.
+import { parse } from "std/json"
+import { get } from "std/map"
+
+// An unannotated parameter is Any. Nothing is known, so nothing is said — this
+// is the case that makes the check safe to have at all.
+fn handle(reply) {
+  match reply {
+    Ok(v)  => "ok ${v}"
+    Err(e) => "err ${e}"
+  }
+}
+
+// A declared enum and a declared struct, matched correctly.
+enum Colour { Red, Green, Blue }
+struct Point { x: Num, y: Num }
+
+fn name(c: Colour) {
+  match c {
+    Colour.Red   => "red"
+    Colour.Green => "green"
+    Colour.Blue  => "blue"
+  }
+}
+
+fn where(p: Point) {
+  match p {
+    Point { x: 0, y: 0 } => "origin"
+    _                    => "elsewhere"
+  }
+}
+
+// `nil` is never impossible. It is the one value that legitimately turns up
+// where a type says otherwise, so guarding against it is defensive, not wrong.
+fn maybe(n: Num) {
+  match n {
+    nil => "missing"
+    0   => "zero"
+    _   => "a number"
+  }
+}
+
+// Two enums claiming one variant name make a bare pattern ambiguous, and
+// guessing which was meant is how a check starts rejecting good code.
+enum Job { Done, Waiting }
+enum Build { Done, Failed }
+fn state(j: Job) {
+  match j {
+    Done => "done"
+    _    => "waiting"
+  }
+}
+
+// The inner pattern of a payload is not checked, because a payload's type is
+// not something this pass works out.
+fn nested(text: Str) {
+  match parse(text) {
+    Ok(Some(inner)) => "some ${inner}"
+    Ok(other)       => "ok ${other}"
+    Err(e)          => "err ${e}"
+  }
+}
+
+// And the ordinary correct spellings: a Result as a Result, an Option as an
+// Option, a list pattern on a List, literals of the subject's own type.
+fn read(text: Str) {
+  match parse(text) {
+    Ok(v)  => "ok ${v}"
+    Err(e) => "err ${e}"
+  }
+}
+
+fn look(m: Map<Num>) {
+  match get(m, "k") {
+    Some(v) => v
+    None    => 0
+  }
+}
+
+fn firstTwo(xs: List<Num>) {
+  match xs {
+    [a, b] => a + b
+    [a]    => a
+    _      => 0
+  }
+}
+
+fn letter(s: Str) {
+  match s {
+    "a" => 1
+    "b" => 2
+    _   => 3
+  }
+}
+
+print(handle(Ok(1)))
+print(name(Colour.Green) + " " + where(Point { x: 0, y: 0 }))
+print(maybe(0) + " " + state(Job.Done))
+print(nested("1") + " " + read("[2]"))
+print(look({ k: 7 }) + firstTwo([1, 2]) + letter("b"))

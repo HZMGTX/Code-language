@@ -1,0 +1,36 @@
+// What a route captures. A `:name` captures one value and arrives decoded,
+// which is the name the link meant. A `*rest` captures a path and arrives as
+// written: `file` decodes, so decoding here as well meant every escaped
+// character was decoded twice — `/static/100%25.txt` looked for a file called
+// `100` and `/static/a%2520b.txt` served `a b.txt`.
+import { router, route, text } from "std/web"
+
+fn ask(handler, path) {
+  let answer = handler({ method: "GET", path: path, query: {}, body: "", headers: {} })
+  answer.body
+}
+
+fn status(handler, method, path) {
+  let answer = handler({ method: method, path: path, query: {}, body: "", headers: {} })
+  answer.status
+}
+
+let app = router([
+  route("GET", "/post/:slug", fn(req) { text("slug=${req.params.slug}") }),
+  route("GET", "/static/*path", fn(req) { text("path=${req.params.path}") }),
+])
+
+print(ask(app, "/post/a%20b"))
+print(ask(app, "/post/plain"))
+print(ask(app, "/static/100%25.txt"))
+print(ask(app, "/static/a%2520b.txt"))
+print(ask(app, "/static/deep/note.txt"))
+
+// HEAD is GET without the body — RFC 9110 requires every general-purpose
+// server to answer it, and `curl -I`, uptime monitors and caches all send it.
+// The router answered 405, which to a monitor reads as "down". A verb no route
+// handles is still 405, which is what that answer is for.
+print(status(app, "GET", "/post/x"))
+print(status(app, "HEAD", "/post/x"))
+print(status(app, "DELETE", "/post/x"))
+print(status(app, "GET", "/nowhere"))

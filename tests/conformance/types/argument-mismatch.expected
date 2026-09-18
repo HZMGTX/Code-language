@@ -1,0 +1,7 @@
+error[TY001]: `add` expects Num for `a` but was given Str
+ --> argument-mismatch.lm:2:11
+  |
+2 | print(add("one", 2))
+  |           ^^^^^ expected Num
+  |
+  = note: the parameter is declared as `a: Num`

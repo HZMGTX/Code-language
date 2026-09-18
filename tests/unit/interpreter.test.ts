@@ -3,7 +3,9 @@
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
 
-import { runSource } from '../support/harness.js';
+import { editDistance, suggest } from '@lumen-lang/core';
+
+import { runSource, runUnchecked } from '../support/harness.js';
 
 /** Run a snippet and return its trimmed output. */
 async function out(source: string): Promise<string> {
@@ -14,7 +16,11 @@ async function out(source: string): Promise<string> {
 
 /** Run a snippet expected to fail, returning the diagnostic code. */
 async function code(source: string): Promise<string> {
-  const result = await runSource(source);
+  return codeOf(await runSource(source));
+}
+
+/** The diagnostic code a run produced, asserting that it produced one. */
+function codeOf(result: { failed: boolean; output: string }): string {
   assert.equal(result.failed, true, 'expected failure but got:\n' + result.output);
   const match = /error\[([A-Z]{2}\d{3})\]/.exec(result.output);
   return match?.[1] ?? '(none)';
@@ -60,8 +66,11 @@ print("\${a()} \${b()}")`;
     assert.equal(await out('let x = "out"\nfn f() { let x = "in"\n x }\nprint("${f()} ${x}")'), 'in out');
   });
 
-  it('refuses to assign to a let binding', async () => {
-    assert.equal(await code('let a = 1\na = 2'), 'RT029');
+  it('refuses to assign to a let binding, before the program runs', async () => {
+    // RS005 is the resolver's static check. The interpreter still enforces the
+    // same rule (RT029) as a backstop for any path that reaches it without
+    // being resolved first, such as a host embedding the interpreter directly.
+    assert.equal(await code('let a = 1\na = 2'), 'RS005');
   });
 
   it('allows assignment to a var binding', async () => {
@@ -89,6 +98,27 @@ describe('functions', () => {
 
   it('rejects a positional argument after a named one', async () => {
     assert.equal(await code('fn g(a, b) { a }\ng(a: 1, 2)'), 'RT037');
+  });
+
+  it('reports a wrong argument count in both layers', async () => {
+    // The checker now catches this before the program runs, which is the better
+    // place — but the specification promises a host that embeds the interpreter
+    // without the static passes is not left unguarded, and only `runUnchecked`
+    // still exercises that.
+    assert.equal(await code('fn add(a, b) { a }\nadd(1)'), 'TY008');
+    assert.equal(codeOf(await runUnchecked('fn add(a, b) { a }\nadd(1)')), 'RT036');
+
+    assert.equal(await code('fn one(a) { a }\none(1, 2)'), 'TY007');
+    assert.equal(codeOf(await runUnchecked('fn one(a) { a }\none(1, 2)')), 'RT040');
+  });
+
+  it('says nothing about a count it cannot be sure of', async () => {
+    // A `fn(...)` annotation records no defaults, so a value of that type may
+    // well be `fn(a, b = 1)` and a one-argument call is perfectly good. And the
+    // moment an argument is named, the interpreter has a better answer than a
+    // count — `nmae` is a typo, not a missing `name`.
+    assert.equal(await out('fn apply(f: fn(Num, Num) -> Num) { f(1) }\nprint("ok")'), 'ok');
+    assert.equal(await code('fn greet(name) { name }\ngreet(nmae: "Ada")'), 'RT039');
   });
 
   it('names the parameter when one is supplied twice', async () => {
@@ -163,8 +193,21 @@ describe('arithmetic guards', () => {
     assert.equal(await code('print(1 / 0)'), 'RT018');
   });
 
-  it('rejects adding mismatched types', async () => {
-    assert.equal(await code('print("a" + 1)'), 'RT016');
+  it('rejects adding mismatched types, statically and at run time', async () => {
+    // The checker now catches this before the program runs, which is the better
+    // place. But the interpreter must still catch it on its own, because the
+    // specification promises a host that embeds the interpreter without the
+    // static passes is not left unguarded — and nothing else exercises that.
+    assert.equal(await code('print("a" + 1)'), 'TY005');
+    assert.equal(codeOf(await runUnchecked('print("a" + 1)')), 'RT016');
+  });
+
+  it('rejects the other mismatched operands at run time too', async () => {
+    assert.equal(codeOf(await runUnchecked('print("a" - 1)')), 'RT017');
+    assert.equal(codeOf(await runUnchecked('print("a" * 1)')), 'RT017');
+    assert.equal(codeOf(await runUnchecked('print("a" ** 1)')), 'RT017');
+    assert.equal(codeOf(await runUnchecked('print("a" < 1)')), 'RT019');
+    assert.equal(codeOf(await runUnchecked('print(true + true)')), 'RT016');
   });
 
   it('caps the size of a materialised range', async () => {
@@ -173,12 +216,95 @@ describe('arithmetic guards', () => {
 });
 
 describe('modules', () => {
+  // Both layers, for the same two mistakes. The checker now catches them before
+  // the program runs, which is the better place — but the specification
+  // promises a host that embeds the interpreter without the static passes is
+  // not left unguarded, and only `runUnchecked` still exercises that.
   it('reports an unknown module', async () => {
-    assert.equal(await code('import { x } from "std/nope"'), 'RT042');
+    assert.equal(await code('import { x } from "std/nope"'), 'RS010');
+    assert.equal(codeOf(await runUnchecked('import { x } from "std/nope"')), 'RT042');
   });
 
   it('reports a missing export with a suggestion', async () => {
     const result = await runSource('import { fliter } from "std/list"');
+    assert.equal(codeOf(result), 'RS009');
     assert.match(result.output, /did you mean `filter`/);
+
+    const running = await runUnchecked('import { fliter } from "std/list"');
+    assert.equal(codeOf(running), 'RT002');
+    assert.match(running.output, /did you mean `filter`/);
+  });
+
+  // The other half of the rule, and the more important one: a module the
+  // checker was not told about is trusted rather than guessed at. `./helper`
+  // could be anything; reporting it would be a false positive, which this file
+  // treats as worse than a missed error.
+  it('says nothing about a local module it has not read', async () => {
+    const result = await runSource('import { anything } from "./nowhere"');
+    assert.equal(codeOf(result), 'RT042');
+  });
+});
+
+/**
+ * The suggestion threshold.
+ *
+ * `did you mean X?` is only worth printing when it is probably right: the reader
+ * trusts it because the compiler said it, and a confident wrong guess sends them
+ * after the wrong thing. These pin both halves of the rule — that real typos are
+ * still caught, and that a different word is not offered as one.
+ */
+describe('suggest', () => {
+  it('catches a transposition, which is the commonest typo', () => {
+    // Plain Levenshtein charges two for a swap, which is why `editDistance`
+    // counts it as one: at two, the threshold has to be loose enough to let
+    // unrelated short words through.
+    assert.equal(editDistance('cuont', 'count'), 1);
+    assert.equal(editDistance('tets', 'test'), 1);
+    assert.equal(suggest('cuont', ['count', 'contains']), 'count');
+    assert.equal(suggest('tets', ['test', 'text']), 'test');
+  });
+
+  it('catches an ordinary one-letter slip', () => {
+    assert.equal(suggest('lenght', ['length', 'len']), 'length');
+    assert.equal(suggest('fliter', ['filter', 'find']), 'filter');
+    assert.equal(suggest('caplitalize', ['capitalize', 'center']), 'capitalize');
+    assert.equal(suggest('padstart', ['padStart', 'padEnd']), 'padStart');
+  });
+
+  it('offers nothing when the name is a different word, not a typo', () => {
+    // `nope` is two of its four letters away from `type`. With a flat allowance
+    // of two it was offered as the suggestion for it, and for `pop`.
+    assert.equal(suggest('nope', ['type', 'str', 'upper', 'trim']), undefined);
+    assert.equal(suggest('nope', ['pop', 'push']), undefined);
+    assert.equal(suggest('oops', ['ok', 'err']), undefined);
+  });
+
+  it('prefers the closer of two candidates', () => {
+    assert.equal(suggest('revese', ['reversed', 'reverse']), 'reverse');
+  });
+
+  it('allows a longer name to drift further, but never by more than three', () => {
+    assert.equal(suggest('symetricDiference', ['symmetricDifference']), 'symmetricDifference');
+    // Nine characters different is not a typo however long the name is.
+    assert.equal(suggest('completelyunrelated', ['symmetricDifference']), undefined);
+  });
+});
+
+/**
+ * A host that cannot do something says so.
+ *
+ * Everything in `Host` past writing and the clock is optional, because a
+ * browser, a worker or a build step genuinely has no console and no way to stop
+ * the process. The test harness's host is exactly such a host — it deliberately
+ * supplies neither `readLine` nor `exit` — so these run the path an embedding
+ * takes, which nothing else does.
+ */
+describe('an incomplete host', () => {
+  it('reports that it cannot stop the program rather than killing the runner', async () => {
+    const result = await runSource('import { exit } from "std/core"\nprint("first")\nexit(1)');
+    assert.equal(result.failed, true);
+    assert.match(result.output, /^first\n/);
+    assert.match(result.output, /exit\(\) is not available here/);
+    assert.match(result.output, /return from `main` instead/);
   });
 });

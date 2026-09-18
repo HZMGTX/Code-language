@@ -89,7 +89,15 @@ async function runServer(file, port) {
   }
 }
 
-const files = readdirSync(EXAMPLES).filter((f) => f.endsWith('.lm')).sort();
+// Single-file examples, plus the entry point of each multi-file one. Its
+// helper modules are not listed: they are imported, not run, and running one on
+// its own would prove nothing.
+const MULTI_FILE_ENTRIES = ['notes/main.lm'];
+
+const files = [
+  ...readdirSync(EXAMPLES).filter((f) => f.endsWith('.lm')),
+  ...MULTI_FILE_ENTRIES,
+].sort();
 let failed = 0;
 
 for (const file of files) {

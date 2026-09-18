@@ -25,11 +25,15 @@ npm run build
 | `npm run test:update` | Rewrite the conformance golden files |
 | `npm run typecheck` | Force a clean rebuild, so nothing hides in incremental output |
 | `npm run examples` | Run every example through the real CLI, server included |
+| `npm run docs` | Run every documented example and check it prints what the docs claim |
 | `npm run lumen -- <args>` | Run the CLI without installing it |
 | `npm run bundle` | Build `build/lumen.cjs`, the portable single-file bundle |
 | `npm run binary` | Build `build/lumen`, the native standalone executable (needs bun) |
 | `npm run binary:all` | Cross-compile the native binary for all five targets |
 | `npm run dist` | Build both: bundle, then binary |
+| `npm run bench` | Time the interpreter on five representative programs |
+| `npm run ci` | Run every check CI runs, locally |
+| `npm run ci:full` | The same, plus building and proving the native binary (needs bun) |
 | `npm run clean` | Delete all build output |
 
 To get a real `lumen` on your PATH:
@@ -37,6 +41,56 @@ To get a real `lumen` on your PATH:
 ```bash
 npm link --workspace @lumen-lang/cli
 ```
+
+
+### Numbers that are checked, not just written
+
+`scripts/check-counts.mjs` compares the counts on the README's front page — tests,
+conformance fixtures, examples, standard modules — against the repository, and
+also checks that every example has a row in the README's table and every module a
+mention in `docs/stdlib.md`. `--fix` rewrites the counts; the rest needs a person.
+
+It exists because those numbers were wrong. The README claimed "207 tests, 74
+conformance fixtures" when there were 799 and 116, and claimed the suite was
+"green on Node 20/22/24" on a repository where CI has never managed to start a
+run. A count written by hand goes stale the moment anybody adds a file, and a
+stale number on the front page is the cheapest kind of lie to tell.
+
+### Documentation that is checked, not just written
+
+`docs/learn.md` states the output of each of its examples in a plain code block
+after the Lumen one. `npm run docs` runs all 65 of them and compares. It is not
+a style rule: on its first run it found a tutorial teaching `RT029` for a
+mistake the static checker had started catching as `RS005`, a list of string
+methods missing one added long afterwards, and a column of numbers padded by
+hand and padded wrong. None of those would have been caught by checking that
+the blocks parse, which is what was being checked before.
+
+Write a new example the same way — Lumen block, then a plain block holding
+exactly what it prints. If it genuinely cannot run on its own, say so where
+anyone editing it will see:
+
+```
+<!-- no-run: waits for a line to be typed -->
+```
+
+The reason is required.
+
+`docs/tour.md` and `docs/from-python.md` use a second convention — the result
+in a trailing comment — and those are checked too:
+
+```lumen
+fn greet(name, greeting: Str = "Hello") { "${greeting}, ${name}!" }
+
+print(greet("Ada"))                          // Hello, Ada!
+print(greet(greeting: "Hi", name: "Bob"))    // Hi, Bob!   — arguments by name
+```
+
+Everything before an em dash is the claim; anything after it is a remark. This
+only works where a block's `print` lines produce one output line each, so a
+block containing a loop or a multi-line string is counted as unchecked rather
+than guessed at — and the summary says how many those are, so the number it
+reports is what was really verified.
 
 ## Layout
 
@@ -92,6 +146,33 @@ cat tests/conformance/expressions/my-feature.expected
 
 Step 3 is not optional. `test:update` records whatever the implementation
 currently does, bugs included. A golden file you have not read is not a test.
+
+### The formatter's invariants
+
+`tests/unit/format.test.ts` is the one test file worth understanding before you
+touch `packages/core/src/format.ts`. A formatter rewrites source, so the
+question is never whether the output looks nice — it is whether the tool can
+damage anything. Three properties are asserted for every `.lm` file in the
+repository:
+
+1. **only whitespace changes** — strip the indentation from both texts and they
+   are identical
+2. **the token stream is identical** — both are lexed and compared token by
+   token, kind, text and payload, which is what catches the one case a
+   whitespace-only edit can still change meaning: whitespace inside a multi-line
+   string is part of its value
+3. **formatting twice is formatting once** — the output is a fixed point
+
+Then all three again over ten randomly mangled variants of each file (flush
+left, random indentation, tabs), on a fixed seed. If you change a rule, expect
+this to be where you find out.
+
+A fourth property is asserted separately and is the one that says the rules are
+right rather than merely safe: **every file in the repository is already
+formatted.** A rule that disagreed with a hundred and twenty-five hand-written
+files would be a rule about the formatter's taste, not about Lumen. When you add
+a rule, run `lumen fmt --check .` before and after — if it starts wanting to
+reformat files, the rule is wrong, not the files.
 
 ### Determinism
 
@@ -175,7 +256,12 @@ build/lumen-windows-x64.exe
 Those five are the whole supported set; `node scripts/build-binary.mjs
 --target=<name>` builds just one of them. Each build records a SHA-256 in
 `build/SHA256SUMS.txt`, merging with what is already there rather than replacing
-it, so the bundle's entry survives.
+it, so building one target does not erase the entries from earlier builds.
+
+`npm run bundle` writes no checksum of its own, so after `npm run dist` that
+file covers the binary only. The release workflow records `lumen.cjs` into the
+same file by hand before the binary build merges into it, which is what leaves
+every published asset covered.
 
 Expect roughly 100 MB per binary. That is the embedded runtime, not bloat in
 Lumen, and it is what buys the "needs nothing installed" property — state it
@@ -217,6 +303,13 @@ Both must print exactly what `npm run lumen -- run` prints for the same program.
 ## Before you push
 
 ```bash
+npm run ci          # or ci:full, if you have bun and want the binary checked too
+```
+
+That runs the same checks as `.github/workflows/ci.yml`, in the same order, and
+exits non-zero on the first failure. Individually, if you prefer:
+
+```bash
 npm run typecheck
 npm test
 npm run examples
@@ -224,7 +317,19 @@ node scripts/check-private.mjs
 node scripts/gen-stdlib-docs.mjs --check
 ```
 
-CI runs exactly these.
+**If GitHub Actions never reports on your pull request**, that is not this
+repository's doing. A private repository whose Actions are disabled, or whose
+account has no Actions minutes available, produces runs that end in
+`startup_failure` with a zero-second duration and no job — GitHub never reads
+the workflow file at all, so a valid workflow looks identical to a broken one.
+Check Settings → Actions → General, and the account's billing and spending
+limit. `npm run ci` is the local stand-in meanwhile, and it is the reason that
+stand-in exists.
+
+CI runs all of these, and two things you cannot easily run locally: the
+Lumen-language suite (`lumen test tests/lumen`) on every supported platform, and
+a `distribution` job that re-proves both tiers of the section above — the bundle
+from a directory containing nothing else, the binary with `node` unreachable.
 
 ## A note on licensing
 

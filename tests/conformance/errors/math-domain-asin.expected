@@ -1,0 +1,7 @@
+error[RT035]: asin needs a number between -1 and 1, got 1.5
+ --> math-domain-asin.lm:5:7
+  |
+5 | print(asin(1.5))
+  |       ^^^^^^^^^
+  |
+  = note: outside that range there is no angle whose sine this is

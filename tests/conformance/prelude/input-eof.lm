@@ -1,0 +1,5 @@
+// With no console attached, input() reports end of input rather than hanging.
+match input("prompt: ") {
+  Some(line) => print("got ${line}"),
+  None       => print("no input available"),
+}

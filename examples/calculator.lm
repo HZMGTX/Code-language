@@ -1,0 +1,119 @@
+// A calculator: read a line like "2 + 3 * (4 - 1)" and work out what it means.
+//
+//   lumen run examples/calculator.lm
+//
+// It is a recursive-descent parser — the same shape as the parser that reads
+// this file. Nothing in it can crash: a line that makes no sense comes back as
+// an Err, and is printed in the table beside the ones that worked.
+
+// A token is a number or one piece of punctuation. Saying that once, as an
+// enum, means match will not let later code forget that both exist.
+enum Token { Number(Num), Symbol(Str) }
+
+let SYMBOLS = "+-*/()"
+
+fn show(token) { match token { Token.Number(n) => str(n), Token.Symbol(s) => s } }
+
+// Every symbol is a single character, and no number contains a space, so
+// padding the symbols out with spaces turns tokenising into a split.
+fn tokenise(source) {
+  var padded = source
+  for sym in SYMBOLS.chars() { padded = padded.replace(sym, " ${sym} ") }
+
+  var tokens = []
+  for word in padded.split(" ").filter(fn(w) { !w.isEmpty() }) {
+    if SYMBOLS.contains(word) {
+      tokens.push(Token.Symbol(word))
+    } else {
+      // Not punctuation, so it has to be a number: toNum decides, and `?`
+      // hands its Err — for "$", say, or "1.2.3" — back to our caller.
+      tokens.push(Token.Number(word.toNum()?))
+    }
+  }
+  Ok(tokens)
+}
+
+// The grammar is also the shape of the functions below:
+//
+//   expr   := term (("+" | "-") term)*
+//   term   := factor (("*" | "/") factor)*
+//   factor := Number | "-" factor | "(" expr ")"
+//
+// Precedence is written down nowhere: it falls out of that nesting, because
+// expr only ever adds up whole terms, so in "2 + 3 * 4" the 3 is claimed by
+// the * long before the + gets a say. Nor is a syntax tree built, there being
+// nothing to do with one here: each function returns the value it just read.
+fn evaluate(tokens) {
+  var pos = 0     // captured by reference, so the helpers below all share it
+
+  fn peek() { tokens.at(pos) }
+
+  // Take the next token if it is one of `ops`, and say which one it was.
+  fn eat(ops) {
+    match peek() {
+      Some(Token.Symbol(s)) if ops.contains(s) => { pos += 1; Some(s) },
+      _ => None,
+    }
+  }
+
+  // One rung of the precedence ladder: a run of `next` joined by `ops`. Plus
+  // and times differ only in their operators and in what sits beneath them.
+  fn rung(ops, next) {
+    var left = next()?
+    var op = eat(ops)
+    while op != None {
+      let right = next()?
+      // Dividing by zero raises in Lumen; caught here it is an ordinary Err.
+      if op == Some("/") && right == 0 { return Err("division by zero") }
+      left = match op {
+        Some("+") => left + right,
+        Some("-") => left - right,
+        Some("*") => left * right,
+        _         => left / right,
+      }
+      op = eat(ops)
+    }
+    Ok(left)
+  }
+
+  fn expr() { rung("+-", term) }
+  fn term() { rung("*/", factor) }
+
+  fn factor() {
+    match peek() {
+      Some(Token.Number(n))   => { pos += 1; Ok(n) },
+      Some(Token.Symbol("-")) => { pos += 1; Ok(0 - factor()?) },  // unary minus
+      Some(Token.Symbol("(")) => { pos += 1
+        let inner = expr()?
+        match eat(")") { Some(_) => Ok(inner), None => Err("missing `)`") } },
+      Some(Token.Symbol(s))   => Err("`${s}` where a number should be"),
+      None                    => Err("the expression stops early"),
+    }
+  }
+
+  // A token left over means the line was never one expression to begin with.
+  let value = expr()?
+  match peek() { None => Ok(value), Some(t) => Err("`${show(t)}` left over") }
+}
+
+fn calculate(source) { evaluate(tokenise(source)?) }
+
+fn main() {
+  // Stage one on its own, because the token stream is worth seeing once.
+  let sample = "2 + 3 * (4 - 1)"
+  match tokenise(sample) {
+    Ok(ts)   => print("Tokens\n  ${sample}  ->  ${ts.map(show).join(" · ")}\n"),
+    Err(why) => print("${why}\n"),
+  }
+
+  // Six that work, then one failure from each stage: tokeniser, parser, sums.
+  print("  ${"Expression".padEnd(24)}Result")
+  print("  ${"-".repeat(46)}")
+  for source in [
+    "2 + 3 * 4", "(2 + 3) * 4", "2 + 3 * (4 - 1)", "10 / 4 + 1.5", "-(3 + 4) * 2",
+    "2 * 3 + 4 * 5 - 6 / 3", "4 $ 5", "2 * (3 + 4", "8 / (5 - 5)",
+  ] {
+    let answer = match calculate(source) { Ok(v) => str(v), Err(why) => "error: ${why}" }
+    print("  ${source.padEnd(24)}${answer}")
+  }
+}

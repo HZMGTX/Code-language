@@ -1,0 +1,87 @@
+// `std/path` — paths as text, with one separator everywhere.
+//
+// Nothing here touches the filesystem: `exists` lives in `std/fs` because it
+// asks the machine a question. That is what lets these have a golden file at
+// all, and what lets a program work out where things will go before it does
+// anything.
+import { join, normalize, dir, base, stem, ext, withExt, split, isAbsolute, relative, resolve, isInside } from "std/path"
+
+// Joining, including the rule every path library shares: a part that is
+// absolute starts again, because a variable often holds a path the caller did
+// not write.
+print(join("a", "b", "c.txt"))
+print(join("/tmp/", "/etc/hosts"))
+print(join("a", "", "b"))
+print(join())
+
+// Normalising. A leading `..` on a relative path means something and is kept;
+// on an absolute path it does not, because `/..` is `/`.
+print(normalize("a/./b//c/../d"))
+print(normalize("../../a/b"))
+print(normalize("/a/../../b"))
+print(normalize(""))
+
+// Taking a path apart.
+print(dir("/usr/bin/node"))
+print(dir("file.txt"))
+print(dir("/file.txt"))
+print(base("/usr/bin/node"))
+print(split("/usr/local/bin"))
+print(split("a/b"))
+
+// Extensions. A leading dot is part of the name — `.gitignore` is a file
+// called `.gitignore` — and `.tar.gz` is `.gz`, which is what tools mean by
+// "the extension" even when it is not what a person means.
+print(stem("archive.tar.gz"))
+print(ext("archive.tar.gz"))
+print("[${ext(".gitignore")}]")
+print(stem(".gitignore"))
+print(withExt("src/main.lm", "js"))
+print(withExt("src/main.lm", ".js"))
+print(withExt("main.lm", ""))
+
+// Where a path starts from.
+print(isAbsolute("/a"))
+print(isAbsolute("a"))
+print(resolve("/srv/www", "index.html"))
+print(resolve("/srv/www", "/etc/passwd"))
+
+// Getting from one place to another.
+print(relative("/a/b", "/a/c/d"))
+print(relative("/a/b", "/a/b"))
+print(relative("/a/b", "/a/b/c"))
+// Nothing relative connects two different roots, so the answer is the
+// destination itself rather than a lie.
+print(relative("a/b", "/a/b"))
+
+// The check a program serving files needs. It compares segment by segment
+// rather than as text, because a prefix test is wrong in three ways and each
+// of them has a line here: `/publicity` starts with `/public`; `..` has to be
+// resolved first; and `a` is inside `.` although `"a"` does not start with
+// `"./"` — which is the one that took an adversarial probe to find, and which
+// broke every program checking that a relative path stays under the working
+// directory.
+print(isInside("/public", "/public/a.txt"))
+print(isInside("/public", "/public"))
+print(isInside("/public", "/publicity/a.txt"))
+print(isInside("/public", "/public/../etc/passwd"))
+print([isInside(".", "a"), isInside(".", "a/b"), isInside("a/b", "a/b/c")])
+
+// A relative path that climbs out is not inside, whatever follows the `..`.
+print([isInside(".", ".."), isInside(".", "../x"), isInside("a/b", "a/c")])
+
+// Nothing relative is inside anything absolute, or under a different root.
+print([isInside("/a", "a"), isInside("a", "/a"), isInside("C:/x", "/x")])
+
+// `.` and `..` are directory references, not files whose extension is a dot.
+// `ext("..")` used to be `"."` and `stem("..")` used to be `"."`, so a path
+// walking upwards lost half of itself to a function that only looked at it.
+print([ext("."), ext(".."), ext("..."), stem("."), stem(".."), stem("...")])
+
+// A Windows path read on any machine. Losing a drive letter would silently
+// turn an absolute path into a relative one.
+print(normalize("C:\\Users\\ada\\Documents"))
+print(isAbsolute("C:/Users"))
+print(isAbsolute("C:Users"))
+print(dir("C:/Users/ada/a.txt"))
+print(join("//server/share", "dir", "f.txt"))

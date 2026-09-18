@@ -1,0 +1,15 @@
+// NaN would be a value that prints as `NaN`, is not equal to another value
+// that prints as `NaN`, and is neither less than nor greater than anything.
+// Lumen declines to produce one, the way it declines to divide by zero.
+//
+// Infinity is a different matter and is left alone: it means "larger than we
+// can say", it is equal to itself, and it compares consistently.
+
+let huge = 1e308 * 10
+print(huge)
+print(huge > 1e308)
+print(huge == 1e308 * 10)
+print(0 - huge)
+
+// This is the one that has no answer.
+print(huge - huge)

@@ -19,6 +19,18 @@ export interface Span {
   readonly end: Pos;
 }
 
+/**
+ * How loud a diagnostic is.
+ *
+ * An error rejects the program; a warning does not, and `checkModule` draws
+ * exactly that line — it raises on errors and *returns* warnings, so a caller
+ * that ignores them behaves as it did before any existed.
+ *
+ * `RS011`, a binding nothing ever reads, is the only warning so far and was the
+ * first. Everything else either rejects a program or says nothing, because a
+ * check that is merely advisory trains people to ignore the output — which is
+ * why the unused-binding rule is as narrow as it is.
+ */
 export type Severity = 'error' | 'warning';
 
 /** An extra line of explanation attached to a diagnostic, optionally located. */
@@ -44,11 +56,6 @@ export function pos(offset: number, line: number, col: number): Pos {
 
 export function span(start: Pos, end: Pos): Span {
   return { start, end };
-}
-
-/** A zero-width span at `p` — used when the interesting thing is missing. */
-export function pointSpan(p: Pos): Span {
-  return { start: p, end: p };
 }
 
 /** Smallest span covering both inputs. */
@@ -102,6 +109,31 @@ function lineOf(source: string, lineNo: number): string {
   return source.split('\n')[lineNo - 1] ?? '';
 }
 
+/** How much of a source line to show around the caret before eliding. */
+const MAX_LINE = 120;
+/** Characters of context kept on each side of the caret when eliding. */
+const CONTEXT = 40;
+
+/**
+ * Narrow a very long source line to a window around the caret.
+ *
+ * A minified file, or generated source, can put the whole program on one line,
+ * and printing it in full buries the caret somewhere off the right of the
+ * screen — which makes the diagnostic worse than no diagnostic. Returns the
+ * text to show and the column the caret now sits at.
+ */
+function window(text: string, caretCol: number, width: number): { text: string; col: number } {
+  if (text.length <= MAX_LINE) return { text, col: caretCol };
+
+  const ellipsis = '...';
+  const from = Math.max(0, caretCol - 1 - CONTEXT);
+  // Keep the whole caret run if it fits, so the elision never lands inside it.
+  const to = Math.min(text.length, caretCol - 1 + Math.min(width, CONTEXT) + CONTEXT);
+  const head = from > 0 ? ellipsis : '';
+  const tail = to < text.length ? ellipsis : '';
+  return { text: head + text.slice(from, to) + tail, col: caretCol - from + head.length };
+}
+
 /**
  * Render one diagnostic in the style:
  *
@@ -135,19 +167,23 @@ export function formatDiagnostic(
   out.push(pad + paint('-->', BLUE, color) + ' ' + file + ':' + lineNo + ':' + d.span.start.col);
   out.push(pad + ' ' + bar);
 
-  const text = lineOf(source, lineNo);
-  out.push(paint(String(lineNo), BLUE, color) + ' ' + bar + ' ' + text);
+  const full = lineOf(source, lineNo);
 
   // Caret run: at least one character wide, clipped to the line's length.
-  const caretCol = Math.max(1, d.span.start.col);
+  const startCol = Math.max(1, d.span.start.col);
   const onOneLine = d.span.end.line === lineNo;
-  const room = Math.max(1, text.length - caretCol + 1);
+  const room = Math.max(1, full.length - startCol + 1);
   const wanted = onOneLine ? d.span.end.col - d.span.start.col : room;
   const width = Math.max(1, Math.min(wanted, room));
+
+  const shown = window(full, startCol, width);
+  const caretWidth = Math.max(1, Math.min(width, shown.text.length - shown.col + 1));
+  out.push(paint(String(lineNo), BLUE, color) + ' ' + bar + ' ' + shown.text);
+
   const label = d.label ? ' ' + paint(d.label, sevColor, color) : '';
   out.push(
-    pad + ' ' + bar + ' ' + ' '.repeat(caretCol - 1) +
-      paint('^'.repeat(width), BOLD + sevColor, color) + label,
+    pad + ' ' + bar + ' ' + ' '.repeat(shown.col - 1) +
+      paint('^'.repeat(caretWidth), BOLD + sevColor, color) + label,
   );
   out.push(pad + ' ' + bar);
 

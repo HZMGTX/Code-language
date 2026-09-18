@@ -1,0 +1,10 @@
+// A missing export the resolver cannot see, because it would have to read a
+// file it was never given.
+//
+// `RS009` catches this statically for `std/*`, where the checker is told every
+// export. A local module is not described to it, so the check stays quiet — the
+// no-false-positives rule — and the interpreter catches it instead. That is the
+// layer the specification promises is always there, and this is what pins it.
+import { nope } from "./helpers/greet"
+
+print(nope)

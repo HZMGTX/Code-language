@@ -1,0 +1,3 @@
+map literal
+struct literal
+header still reads its brace as a block

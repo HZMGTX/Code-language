@@ -1,0 +1,172 @@
+// Reading a log file and saying something useful about it.
+//
+//   lumen run examples/logs.lm
+//
+// The shape of a job everybody has: lines of text in, a summary out. What makes
+// it worth writing down is the parts people skip.
+//
+//   - **Lines that do not parse.** Real logs contain half-written lines from a
+//     process that was killed mid-write, and a stack trace wrapped across four
+//     of them. A parser that ignores them is lying about its input; one that
+//     stops at the first is useless. This counts them and shows a few.
+//   - **Buckets with nothing in them.** An hour with no requests is the most
+//     interesting hour in an outage, and it is exactly the row a `groupBy` drops.
+//   - **Ordering that does not depend on the input.** Two runs over the same
+//     file must say the same thing, so everything printed is sorted by something
+//     the data decides rather than by whichever key a Map happened to hold first.
+//
+// Times are UTC throughout — see `std/time`, which has only UTC on purpose.
+
+import { parseIso, iso, date, format, plus, startOfDay, describe, parts } from "std/time"
+import { of } from "std/set"
+
+struct Entry {
+  at:      Num,
+  level:   Str,
+  service: Str,
+  message: Str,
+  ms:      Num,
+}
+
+// A log line, as a program somewhere else would have written it. Two of these
+// are deliberately broken, because two of them always are.
+let raw = "2026-09-13T08:14:02Z INFO  api      GET /posts 34ms
+2026-09-13T08:14:09Z INFO  api      GET /posts/why-lumen 12ms
+2026-09-13T08:31:55Z WARN  api      slow query on posts 1840ms
+2026-09-13T08:47:11Z ERROR db       connection reset 0ms
+    at pool.acquire (db.lm:88)
+2026-09-13T09:02:30Z INFO  api      GET /health 2ms
+2026-09-13T09:02:31Z INFO  worker   sent 12 emails 430ms
+2026-09-13T09:15:00Z ERROR api      500 on /checkout 91ms
+2026-09-13T09:15:01Z ERROR db       deadlock detected 12ms
+2026-09-13T11:40:18Z INFO  api      GET / 8ms
+not a log line at all
+2026-09-13T11:41:02Z WARN  worker   retrying job 42 5200ms
+2026-09-13T11:59:59Z INFO  api      GET /posts 29ms"
+
+let LEVELS = ["ERROR", "WARN", "INFO"]
+
+// One line in, `Some(Entry)` or `None`. Returning an Option rather than
+// panicking is what lets the caller count the failures instead of dying on the
+// first one.
+fn parseLine(line) {
+  let trimmed = line.trim()
+  if trimmed == "" { return None }
+
+  let pieces = trimmed.words()
+  if pieces.len() < 4 { return None }
+
+  let when = match parseIso(pieces[0]) { Ok(t) => t, Err(_) => 0 - 1 }
+  if when == 0 - 1 { return None }
+
+  let level = pieces[1]
+  if !LEVELS.contains(level) { return None }
+
+  // The duration is the last word if it ends in "ms"; everything between the
+  // service and it is the message.
+  let last = pieces[pieces.len() - 1]
+  let hasMs = last.endsWith("ms")
+  let ms = if hasMs { match last.removeSuffix("ms").toNum() { Ok(n) => n, Err(_) => 0 } } else { 0 }
+  let body = if hasMs { pieces.slice(3, pieces.len() - 1) } else { pieces.slice(3) }
+
+  Some(Entry {
+    at:      when,
+    level:   level,
+    service: pieces[2],
+    message: body.join(" "),
+    ms:      ms,
+  })
+}
+
+// Every hour from the first entry to the last, including the ones with nothing
+// in them. `groupBy` alone cannot produce these: an hour with no lines has no
+// line to group.
+fn hoursBetween(first, last) {
+  var out = []
+  var at = startOfDay(first) + parts(first).hour * 3600000
+  while at <= last {
+    out = out.push(at)
+    at = plus(at, hours: 1)
+  }
+  out
+}
+
+fn bar(n, unit) {
+  if n == 0 { "" } else { "#".repeat(min(max(1, round(n / unit)), 40)) }
+}
+
+fn main() {
+  let lines = raw.lines()
+  let parsed = lines.map(parseLine)
+
+  // `partition` splits in one pass; the failures are kept rather than dropped,
+  // because "12 of 14 lines parsed" is the first thing worth knowing.
+  let split = parsed.enumerate().partition(fn(pair) { pair[1].isSome() })
+  let entries = split[0].map(fn(pair) { pair[1].unwrapOr(nil) })
+  let skipped = split[1]
+
+  print("Log report — ${entries.len()} of ${lines.len()} lines parsed")
+  print("")
+
+  if skipped.len() > 0 {
+    print("Could not read ${skipped.len()} line${if skipped.len() == 1 { "" } else { "s" }}:")
+    for pair in skipped.take(3) {
+      let text = lines[pair[0]].trim()
+      print("  line ${pair[0] + 1}: ${text.slice(0, 58)}${if text.len() > 58 { "…" } else { "" }}")
+    }
+    if skipped.len() > 3 { print("  … and ${skipped.len() - 3} more") }
+    print("")
+  }
+
+  if entries.len() == 0 {
+    print("Nothing parsed, so there is nothing to report.")
+    return nil
+  }
+
+  let times = entries.map(fn(e) { e.at })
+  let first = times.minimum().unwrapOr(0)
+  let last = times.maximum().unwrapOr(0)
+  print("Covering ${iso(first)} to ${iso(last)} (${describe(last - first)})")
+  print("")
+
+  // By level, in severity order rather than in whichever order the Map holds.
+  print("By level")
+  let byLevel = entries.groupBy(fn(e) { e.level })
+  for level in LEVELS {
+    let group = byLevel.getOr(level, [])
+    print("  ${level.padEnd(6)} ${group.len().str().padStart(3)}  ${bar(group.len(), 1)}")
+  }
+  print("")
+
+  // By service, busiest first, with ties broken by name so the order is total.
+  print("By service")
+  let byService = entries.groupBy(fn(e) { e.service })
+  let services = byService.entries().sortBy(fn(e) { "${(1000 - e[1].len()).str().padStart(4, "0")}${e[0]}" })
+  for pair in services {
+    let group = pair[1]
+    let errors = group.count(fn(e) { e.level == "ERROR" })
+    let slowest = group.maxBy(fn(e) { e.ms }).unwrapOr(nil)
+    print("  ${pair[0].padEnd(8)} ${group.len().str().padStart(3)} lines, ${errors} error${if errors == 1 { "" } else { "s" }}, slowest ${slowest.ms}ms (${slowest.message})")
+  }
+  print("")
+
+  // Every hour, quiet ones included.
+  print("By hour (UTC)")
+  let byHour = entries.groupBy(fn(e) { format(e.at, "YYYY-MM-DD hh") })
+  for hour in hoursBetween(first, last) {
+    let key = format(hour, "YYYY-MM-DD hh")
+    let group = byHour.getOr(key, [])
+    let marker = if group.len() == 0 { "  (quiet)" } else { "  ${bar(group.len(), 1)}" }
+    print("  ${format(hour, "hh:mm")} ${group.len().str().padStart(3)}${marker}")
+  }
+  print("")
+
+  // The numbers somebody will actually ask for.
+  let durations = entries.map(fn(e) { e.ms }).filter(fn(ms) { ms > 0 })
+  let total = durations.sum()
+  print("Slowest line: ${describe(entries.maxBy(fn(e) { e.ms }).unwrapOr(nil).ms)}")
+  print("Time in work: ${describe(total)} across ${durations.len()} timed lines")
+  print("Mean:         ${fixed(total / max(1, durations.len()), 1)}ms")
+  print("Services:     ${of(entries.map(fn(e) { e.service })).sorted().join(", ")}")
+  print("Days covered: ${of(entries.map(fn(e) { date(e.at) })).sorted().join(", ")}")
+}

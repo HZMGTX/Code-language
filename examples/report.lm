@@ -1,0 +1,183 @@
+// A CSV in, a report out — the shape of most real work.
+//
+//   lumen run examples/report.lm
+//
+// Read a file somebody else exported, decide what is wrong with it, aggregate
+// what is left, and write both a CSV summary and an HTML page. Every awkward
+// part of that job is here on purpose, because the awkward parts are the job:
+//
+//   - **The file is messy**, as exported files are: a comma inside a quoted
+//     field, a doubled quote, a field with a newline in it, `\r\n` endings, and
+//     a blank line. `split(",")` is wrong about every one of those.
+//   - **CSV has one type, and it is text.** Every number arrives as a string
+//     and has to be parsed, which can fail — so the rows that do not parse are
+//     counted and shown rather than dropped in silence.
+//   - **Money is not a float.** Amounts are read as whole pence and stay
+//     integers until they are printed, because `0.1 + 0.2` is not `0.3` and a
+//     report that is a penny out is a report nobody trusts.
+//   - **The output is escaped.** A product called `Tom & Jerry's "Best" <Ever>`
+//     must survive into HTML as itself, not as markup.
+//
+// Everything is written under a directory the program makes and removes, so
+// running it changes nothing.
+
+import { records, write } from "std/csv"
+import { makeDir, write as writeFile, read, remove } from "std/fs"
+import { join } from "std/path"
+import { escape } from "std/web"
+import { test, replace } from "std/regex"
+
+// The file as a spreadsheet would have exported it. Two rows are deliberately
+// bad, because two always are.
+let RAW = "date,product,units,pence\r
+2026-09-01,\"Tea, loose leaf\",3,450\r
+2026-09-01,\"Mug, \"\"World's Best\"\"\",1,1200\r
+2026-09-02,Tea bags,12,299\r
+2026-09-02,\"Gift set\r
+(seasonal)\",2,2500\r
+2026-09-03,Tom & Jerry's <Ever>,1,999\r
+2026-09-03,Broken row,notanumber,500\r
+\r
+2026-09-04,Tea bags,5,299\r
+2026-09-04,Mug plain,,800\r
+"
+
+struct Sale {
+  date:    Str,
+  product: Str,
+  units:   Num,
+  pence:   Num,
+}
+
+// A value as one line, for a column in a table.
+//
+// The data keeps its newline — it is what the file said, and the CSV written
+// back out has to match — but a terminal table is a different medium, and a
+// field with a line break in it destroys the alignment of every row after it.
+// Display and data are not the same thing, which is a lesson the first
+// multi-line field teaches everybody exactly once.
+fn oneLine(text) {
+  replace(text, "\\s+", " ").unwrapOr(text).trim()
+}
+
+// Pence as `£12.34`, from an integer. Never a float: `0.1 + 0.2` is not `0.3`,
+// and a total that is a penny out is a total nobody trusts.
+fn money(pence) {
+  let sign = if pence < 0 { "-" } else { "" }
+  let whole = abs(pence)
+  "${sign}£${floor(whole / 100)}.${(whole % 100).str().padStart(2, "0")}"
+}
+
+// A row, or the reason it is not one. Every number in a CSV is text, and text
+// does not always parse.
+fn readSale(row, at) {
+  let units = row.getOr("units", "")
+  let pence = row.getOr("pence", "")
+
+  if !test(units, "^\\d+$").unwrapOr(false) {
+    return Err("row ${at}: units is `${units}`, which is not a whole number")
+  }
+  if !test(pence, "^\\d+$").unwrapOr(false) {
+    return Err("row ${at}: pence is `${pence}`, which is not a whole number")
+  }
+
+  Ok(Sale {
+    date:    row.getOr("date", ""),
+    product: row.getOr("product", ""),
+    units:   units.toNum().unwrapOr(0),
+    pence:   pence.toNum().unwrapOr(0),
+  })
+}
+
+fn main() {
+  let out = join(".", "lumen-report-demo")
+  remove(out)
+  makeDir(out)
+
+  // Write it and read it back, because that is what a real program does and it
+  // is where a round trip would show up as wrong.
+  let source = join(out, "sales.csv")
+  writeFile(source, RAW)
+  let text = read(source).unwrapOr("")
+
+  let rows = match records(text) {
+    Ok(parsed) => parsed,
+    Err(why)   => {
+      print("Could not read the file: ${why}")
+      remove(out)
+      return nil
+    },
+  }
+  print("${rows.len()} rows read")
+
+  // Split the good from the bad in one pass, keeping both.
+  var sales = []
+  var rejected = []
+  for pair in rows.enumerate(start: 2) {
+    match readSale(pair[1], pair[0]) {
+      Ok(sale) => sales = sales.push(sale),
+      Err(why) => rejected = rejected.push(why),
+    }
+  }
+
+  if rejected.len() > 0 {
+    print("")
+    print("Skipped ${rejected.len()} of ${rows.len()}:")
+    for why in rejected { print("  ${why}") }
+  }
+
+  // By product, biggest first, with ties broken by name so two runs over the
+  // same file say the same thing.
+  let byProduct = sales.groupBy(fn(s) { s.product })
+  let summary = byProduct.entries().map(fn(pair) {
+    let group = pair[1]
+    {
+      product: pair[0],
+      units:   group.map(fn(s) { s.units }).sum(),
+      pence:   group.map(fn(s) { s.units * s.pence }).sum(),
+    }
+  }).sortBy(fn(r) { "${(99999999 - r.pence).str().padStart(9, "0")}${r.product}" })
+
+  let total = summary.map(fn(r) { r.pence }).sum()
+
+  print("")
+  print("Sales by product")
+  for row in summary {
+    print("  ${oneLine(row.product).padEnd(28)} ${row.units.str().padStart(3)} × ${money(row.pence / max(1, row.units)).padStart(8)} = ${money(row.pence).padStart(9)}")
+  }
+  print("  ${"TOTAL".padEnd(28)} ${" ".repeat(3)}   ${" ".repeat(8)}   ${money(total).padStart(9)}")
+
+  // Out as CSV. A product with a comma or a quote in it has to survive, which
+  // is exactly what `write` is for.
+  let grid = [["product", "units", "pence"]] + summary.map(fn(r) {
+    [r.product, r.units.str(), r.pence.str()]
+  })
+  let csv = write(grid).unwrapOr("")
+  writeFile(join(out, "summary.csv"), csv)
+  print("")
+  print("summary.csv")
+  for line in csv.lines().take(4) { print("  ${line}") }
+
+  // And out as HTML. Everything from the data is escaped: a product called
+  // `Tom & Jerry's <Ever>` is a name, not markup.
+  let rowsHtml = summary.map(fn(r) {
+    "  <tr><td>${escape(oneLine(r.product))}</td><td>${r.units}</td><td>${money(r.pence)}</td></tr>"
+  }).join("\n")
+  let html = "<!doctype html>
+<meta charset=\"utf-8\">
+<title>Sales</title>
+<table>
+  <tr><th>Product</th><th>Units</th><th>Total</th></tr>
+${rowsHtml}
+  <tr><th>Total</th><th></th><th>${money(total)}</th></tr>
+</table>
+"
+  writeFile(join(out, "summary.html"), html)
+  print("")
+  print("summary.html")
+  for line in html.lines() {
+    if line.contains("Tom") or line.contains("<th>Product") { print("  ${line.trim()}") }
+  }
+
+  remove(out)
+}

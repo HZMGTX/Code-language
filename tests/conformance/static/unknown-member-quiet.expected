@@ -1,0 +1,23 @@
+[1, 2, 3]
+3
+[3, 1, 2]
+5
+5
+1
+Bool
+true
+[1]
+Some(1)
+false
+Fn
+1
+nil
+["a"]
+TEXT
+1
+two
+P {x: 1, y: "two"}
+Shape.Circle
+Shape.Rect(1, 2)
+nil
+[1, 2]

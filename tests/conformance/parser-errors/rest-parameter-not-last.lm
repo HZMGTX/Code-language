@@ -1,0 +1,6 @@
+// One mistake, however many parameters follow it. Reported once per later
+// parameter, a single misplaced `..` produced sixty identical diagnostics — a
+// cascade, which is what the 25-error bound exists to contain and could not,
+// because that bound is only consulted where a diagnostic aborts the parse.
+fn f(..a, b, c, d, e, g, h) { a }
+print(1)

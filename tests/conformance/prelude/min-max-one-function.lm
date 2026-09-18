@@ -1,0 +1,44 @@
+// `min` and `max` are one function, not two, whichever way you reach them.
+//
+// They were two. The prelude's pair took a list *or* the numbers themselves —
+// `max([3, 1, 4])` and `max(3, 1, 4)` are both good, because guessing wrong
+// about which one a beginner meant is a bad first experience — and `std/math`
+// kept a narrower pair of its own that took exactly two Nums, with a signature
+// saying so. So this program worked:
+//
+//     let scores = [3, 1, 4]
+//     print(max(scores))
+//
+// and stopped compiling the moment somebody wrote
+//
+//     import { sqrt, min, max } from "std/math"
+//
+// with `TY008: max is missing a value for b`. Which is true of `std/math`'s
+// `max` and false of the one everybody means — and `std/math` is exactly where
+// a reader goes looking for `min`. The prelude's own header says why this must
+// not happen: "so there is one implementation, not two."
+//
+// A variadic carries no signature, deliberately, so the checker's
+// argument-count rule can never be wrong about it. The narrow pair had one,
+// which is what made the rule wrong.
+import { min as mathMin, max as mathMax, sqrt } from "std/math"
+
+let scores = [3, 1, 4, 1, 5]
+
+// Both spellings, through the prelude.
+print("${max(scores)} ${min(scores)}")
+print("${max(3, 1, 4)} ${min(3, 1, 4)}")
+print("${max(7)} ${min(7)}")
+print("${max([2.5, 0 - 1, 0])} ${min([2.5, 0 - 1, 0])}")
+
+// Both spellings, through `std/math`, which is the same function.
+print("${mathMax(scores)} ${mathMin(scores)}")
+print("${mathMax(3, 1, 4)} ${mathMin(3, 1, 4)}")
+print("${mathMax(7)} ${mathMin(7)}")
+
+// And the import really is in force, so this is not testing the prelude twice.
+print("${sqrt(16)}")
+
+// Documented the same either way, because it is one native.
+print(help(max))
+print(help(mathMax))

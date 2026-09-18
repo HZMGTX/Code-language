@@ -1,0 +1,6 @@
+error[LX007]: expected `{` after `\u`
+ --> unicode-escape-brace.lm:6:8
+  |
+6 | print("\u41")
+  |        ^^ unicode escapes look like `\u{1F600}`
+  |

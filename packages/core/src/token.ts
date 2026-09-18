@@ -27,7 +27,6 @@ export type TokenKind =
   | 'enum'
   | 'import'
   | 'export'
-  | 'from'
   | 'break'
   | 'continue'
   | 'true'
@@ -42,6 +41,7 @@ export type TokenKind =
   | '+'
   | '-'
   | '*'
+  | '**'
   | '/'
   | '%'
   | '=='
@@ -101,7 +101,40 @@ export interface Token {
   readonly parts?: readonly TemplatePart[];
 }
 
-export const KEYWORDS: Readonly<Record<string, TokenKind>> = {
+/** Where a comment was, for the formatter. Comments never reach the parser. */
+export interface Comment {
+  readonly span: Span;
+  /** True for `/* ... *\/`, which may span lines. */
+  readonly block: boolean;
+}
+
+/**
+ * The reserved words, as a `Map` rather than an object literal.
+ *
+ * An object literal inherits `Object.prototype`, so `KEYWORDS['valueOf']`
+ * would answer with a JavaScript function and the lexer would take it for a
+ * keyword — which is how `let valueOf = 1` came to be a syntax error. A `Map`
+ * has no inherited keys, so a Lumen identifier is only ever compared against
+ * the words written below.
+ */
+/**
+ * `from` and `as` are deliberately **not** here.
+ *
+ * Each appears in exactly one position in the grammar — after the `}` of an
+ * import list, and between a name and its alias inside one — so the parser can
+ * look for the word where it means something and leave it an ordinary name
+ * everywhere else. Reserving them bought nothing and cost a great deal: `let
+ * from = ...` is what anybody writes for a rename, `fn replace(s, from, to)` is
+ * how every other language spells that function, and `relative(from, to)` is
+ * the conventional signature. All three were syntax errors, and the standard
+ * library twice ended up with a parameter no Lumen program could have declared.
+ *
+ * The rest are here because each of them can begin a statement or an
+ * expression, where a name could also begin, so they genuinely have to be
+ * reserved to keep the grammar unambiguous.
+ */
+export const KEYWORDS: ReadonlyMap<string, TokenKind> = new Map<string, TokenKind>(
+  Object.entries({
   let: 'let',
   var: 'var',
   fn: 'fn',
@@ -116,7 +149,6 @@ export const KEYWORDS: Readonly<Record<string, TokenKind>> = {
   enum: 'enum',
   import: 'import',
   export: 'export',
-  from: 'from',
   break: 'break',
   continue: 'continue',
   true: 'true',
@@ -127,7 +159,8 @@ export const KEYWORDS: Readonly<Record<string, TokenKind>> = {
   not: 'not',
   async: 'async',
   await: 'await',
-};
+  } as const),
+);
 
 /**
  * Multi-character operators, longest first. The lexer walks this list in order,
@@ -135,6 +168,9 @@ export const KEYWORDS: Readonly<Record<string, TokenKind>> = {
  */
 export const OPERATORS: readonly TokenKind[] = [
   '==', '!=', '<=', '>=', '+=', '-=', '*=', '/=',
+  // `**` must precede `*=`: `**=` is not an operator, but `2 **= 3` would
+  // otherwise lex as `*` `*=` and report something about assignment.
+  '**',
   '&&', '||', '|>', '?.', '->', '=>', '..',
   '+', '-', '*', '/', '%', '<', '>', '=', '!', '?',
   '.', ',', ';', ':', '(', ')', '{', '}', '[', ']',

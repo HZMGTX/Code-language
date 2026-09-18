@@ -1,0 +1,6 @@
+error[PA005]: expected a module path string after `from`
+ --> import-without-path.lm:2:23
+  |
+2 | import { upper } from upper
+  |                       ^^^^^ expected a string
+  |

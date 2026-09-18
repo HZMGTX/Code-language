@@ -1,0 +1,133 @@
+warning[RS011]: `trim` is never used
+  --> discarded-answer.lm:13:17
+   |
+13 | import { upper, trim } from "std/str"
+   |                 ^^^^ never read
+   |
+   = note: remove it from the import, or use it
+   = note: a method needs no import: `xs.groupBy(f)` works without one
+
+warning[TY010]: `sort` answers with a List that nothing takes
+  --> discarded-answer.lm:17:1
+   |
+17 | sort(xs)
+   | ^^^^^^^^ this statement does nothing
+   |
+   = note: `sort` leaves its subject alone and answers with a new value
+   = note: take the answer or assign it back to the subject; on its own it is thrown away
+
+warning[TY010]: `unique` answers with a List that nothing takes
+  --> discarded-answer.lm:18:1
+   |
+18 | unique(xs)
+   | ^^^^^^^^^^ this statement does nothing
+   |
+   = note: `unique` leaves its subject alone and answers with a new value
+   = note: take the answer or assign it back to the subject; on its own it is thrown away
+
+warning[TY010]: `take` answers with a List that nothing takes
+  --> discarded-answer.lm:19:1
+   |
+19 | take(xs, 1)
+   | ^^^^^^^^^^^ this statement does nothing
+   |
+   = note: `take` leaves its subject alone and answers with a new value
+   = note: take the answer or assign it back to the subject; on its own it is thrown away
+
+warning[TY010]: `insert` answers with a List that nothing takes
+  --> discarded-answer.lm:20:1
+   |
+20 | insert(xs, 0, 9)
+   | ^^^^^^^^^^^^^^^^ this statement does nothing
+   |
+   = note: `insert` leaves its subject alone and answers with a new value
+   = note: take the answer or assign it back to the subject; on its own it is thrown away
+
+warning[TY010]: `sort` answers with a List that nothing takes
+  --> discarded-answer.lm:25:1
+   |
+25 | xs.sort()
+   | ^^^^^^^^^ this statement does nothing
+   |
+   = note: `sort` leaves its subject alone and answers with a new value
+   = note: take the answer or assign it back to the subject; on its own it is thrown away
+
+warning[TY010]: `sort` answers with a List that nothing takes
+  --> discarded-answer.lm:26:1
+   |
+26 | xs |> sort()
+   | ^^^^^^^^^^^^ this statement does nothing
+   |
+   = note: `sort` leaves its subject alone and answers with a new value
+   = note: take the answer or assign it back to the subject; on its own it is thrown away
+
+warning[TY010]: `upper` answers with a Str that nothing takes
+  --> discarded-answer.lm:29:1
+   |
+29 | upper(s)
+   | ^^^^^^^^ this statement does nothing
+   |
+   = note: `upper` leaves its subject alone and answers with a new value
+   = note: take the answer or assign it back to the subject; on its own it is thrown away
+
+warning[TY010]: `trim` answers with a Str that nothing takes
+  --> discarded-answer.lm:30:1
+   |
+30 | s.trim()
+   | ^^^^^^^^ this statement does nothing
+   |
+   = note: `trim` leaves its subject alone and answers with a new value
+   = note: take the answer or assign it back to the subject; on its own it is thrown away
+
+warning[TY010]: `set` answers with a Map that nothing takes
+  --> discarded-answer.lm:34:1
+   |
+34 | set(m, "b", 2)
+   | ^^^^^^^^^^^^^^ this statement does nothing
+   |
+   = note: `set` leaves its subject alone and answers with a new value
+   = note: take the answer or assign it back to the subject; on its own it is thrown away
+
+warning[TY010]: `sort` answers with a List that nothing takes
+  --> discarded-answer.lm:41:3
+   |
+41 |   rows.sort()
+   |   ^^^^^^^^^^^ this statement does nothing
+   |
+   = note: `sort` leaves its subject alone and answers with a new value
+   = note: take the answer or assign it back to the subject; on its own it is thrown away
+
+warning[TY010]: `unique` answers with a List that nothing takes
+  --> discarded-answer.lm:42:3
+   |
+42 |   rows.unique()
+   |   ^^^^^^^^^^^^^ this statement does nothing
+   |
+   = note: `unique` leaves its subject alone and answers with a new value
+   = note: take the answer or assign it back to the subject; on its own it is thrown away
+
+warning[TY010]: `upper` answers with a Str that nothing takes
+  --> discarded-answer.lm:44:3
+   |
+44 |   text.upper()
+   |   ^^^^^^^^^^^^ this statement does nothing
+   |
+   = note: `upper` leaves its subject alone and answers with a new value
+   = note: take the answer or assign it back to the subject; on its own it is thrown away
+
+warning[TY010]: `trim` answers with a Str that nothing takes
+  --> discarded-answer.lm:52:3
+   |
+52 |   name.trim()
+   |   ^^^^^^^^^^^ this statement does nothing
+   |
+   = note: `trim` leaves its subject alone and answers with a new value
+   = note: take the answer or assign it back to the subject; on its own it is thrown away
+
+[3, 1, 2]
+  hi  
+{a: 1}
+3
+r1
+r2
+{a: 1}

@@ -1,0 +1,5 @@
+// An emoji is two UTF-16 code units. The lexer advanced by one, so the second
+// half was reported as a second unexpected character, and each message carried
+// a lone surrogate — which arrives as `?` and names a character that is not in
+// the file.
+let 😀 = 1

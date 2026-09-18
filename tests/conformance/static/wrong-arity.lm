@@ -1,0 +1,9 @@
+// A call that cannot work, caught before the program runs.
+//
+// The interpreter has always reported this (`RT036`), but only on the line that
+// actually executed. Now that a function's parameters are known statically —
+// and, since the standard library declares its signatures, so are every
+// built-in's — the count can be checked without running anything, so a wrong
+// call on a branch that never runs is still a wrong call.
+fn add(a, b) { a + b }
+print(add(1))

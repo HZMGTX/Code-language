@@ -1,0 +1,6 @@
+error[TY002]: this function returns Num but is giving back Str
+ --> return-mismatch.lm:2:10
+  |
+2 |   return "many"
+  |          ^^^^^^ expected Num
+  |

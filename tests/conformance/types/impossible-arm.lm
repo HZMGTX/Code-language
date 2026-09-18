@@ -1,0 +1,48 @@
+// `TY009`: an arm the subject's type can never produce.
+//
+// The mistake nobody makes twice and everybody makes once: misremembering
+// whether a function answers with a `Result`. `json.stringify` answers with a
+// `Str`, so every arm below is dead and the match cannot succeed — and it used
+// to pass every static check, then fail at run time as `RT020` with the caret
+// on the subject, which is the one part that was right.
+//
+// It was found by writing a probe against the library and getting it wrong in
+// exactly this way, twice in one sitting, which is about as strong a case for a
+// diagnostic as there is.
+import { stringify } from "std/json"
+import { find } from "std/regex"
+
+// A Str matched as a Result.
+match stringify(1) {
+  Ok(text) => print(text)
+  Err(why) => print(why)
+}
+
+// A Result matched as an Option: `find` answers `Result<Option<Match>>`, and
+// the arms name the inner enum rather than the outer one.
+match find("a", "a") {
+  Some(m) => print(m.text)
+  None    => print("none")
+}
+
+// A literal of the wrong type, and a list pattern on a Str — which is the
+// Python habit of treating a string as a sequence of its characters.
+fn describe(s: Str) {
+  match s {
+    1      => "one"
+    [c]    => "one character"
+    _      => "something else"
+  }
+}
+print(describe("x"))
+
+// A struct pattern against a different struct.
+struct Point { x: Num, y: Num }
+struct Size { w: Num, h: Num }
+fn area(s: Size) {
+  match s {
+    Point { x, y } => x * y
+    Size { w, h }  => w * h
+  }
+}
+print(area(Size { w: 2, h: 3 }))

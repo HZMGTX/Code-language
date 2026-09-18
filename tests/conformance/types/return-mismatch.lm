@@ -1,0 +1,4 @@
+fn count() -> Num {
+  return "many"
+}
+print(count())

@@ -1,0 +1,397 @@
+/**
+ * The prelude: what is available with no import at all.
+ *
+ * The guiding question was "what does a beginner reach for in the first hour?".
+ * In v0.1 even `map`, `filter` and `sum` needed an import, which is a lot of
+ * ceremony before you have done anything. These are the functions that earn
+ * their place in every file.
+ *
+ * Most are the standard-library functions re-exported under the name a Python
+ * programmer would reach for, so there is one implementation, not two.
+ */
+
+import {
+  NIL,
+  bool,
+  list,
+  num,
+  showSignature,
+  signatureTy,
+  str,
+  truthy,
+  type CallCtx,
+  type NativeValue,
+  type Value,
+  inspect,
+  typeName,
+} from '@lumen-lang/core';
+
+import { stdList } from './list.js';
+import { stdMath } from './math.js';
+import { stdOption } from './option.js';
+import { stdResult } from './result.js';
+import { stdStr } from './str.js';
+import { stdMap } from './map.js';
+import { None, Some, arg, expectInt, fn } from './support.js';
+import { STD_MODULES, STD_MODULE_NAMES } from './modules.js';
+
+/** Pull one native out of a module table. */
+function take(module: Map<string, Value>, name: string): NativeValue {
+  const found = module.get(name);
+  if (found === undefined || found.k !== 'native') {
+    throw new Error('prelude: std module has no native named ' + name);
+  }
+  return found;
+}
+
+/** Re-export a standard-library function under a different prelude name. */
+function alias(source: NativeValue, name: string, doc: string): NativeValue {
+  return { ...source, name, doc };
+}
+
+/**
+ * Render a function's signature the way it would be written in Lumen.
+ *
+ * The declared one when there is one, because it says more and is already
+ * written in exactly this syntax: `upper(s: Str) -> Str` rather than
+ * `upper(s)`. Falls back to the parameter names for anything not yet typed,
+ * which is what every one of these looked like before.
+ */
+function signatureOf(value: NativeValue): string {
+  if (value.variadic === true) return value.name + '(...)';
+  if (value.signature !== undefined) {
+    const ty = signatureTy(value.signature);
+    // A bound method has already lost its receiver from `params`; the signature
+    // string still describes the whole function, so drop as many leading
+    // parameters as the value itself has dropped rather than assuming a number.
+    const dropped = ty.k === 'fn' ? ty.params.length - value.params.length : 0;
+    const shown =
+      ty.k === 'fn' && dropped > 0 ? { ...ty, params: ty.params.slice(dropped) } : ty;
+    return value.name + showSignature(shown);
+  }
+  const params = value.params
+    .map((p) => (p.defaultValue === undefined ? p.name : p.name + ' = ...'))
+    .join(', ');
+  return value.name + '(' + params + ')';
+}
+
+/**
+ * Everything the prelude adds beyond the language's own built-ins.
+ * `installPrelude` declares these as globals.
+ */
+export function preludeExtras(): Map<string, Value> {
+  const L = stdList();
+  const M = stdMath();
+  const S = stdStr();
+
+  const extras = new Map<string, Value>();
+  const define = (value: NativeValue): void => {
+    extras.set(value.name, value);
+  };
+
+  // --- sequences -------------------------------------------------------------
+  define(alias(take(L, 'map'), 'map', 'Apply a function to every element, giving a new list.'));
+  define(alias(take(L, 'filter'), 'filter', 'Keep the elements a predicate says true to.'));
+  define(alias(take(L, 'reduce'), 'reduce', 'Fold a list down to a single value.'));
+  define(alias(take(L, 'sum'), 'sum', 'Add up a list of numbers.'));
+  define(alias(take(L, 'sort'), 'sorted', 'A sorted copy of a list. The original is untouched.'));
+  define(alias(take(L, 'reverse'), 'reversed', 'A reversed copy of a list.'));
+  define(alias(take(L, 'enumerate'), 'enumerate', 'Pair each element with its index: [[0, a], [1, b]]. Pass start: 1 to count from one.'));
+  define(alias(take(L, 'zip'), 'zip', 'Pair up two lists, stopping at the shorter one.'));
+  define(alias(take(L, 'any'), 'any', 'True if any element is truthy, or matches the predicate if one is given.'));
+  define(alias(take(L, 'all'), 'all', 'True if every element is truthy, or matches the predicate if one is given.'));
+
+  // --- numbers ---------------------------------------------------------------
+  define(alias(take(M, 'abs'), 'abs', 'Distance from zero.'));
+  define(alias(take(M, 'round'), 'round', 'Round to the nearest whole number.'));
+  define(alias(take(M, 'floor'), 'floor', 'Round down to a whole number.'));
+  define(alias(take(M, 'ceil'), 'ceil', 'Round up to a whole number.'));
+  define(alias(take(M, 'fixed'), 'fixed', 'A number as text with a fixed number of decimals: fixed(4.5, 2) is "4.50".'));
+
+  // Taken from `std/math` like everything else here, rather than defined
+  // again. These two used to be the exception, and the exception cost exactly
+  // what this file's header says it would: `std/math` kept a *narrower* pair of
+  // its own — exactly two Nums — so `max([3, 1, 4])` worked until somebody
+  // wrote `import { sqrt, min, max } from "std/math"`, at which point a
+  // working program stopped compiling. `std/math` is where a reader looks for
+  // `min`, so that import is the natural thing to write.
+  //
+  // Neither carries a signature, deliberately. They take a list *or* the
+  // numbers themselves — `min([1, 2])` and `min(1, 2)` are both good, because
+  // guessing wrong about which one a beginner meant is a bad first experience —
+  // and a fixed parameter list cannot describe that. A variadic never carries
+  // one: see `withSignatures`, which refuses to attach a signature to one, so
+  // that the checker's argument-count rule can never be wrong about them. The
+  // narrow pair *had* one, which is what made the rule wrong.
+  define(take(M, 'min'));
+  define(take(M, 'max'));
+
+  // --- strings ---------------------------------------------------------------
+  define(alias(take(S, 'split'), 'split', 'Split a string on a separator, giving a list.'));
+  define(alias(take(L, 'join'), 'join', 'Join a list into a string with a separator.'));
+
+  // --- ranges ----------------------------------------------------------------
+  define(
+    fn(
+      'range',
+      ['start', { name: 'end', defaultValue: NIL }, { name: 'step', defaultValue: num(1) }],
+      (a, c) => {
+        // range(n) counts from 0; range(a, b) counts from a. Same as Python.
+        const first = expectInt(arg(a, 0), c, 'range start');
+        const endValue = arg(a, 1);
+        const [from, to] =
+          endValue.k === 'nil' ? [0, first] : [first, expectInt(endValue, c, 'range end')];
+        const step = expectInt(arg(a, 2), c, 'range step');
+        if (step === 0) return c.panic('range() step cannot be 0');
+
+        const size = step > 0 ? Math.ceil((to - from) / step) : Math.ceil((from - to) / -step);
+        if (size > 10_000_000) {
+          return c.panic('range() of ' + size + ' elements is too large', [
+            'ranges are built as lists; use a `while` loop for very large spans',
+          ]);
+        }
+        const items: Value[] = [];
+        if (step > 0) for (let i = from; i < to; i += step) items.push(num(i));
+        else for (let i = from; i > to; i += step) items.push(num(i));
+        return list(items);
+      },
+      'A list of numbers: range(5), range(2, 6), or range(10, 0, -2).',
+      // `end` defaults to nil and changes what `start` means — `range(5)`
+      // counts to five, `range(2, 6)` counts from two — so it takes a Num or
+      // nil, and narrowing it to Num would reject the commoner of the two.
+      '(start: Num, end: Any = nil, step: Num = 1) -> List<Num>',
+    ),
+  );
+
+  // --- console ---------------------------------------------------------------
+  define(
+    fn(
+      'input',
+      [{ name: 'prompt', defaultValue: str('') }],
+      async (a, c) => {
+        const prompt = arg(a, 0);
+        const text = prompt.k === 'str' ? prompt.v : '';
+        if (c.host.readLine === undefined) {
+          return c.panic('input() is not available here', [
+            'this host has no console; input() needs an interactive terminal',
+          ]);
+        }
+        const line = await c.host.readLine(text);
+        return line === undefined ? None : Some(str(line));
+      },
+      'Read one line from the console. Some(text), or None at end of input.',
+      '(prompt: Str = "") -> Option',
+    ),
+  );
+
+  /**
+   * Everything on the input, as one string.
+   *
+   * The pipeline half of `input`. `cat access.log | lumen run report.lm` could
+   * not be written with `input` alone without a loop and an `Option` to say
+   * "read the input", which is four lines of ceremony around the commonest
+   * thing a script does with what is piped into it.
+   *
+   * `inputAll().lines()` is the list of lines, and an empty input is `""`
+   * rather than an error — nothing on the input is a normal amount of input.
+   */
+  define(
+    fn(
+      'inputAll',
+      [],
+      async (_a, c) => {
+        if (c.host.readAll === undefined) {
+          return c.panic('inputAll() is not available here', [
+            'this host has no input; inputAll() reads what is piped to the program',
+          ]);
+        }
+        return str(await c.host.readAll());
+      },
+      'Read everything on the input as one string. "" if there is nothing.',
+      '() -> Str',
+    ),
+  );
+
+  return extras;
+}
+
+/**
+ * `help()` — the thing you reach for when you have forgotten a name.
+ *
+ * With no argument it lists what is available. Given a function it shows the
+ * signature and description. Given any other value it shows the type and the
+ * methods you can call on it, which is the question you usually actually have.
+ */
+function makeHelp(methodsOf: (type: string) => string[], preludeNames: () => string[]): NativeValue {
+  return fn(
+    'help',
+    [{ name: 'subject', defaultValue: NIL }],
+    (a, c) => {
+      const subject = arg(a, 0);
+      const out: string[] = [];
+
+      if (subject.k === 'nil') {
+        out.push('Lumen help');
+        out.push('');
+        out.push('  help(x)          describe a value, a function, or a type');
+        out.push('  help("std/list") list what a module provides');
+        out.push('');
+        out.push('Available everywhere, with no import:');
+        out.push('  ' + preludeNames().sort().join(', '));
+        out.push('');
+        out.push('Modules you can import:');
+        out.push('  ' + STD_MODULE_NAMES.join(', '));
+        c.host.writeOut(out.join('\n') + '\n');
+        return NIL;
+      }
+
+      if (subject.k === 'native') {
+        out.push(signatureOf(subject));
+        if (subject.doc !== undefined) out.push('  ' + subject.doc);
+        c.host.writeOut(out.join('\n') + '\n');
+        return NIL;
+      }
+
+      if (subject.k === 'fn') {
+        const params = subject.params
+          .map((p) => (p.rest ? '..' : '') + p.name + (p.defaultValue === undefined ? '' : ' = ...'))
+          .join(', ');
+        out.push(subject.name === '' ? 'fn(' + params + ')' : subject.name + '(' + params + ')');
+        out.push('  defined in Lumen');
+        c.host.writeOut(out.join('\n') + '\n');
+        return NIL;
+      }
+
+      if (subject.k === 'module') {
+        out.push('module with ' + subject.exports.size + ' functions:');
+        out.push('  ' + [...subject.exports.keys()].sort().join(', '));
+        c.host.writeOut(out.join('\n') + '\n');
+        return NIL;
+      }
+
+      // A module path given as a string, e.g. help("std/list").
+      if (subject.k === 'str' && STD_MODULE_NAMES.includes(subject.v)) {
+        const factory = STD_MODULES.get(subject.v);
+        out.push(subject.v);
+        out.push('  import { ... } from "' + subject.v + '"');
+        if (factory !== undefined) {
+          out.push('  ' + [...factory().keys()].sort().join(', '));
+        }
+        c.host.writeOut(out.join('\n') + '\n');
+        return NIL;
+      }
+
+      const type = typeName(subject);
+      out.push(type + ': ' + inspect(subject));
+      const methods = methodsOf(type);
+      if (methods.length > 0) {
+        out.push('');
+        out.push('methods you can call on it:');
+        out.push('  ' + methods.sort().join(', '));
+      }
+      c.host.writeOut(out.join('\n') + '\n');
+      return NIL;
+    },
+    'Describe a value, a function, or a module. Call help() alone for an overview.',
+  );
+}
+
+/**
+ * Which standard module supplies the methods for each built-in type.
+ *
+ * A few functions are also registered under the name a Python programmer would
+ * reach for. Two names for one function is a small cost; making someone guess
+ * which of `sort` and `sorted` this language chose is a larger one.
+ */
+/**
+ * The `std/math` functions whose first parameter is the number itself, which
+ * is what makes `n.round()` and `2.pow(10)` mean anything.
+ *
+ * Listed rather than taken wholesale: `random()` takes no number at all, and
+ * `PI` and `E` are values, so neither belongs on a receiver.
+ */
+/**
+ * `std/math` functions whose subject is a List rather than a Num.
+ *
+ * They belong to the random generator, which is why they live in `std/math`,
+ * and they belong to a list, which is why they are methods on one.
+ */
+const LIST_METHODS_FROM_MATH = ['shuffle', 'choice'];
+
+const NUM_METHODS = [
+  'abs', 'acos', 'asin', 'atan', 'atan2', 'cbrt', 'ceil', 'clamp', 'cos', 'exp',
+  'fixed', 'floor', 'gcd', 'hypot', 'lcm', 'log', 'max', 'min', 'pow', 'round',
+  'sign', 'sin', 'sqrt', 'tan', 'trunc',
+];
+
+/**
+ * The functions that are methods on every value.
+ *
+ * Their subject is any value at all, so there is no type to attach them to and
+ * no reason to leave them off one. `"${n}"` covers most of what `str` is for,
+ * but a chain like `n.str().padStart(3)` has nowhere to put the interpolation,
+ * and `p.str()` on a struct had no spelling at all.
+ *
+ * Deliberately short. This is not a general fallback to whatever is in scope —
+ * see `registerUniversalMethods` for why that would be a worse error message
+ * rather than a better language.
+ */
+export const UNIVERSAL_METHODS: readonly string[] = ['str', 'inspect', 'type', 'clone', 'isNil'];
+
+/**
+ * The universal methods, resolved through `lookup`.
+ *
+ * `lookup` rather than a fixed import because these do not all live in one
+ * place: `str` and `type` are core builtins installed straight into the globals,
+ * while `inspect`, `clone` and `isNil` are exports of `std/core` that the prelude
+ * deliberately does not put in scope. Taking a lookup lets the caller search
+ * both, and means a name that moves between the two homes keeps working.
+ *
+ * A name that resolves to nothing is skipped rather than faked, so this cannot
+ * be the thing that breaks if one is ever removed.
+ */
+export function universalMethods(lookup: (name: string) => Value | undefined): Map<string, Value> {
+  const out = new Map<string, Value>();
+  for (const name of UNIVERSAL_METHODS) {
+    const found = lookup(name);
+    if (found !== undefined && (found.k === 'native' || found.k === 'fn')) out.set(name, found);
+  }
+  return out;
+}
+
+export function methodTables(): Record<string, Map<string, Value>> {
+  const listMethods = stdList();
+  const sort = listMethods.get('sort');
+  const reverse = listMethods.get('reverse');
+  if (sort !== undefined) listMethods.set('sorted', sort);
+  if (reverse !== undefined) listMethods.set('reversed', reverse);
+
+  const math = stdMath();
+  const numMethods = new Map<string, Value>();
+  for (const name of NUM_METHODS) {
+    const found = math.get(name);
+    if (found !== undefined) numMethods.set(name, found);
+  }
+
+  // `shuffle` and `choice` live in `std/math`, beside the generator they draw
+  // from, but their subject is a List — so that is where they are methods.
+  // Without this, `[1, 2, 3].shuffle()` is `RT027` on a function that takes a
+  // list as its first argument, which is exactly what §4.7 says should work.
+  for (const name of LIST_METHODS_FROM_MATH) {
+    const found = math.get(name);
+    if (found !== undefined) listMethods.set(name, found);
+  }
+
+  return {
+    Str: stdStr(),
+    List: listMethods,
+    Map: stdMap(),
+    Num: numMethods,
+    // `Option` and `Result` are the type names `type()` reports for the two
+    // prelude enums, which is what method lookup dispatches on.
+    Option: stdOption(),
+    Result: stdResult(),
+  };
+}
+
+export { makeHelp, signatureOf };

@@ -1,0 +1,13 @@
+// A real key always beats a method of the same name, so adding methods can
+// never change what an existing lookup returns.
+let shadowing = { keys: "I am a value, not the method", len: 99 }
+print(shadowing.keys)
+print(shadowing.len)
+print(shadowing["keys"])
+
+// The method is still reachable on a map that lacks that key.
+let plain = { a: 1 }
+print(plain.keys())
+
+// A missing key is still nil, as documented.
+print(plain.nothingHere)

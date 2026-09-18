@@ -1,0 +1,7 @@
+// Both spellings work, because guessing which one a language chose is a bad
+// first experience.
+print(min([4, 2, 8]))
+print(min(4, 2, 8))
+print(max([4, 2, 8]))
+print(max(4, 2, 8))
+print(min([7]))

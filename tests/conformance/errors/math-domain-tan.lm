@@ -1,0 +1,7 @@
+// `sin`, `cos` and `tan` have no answer at Infinity: the value oscillates and
+// has no limit, so IEEE 754 says NaN. The guard is on the helper that builds
+// every unary numeric function rather than on these three, because that is what
+// makes the property structural — `sqrt` and `log` were guarded by hand, `asin`
+// and `acos` were missed, and these were missed after that.
+import { tan } from "std/math"
+print(tan(1e308 * 10))

@@ -1,1 +1,6 @@
-import { thing } from "std/nowhere"
+// A module path that happens to name something on the host's prototype chain
+// is still just a module that does not exist.
+
+import { x } from "constructor"
+
+print(x)

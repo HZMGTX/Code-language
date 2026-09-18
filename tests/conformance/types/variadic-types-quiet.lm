@@ -1,0 +1,12 @@
+// The valid shapes of a variadic call, all silent.
+fn log(prefix: Str, ..parts: Str) { print("${prefix}: ${parts.join(" ")}") }
+fn anything(..parts) { parts.len() }
+
+log("a")
+log("a", "b")
+log("a", "b", "c", "d")
+
+// A rest parameter may always be left out entirely, so nothing here is a
+// missing argument.
+print(anything())
+print(anything(1, "two", [3]))

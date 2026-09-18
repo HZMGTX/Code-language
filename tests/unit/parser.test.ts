@@ -3,7 +3,15 @@
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
 
-import { LumenError, parse, type Expr, type Stmt } from '@lumen-lang/core';
+import {
+  LumenError,
+  formatDiagnostic,
+  parse,
+  parseExpression,
+  pos,
+  type Expr,
+  type Stmt,
+} from '@lumen-lang/core';
 
 /** Compact s-expression rendering, so assertions read like the grammar. */
 function sexp(node: unknown): string {
@@ -205,5 +213,72 @@ describe('parser error recovery', () => {
 
   it('leaves valid programs alone', () => {
     assert.deepEqual(codes('fn f() { 1 }\nlet a = f()'), []);
+  });
+});
+
+/**
+ * `parseExpression` — the embedding surface, not the pipeline.
+ *
+ * Everything that runs a program parses statements, so this had no caller at all
+ * and its docstring claimed the REPL used it. That is the state a public
+ * function should never be in: exported, unexercised, and described wrongly.
+ * A host wanting one expression and no more — a watch window, an `--eval` flag,
+ * a language server asked about a selection — needs it to behave exactly so.
+ */
+describe('parseExpression', () => {
+  it('returns the expression itself, not a module wrapping it', () => {
+    const expr = parseExpression('1 + 2 * 3');
+    assert.equal(expr.kind, 'Binary');
+    assert.equal(sexp(expr), '(+ 1 (* 2 3))');
+  });
+
+  it('accepts leading and trailing newlines', () => {
+    assert.equal(sexp(parseExpression('\n\n  x.len()  \n\n')), '(call (. x len))');
+  });
+
+  it('rejects a second expression rather than quietly keeping the first', () => {
+    // The whole reason to have this instead of `parse`: `1 + 2` followed by
+    // anything at all is not one expression, and answering `3` would be a lie.
+    assert.throws(
+      () => parseExpression('1 + 2\n3 + 4'),
+      (error: unknown) => error instanceof LumenError && /PA002/.test(error.render(false)),
+    );
+  });
+
+  it('rejects a statement, which is not an expression', () => {
+    assert.throws(() => parseExpression('let x = 1'), LumenError);
+  });
+});
+
+/**
+ * The renderer's `'warning'` branch.
+ *
+ * Nothing emits a warning yet — every check either rejects a program or says
+ * nothing — so the yellow arm of `formatDiagnostic` has never once run. It is
+ * there for the unused-binding check the roadmap wants, and a rendering path
+ * that has never executed is a rendering path that does not work. This runs it.
+ */
+describe('diagnostic severity', () => {
+  const source = 'let unused = 1\n';
+  const warning = {
+    severity: 'warning' as const,
+    code: 'RS999',
+    message: '`unused` is never read',
+    span: { start: pos(4, 1, 5), end: pos(10, 1, 11) },
+    label: 'never read',
+  };
+
+  it('renders a warning with the same shape as an error', () => {
+    const text = formatDiagnostic(warning, source, 'a.lm');
+    assert.match(text, /^warning\[RS999\]: `unused` is never read\n/);
+    assert.match(text, / --> a\.lm:1:5\n/);
+    assert.match(text, /\^{6} never read/);
+  });
+
+  it('paints it yellow rather than red', () => {
+    const painted = formatDiagnostic(warning, source, 'a.lm', true);
+    const ESC = String.fromCharCode(27);
+    assert.ok(painted.includes(ESC + '[33m'), 'expected yellow');
+    assert.ok(!painted.includes(ESC + '[31m'), 'expected no red');
   });
 });

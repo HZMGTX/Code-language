@@ -1,0 +1,28 @@
+// Names that mean something to the language Lumen happens to be written in
+// must mean nothing to Lumen. These are ordinary identifiers.
+
+let valueOf = 1
+let toString = "two"
+let constructor = [3]
+let hasOwnProperty = { a: 4 }
+var __proto__ = 5
+let prototype = 6
+
+fn isPrototypeOf(x) { x * 2 }
+fn propertyIsEnumerable() { "yes" }
+
+print([valueOf, toString, constructor, hasOwnProperty, __proto__, prototype])
+print(isPrototypeOf(7))
+print(propertyIsEnumerable())
+
+// The same names as map keys, where they are data and nothing else.
+let m = { "__proto__": "a key", "constructor": "another", "toString": "a third" }
+print(m["__proto__"])
+print(m.keys().sorted())
+print(len(m))
+
+// And as struct fields.
+struct Odd { toString: Str, valueOf: Num }
+let o = Odd { toString: "field", valueOf: 8 }
+print(o.toString)
+print(o.valueOf)

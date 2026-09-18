@@ -1,0 +1,22 @@
+#!/bin/sh
+# The `lumen` command, for macOS, Linux and anything else with a shell.
+#
+# A checkout had no launcher at all: `lumen run x.lm` appears throughout the
+# documentation and existed nowhere in the repository, so the first thing anyone
+# tried after cloning did not work. See `lumen.cmd` for the Windows half.
+#
+# It runs the built CLI out of the tree it sits in, so it works from any
+# directory and does not care what the current one is.
+set -e
+here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+cli="$here/packages/cli/dist/index.js"
+
+if [ ! -f "$cli" ]; then
+  echo "Lumen is not built yet. Run these once, in $here:" >&2
+  echo >&2
+  echo "    npm install" >&2
+  echo "    npm run build" >&2
+  exit 1
+fi
+
+exec node "$cli" "$@"

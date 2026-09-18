@@ -1,0 +1,417 @@
+#!/usr/bin/env node
+/**
+ * Check the numbers in README.md against the repository.
+ *
+ * A count written by hand goes stale the moment anybody adds a file, and a stale
+ * count on the front page is the cheapest kind of lie to tell and the most
+ * embarrassing to be caught in: this README claimed "207 tests, 74 conformance
+ * fixtures" when there were 799 and 116, and claimed the suite was "green on
+ * Node 20/22/24" on a repository where CI has never managed to start.
+ *
+ * `check-doc-output.mjs` already proves the documented examples produce what they
+ * claim. This does the same job for the numbers, and for two more things worth
+ * pinning:
+ *
+ *   - every `examples/*.lm` appears in the README's table, and the table names
+ *     nothing that does not exist
+ *   - every `std/*` module has a row in the generated stdlib reference, and is
+ *     imported by something that runs
+ *   - most of the standard library declares a type
+ *   - every file that names a version names the same one
+ *   - every `RS` and `TY` diagnostic the implementation can emit is named in the
+ *     specification, **and** in the header comment of the file that emits it
+ *
+ * Run it with `--fix` to rewrite the counts rather than only reporting them.
+ */
+
+import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
+const README = path.join(ROOT, 'README.md');
+const FIX = process.argv.includes('--fix');
+
+/** Every file under `dir` matching `suffix`, recursively. */
+function collect(dir, suffix) {
+  if (!existsSync(dir)) return [];
+  const found = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) found.push(...collect(full, suffix));
+    else if (entry.name.endsWith(suffix)) found.push(full);
+  }
+  return found;
+}
+
+/**
+ * How many tests the suite actually runs.
+ *
+ * Taken from the runner rather than counted from the source, because `it(...)`
+ * inside a loop is one line and many tests — which is exactly how the
+ * per-file formatter and set-key tests are written.
+ */
+function testCount() {
+  const result = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'run-tests.mjs')], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    env: { ...process.env, NO_COLOR: '1', LUMEN_AI_PROVIDER: 'mock' },
+  });
+  const out = (result.stdout ?? '') + (result.stderr ?? '');
+  const match = /^# pass (\d+)$/m.exec(out);
+  if (match === undefined || match === null) {
+    throw new Error('could not read a test count from the runner:\n' + out.slice(-2000));
+  }
+  if (result.status !== 0) {
+    throw new Error('the test suite is failing, so its count is not worth publishing');
+  }
+  return Number(match[1]);
+}
+
+function moduleCount() {
+  const dist = path.join(ROOT, 'packages', 'stdlib', 'dist', 'modules.js');
+  if (!existsSync(dist)) throw new Error('run `npm run build` first: ' + dist + ' is missing');
+  return null; // filled in by the caller, which can await the import
+}
+
+const problems = [];
+const readme = readFileSync(README, 'utf8');
+
+// ---------------------------------------------------------------- the counts
+
+const { STD_MODULES } = await import(
+  new URL('../packages/stdlib/dist/modules.js', import.meta.url).href
+);
+void moduleCount;
+
+const actual = {
+  tests: testCount(),
+  fixtures: collect(path.join(ROOT, 'tests', 'conformance'), '.lm').length,
+  // Runnable programs: every single-file example, plus the entry point of the
+  // multi-file one. Its helper modules are imported rather than run.
+  examples:
+    readdirSync(path.join(ROOT, 'examples')).filter((name) => name.endsWith('.lm')).length + 1,
+  modules: STD_MODULES.size,
+};
+
+const CLAIMS = [
+  { key: 'tests', pattern: /\*\*(\d+) tests\*\*/, what: 'tests' },
+  { key: 'fixtures', pattern: /(\d+) conformance fixtures/, what: 'conformance fixtures' },
+  { key: 'examples', pattern: /(\d+) example programs/, what: 'example programs' },
+  { key: 'modules', pattern: /(\d+) standard\n?\s*modules/, what: 'standard modules' },
+];
+
+let fixed = readme;
+for (const claim of CLAIMS) {
+  const match = claim.pattern.exec(readme);
+  if (match === null) {
+    problems.push('README does not state a count of ' + claim.what);
+    continue;
+  }
+  const said = Number(match[1]);
+  const real = actual[claim.key];
+  if (said === real) continue;
+  problems.push('README says ' + said + ' ' + claim.what + ', but there are ' + real);
+  if (FIX) {
+    fixed = fixed.replace(match[0], match[0].replace(String(said), String(real)));
+  }
+}
+
+// ------------------------------------------------------- the examples table
+
+const listed = [...readme.matchAll(/^\| `([a-z_]+\.lm)` \|/gm)].map((m) => m[1]).sort();
+const onDisk = readdirSync(path.join(ROOT, 'examples'))
+  .filter((name) => name.endsWith('.lm'))
+  .sort();
+
+for (const name of onDisk) {
+  if (!listed.includes(name)) problems.push('examples/' + name + ' has no row in the README table');
+}
+for (const name of listed) {
+  if (!onDisk.includes(name)) problems.push('the README table names ' + name + ', which does not exist');
+}
+
+// ------------------------------------ every standard module is named in §9
+
+/**
+ * §9 says "The modules are …" and then lists them, which makes it an
+ * enumeration rather than a sample — and it had gone five modules stale, so
+ * the document defining the language did not mention `std/crypto`, `std/csv`,
+ * `std/path`, `std/process` or `std/regex`. This is the same drift the counts
+ * above exist to catch, in prose instead of a number.
+ */
+{
+  const { STD_MODULE_NAMES } = await import(
+    new URL('../packages/stdlib/dist/modules.js', import.meta.url).href
+  );
+  const spec = readFileSync(path.join(ROOT, 'docs', 'spec.md'), 'utf8');
+  const listed = /See \[stdlib\.md\]\(stdlib\.md\) for the full reference\. The modules are([^.]*)\./s.exec(spec);
+  if (listed === null) {
+    problems.push('docs/spec.md §9 no longer enumerates the modules where this check looks');
+  } else {
+    for (const name of STD_MODULE_NAMES) {
+      if (!listed[1].includes('`' + name + '`')) {
+        problems.push(name + ' ships but docs/spec.md §9 does not name it');
+      }
+    }
+    for (const [, named] of listed[1].matchAll(/`(std\/[a-z]+)`/g)) {
+      if (!STD_MODULE_NAMES.includes(named)) {
+        problems.push('docs/spec.md §9 names ' + named + ', which does not exist');
+      }
+    }
+  }
+}
+
+// --------------------------------------- every static check is in the spec
+
+/**
+ * The `RS` and `TY` families, compared against the specification.
+ *
+ * Only those two. The spec's own §8 says "selected codes" of the `LX`, `PA` and
+ * `RT` families and means it — there are eighty of them and tabulating every one
+ * would be a worse document. But §7.5 and §6 list the static checks exhaustively,
+ * because those are the diagnostics a reader needs to know the complete set of:
+ * they are what `lumen check` can say about a program that has not run.
+ *
+ * This exists because `TY005` and `TY006` shipped without reaching the spec. The
+ * patch that was supposed to add them silently matched nothing, and there was no
+ * check to notice — so two static checks existed that the document defining the
+ * language did not mention.
+ */
+const spec = readFileSync(path.join(ROOT, 'docs', 'spec.md'), 'utf8');
+const emitted = new Set();
+for (const file of collect(path.join(ROOT, 'packages'), '.ts')) {
+  if (file.includes('/dist/')) continue;
+  for (const match of readFileSync(file, 'utf8').matchAll(/'((?:RS|TY)\d{3})'/g)) {
+    emitted.add(match[1]);
+  }
+}
+for (const code of [...emitted].sort()) {
+  if (!spec.includes('`' + code + '`')) {
+    problems.push(code + ' can be emitted but is not named in docs/spec.md');
+  }
+}
+
+// ------------------------------- every static check is in its file's own header
+
+/**
+ * The lists at the top of `resolver.ts` and `types.ts`, against what they emit.
+ *
+ * Those headers are what somebody reads to learn what a pass does, and both had
+ * gone stale: `resolver.ts` listed RS001–RS007 while emitting RS008, and
+ * `types.ts` listed TY001–TY004 while emitting TY005 and TY006. The spec check
+ * above would not have caught either — a code can be in the specification and
+ * missing from the file that raises it.
+ */
+const HEADERED = [
+  ['packages/core/src/resolver.ts', /^RS/],
+  ['packages/core/src/types.ts', /^TY/],
+];
+for (const [relative, family] of HEADERED) {
+  const text = readFileSync(path.join(ROOT, relative), 'utf8');
+  const header = text.slice(0, text.indexOf('*/'));
+  for (const code of [...emitted].filter((c) => family.test(c)).sort()) {
+    if (!header.includes(code)) {
+      problems.push(code + ' is emitted but not listed in the header of ' + relative);
+    }
+  }
+}
+
+// ------------------------------------------------ one version, in five places
+
+/**
+ * The version, which is written down in more places than anybody remembers.
+ *
+ * Two TypeScript constants and five manifests, and nothing until now compared
+ * them: `lumen --version` could have said one thing while the packages said
+ * another, and the first person to notice would have been a user.
+ */
+// The manifests are found rather than listed, the same way `check-private.mjs`
+// finds them. That list was written out there too, `packages/lsp` was added to
+// the repository and not to it, and the language server spent the whole of v0.2
+// outside the check that stops an accidental publish. A sixth package would
+// have walked into the identical hole here.
+const VERSIONS = [
+  ['package.json', /"version": "([^"]+)"/],
+  ...readdirSync(path.join(ROOT, 'packages'))
+    .map((entry) => path.join('packages', entry, 'package.json'))
+    .filter((relative) => existsSync(path.join(ROOT, relative)))
+    .map((relative) => [relative, /"version": "([^"]+)"/]),
+  ['packages/core/src/index.ts', /export const VERSION = '([^']+)'/],
+  ['packages/cli/src/support.ts', /export const VERSION = '([^']+)'/],
+];
+const versions = new Map();
+for (const [relative, pattern] of VERSIONS) {
+  const found = pattern.exec(readFileSync(path.join(ROOT, relative), 'utf8'));
+  if (found === null) {
+    problems.push(relative + ' does not state a version');
+    continue;
+  }
+  versions.set(relative, found[1]);
+}
+const distinct = [...new Set(versions.values())];
+if (distinct.length > 1) {
+  problems.push(
+    'the version differs between files: ' +
+      [...versions].map(([where, what]) => where + ' says ' + what).join(', '),
+  );
+}
+const VERSION = distinct[0] ?? '(unknown)';
+
+// ------------------------------------------- the library declares its types
+
+/**
+ * How much of the standard library carries a declared type.
+ *
+ * Not a demand that all of it does — `map(xs, f)` returns a list of whatever
+ * `f` gives back, and `Ty` has no type variables, so forcing a signature onto
+ * it would be worse than leaving it alone. A variadic cannot have one at all
+ * and is counted in neither half.
+ * This is here so the work cannot silently stall, and so that removing one is a
+ * decision somebody makes rather than a thing that happens.
+ *
+ * `tests/unit/signatures.test.ts` is what checks each signature against the
+ * function it describes. This only counts them.
+ */
+let natives = 0;
+let typed = 0;
+for (const factory of STD_MODULES.values()) {
+  for (const value of factory().values()) {
+    if (value.k !== 'native') continue;
+    // A variadic is left out of both halves rather than counted as a failure:
+    // no fixed parameter list describes "any number of parts", so there is
+    // nothing here that anybody could fix, and a ratio that can never reach
+    // one is a ratio nobody will trust.
+    if (value.variadic === true) continue;
+    natives += 1;
+    if (value.signature !== undefined) typed += 1;
+  }
+}
+const MINIMUM_TYPED = 0.8;
+if (typed / natives < MINIMUM_TYPED) {
+  problems.push(
+    'only ' + typed + ' of ' + natives + ' standard-library functions declare a type (want ' +
+      Math.round(MINIMUM_TYPED * 100) + '%)',
+  );
+}
+
+// -------------------------------------------- every module is actually run
+
+/**
+ * Every standard module is exercised by something that runs.
+ *
+ * `std/http` shipped with no fixture, no unit test and no example — the only
+ * one — so the client half of "you can build a website with this" had never
+ * once executed. That was found by reading, which is not a method. This is the
+ * check that would have found it.
+ *
+ * A module counts as covered when some `.lm` file or unit test imports it by
+ * name. That is a proxy rather than a proof — importing is not exercising —
+ * but it catches the failure that actually happened, which is a module nobody
+ * ever reached for at all.
+ */
+const exercised = new Set();
+for (const file of [
+  ...collect(path.join(ROOT, 'tests'), '.lm'),
+  ...collect(path.join(ROOT, 'examples'), '.lm'),
+  ...collect(path.join(ROOT, 'bench'), '.lm'),
+  ...collect(path.join(ROOT, 'tests', 'unit'), '.ts'),
+  ...collect(path.join(ROOT, 'docs'), '.md'),
+]) {
+  const text = readFileSync(file, 'utf8');
+  for (const name of STD_MODULES.keys()) {
+    if (text.includes('"' + name + '"')) exercised.add(name);
+  }
+}
+for (const name of STD_MODULES.keys()) {
+  if (!exercised.has(name)) {
+    problems.push(name + ' is never imported by a test, an example or a benchmark');
+  }
+}
+
+// ------------------------------------------------ every module is documented
+
+// The tour lists them too, and said "twelve" for six modules longer than that
+// was true. A count written in prose goes stale exactly as fast as one written
+// in digits, and is harder to notice.
+for (const document of ['stdlib.md', 'tour.md']) {
+  const text = readFileSync(path.join(ROOT, 'docs', document), 'utf8');
+  for (const name of STD_MODULES.keys()) {
+    if (!text.includes('`' + name + '`')) {
+      problems.push(name + ' is not mentioned in docs/' + document);
+    }
+  }
+}
+
+// ------------------------------------------- the spec's method tables are real
+
+// §4.7 names which types have a method table and which functions are on every
+// value. Both lists are prose, and prose about a data structure is the kind of
+// thing that is true when it is written and quietly stops being so — the tour
+// said "twelve modules" six modules after that was wrong.
+//
+// It matters more than a count here, because `x.f()` working is the difference
+// between the three spellings of a call being one expression and being two that
+// work and one that does not.
+{
+  const { stdMethodSignatures } = await import(
+    new URL('../packages/stdlib/dist/index.js', import.meta.url).href
+  );
+  const spec = readFileSync(path.join(ROOT, 'docs', 'spec.md'), 'utf8');
+
+  const types = new Set();
+  const universal = new Set();
+  for (const key of stdMethodSignatures().keys()) {
+    const type = key.slice(0, key.indexOf('.'));
+    if (type === '*') universal.add(key.slice(key.indexOf('.') + 1));
+    else types.add(type);
+  }
+
+  // The six names §4.7 gives for the types that have a table.
+  const claimedTypes = spec.match(/\*\*Per type\*\*: ([^\n]+)/u)?.[1] ?? '';
+  for (const type of types) {
+    if (!claimedTypes.includes('`' + type + '`')) {
+      problems.push(type + ' has a method table that docs/spec.md §4.7 does not name');
+    }
+  }
+
+  const claimedUniversal = spec.match(/\*\*On every value\*\*: ([^—]+)/u)?.[1] ?? '';
+  for (const name of universal) {
+    if (!claimedUniversal.includes('`' + name + '`')) {
+      problems.push(name + ' is a method on every value that docs/spec.md §4.7 does not name');
+    }
+  }
+  for (const name of [...claimedUniversal.matchAll(/`([a-zA-Z]+)`/gu)].map((m) => m[1])) {
+    if (!universal.has(name)) {
+      problems.push('docs/spec.md §4.7 says `' + name + '` is on every value, and it is not');
+    }
+  }
+}
+
+// ---------------------------------------------------------------- the answer
+
+if (FIX && fixed !== readme) {
+  writeFileSync(README, fixed, 'utf8');
+  process.stdout.write('rewrote the counts in README.md\n');
+}
+
+const summary =
+  String(actual.tests) + ' tests, ' + String(actual.fixtures) + ' fixtures, ' +
+  String(actual.examples) + ' examples, ' + String(actual.modules) + ' modules, ' +
+  String(emitted.size) + ' static checks, ' +
+  String(typed) + '/' + String(natives) + ' typed, v' + VERSION;
+
+if (problems.length === 0) {
+  process.stdout.write('README matches the repository (' + summary + ')\n');
+  process.exit(0);
+}
+
+process.stdout.write('\n' + summary + '\n\n');
+for (const problem of problems) process.stdout.write('  ' + problem + '\n');
+process.stdout.write(
+  '\n' + String(problems.length) + ' problem' + (problems.length === 1 ? '' : 's') +
+    (FIX ? ' (counts rewritten; the rest need a person)' : ' — `node scripts/check-counts.mjs --fix` rewrites the counts') +
+    '\n',
+);
+process.exit(1);

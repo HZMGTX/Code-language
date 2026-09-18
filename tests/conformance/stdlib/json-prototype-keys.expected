@@ -1,0 +1,4 @@
+{"__proto__":1,"b":2}
+{"constructor":3,"toString":4}
+{__proto__: {nested: true}, ok: 1}
+true

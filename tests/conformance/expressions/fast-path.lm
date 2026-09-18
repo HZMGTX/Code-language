@@ -1,0 +1,72 @@
+// The synchronous fast path must answer exactly what the slow one does.
+//
+// `evalLeaf` evaluates expressions that provably cannot suspend without going
+// through a promise, and it now recurses: arithmetic, comparison, indexing,
+// field access, and list and map literals all resolve synchronously when every
+// part of them does. A call never does — any call may do I/O, which is the
+// whole point of Lumen having no async colouring — so splicing one into an
+// expression forces that expression onto the async path.
+//
+// That gives a way to test the two against each other. `id` is a function, so
+// `id(x)` is the same value by a route the fast path cannot take. Every pair
+// below must agree, and the program prints nothing if they all do.
+fn id(x) { x }
+
+fn same(what, fast, slow) {
+  if fast != slow { print("DIFFERENT ${what}: ${fast} vs ${slow}") }
+}
+
+let n = 7
+let s = "abc"
+let xs = [10, 20, 30]
+let m = { a: 1, b: 2 }
+
+struct P { x: Num, y: Num }
+let p = P { x: 3, y: 4 }
+
+// Arithmetic and comparison, nested.
+same("arithmetic", n * 2 - 1, id(n) * 2 - 1)
+same("nesting", (n + 1) * (n - 1), (id(n) + 1) * (id(n) - 1))
+same("power", 2 ** 3 ** 2, id(2) ** 3 ** 2)
+same("compare", n < 10, id(n) < 10)
+same("equality", xs == [10, 20, 30], id(xs) == [10, 20, 30])
+same("string join", s + "!", id(s) + "!")
+same("list join", xs + [40], id(xs) + [40])
+
+// Unary.
+same("negate", 0 - n, 0 - id(n))
+same("not", !true, !id(true))
+
+// Indexing, including the string and map forms.
+same("list index", xs[1], id(xs)[1])
+same("nested index", [[1, 2], [3, 4]][1][0], id([[1, 2], [3, 4]])[1][0])
+same("map index", m["a"], id(m)["a"])
+same("str index", s[0], id(s)[0])
+same("computed index", xs[n - 6], xs[id(n) - 6])
+
+// Field access, and a method looked up but not yet called.
+same("field", p.x, id(p).x)
+same("field arithmetic", p.x * p.y, id(p).x * id(p).y)
+
+// Literals built out of everything above.
+same("list literal", [n, n * 2, xs[0]], [id(n), id(n) * 2, id(xs)[0]])
+same("map literal", { one: n, two: xs[1] }, { one: id(n), two: id(xs)[1] })
+same("nested literal", [{ a: [n] }], [{ a: [id(n)] }])
+
+// Short-circuiting has to survive exactly: the right side of a `&&` whose left
+// is false must not be looked at, however it is spelled.
+var touched = 0
+fn touch() { touched = touched + 1 }
+let _a = false && touch()
+let _b = true || touch()
+same("short circuit", touched, 0)
+
+let _c = true && touch()
+let _d = false || touch()
+same("long circuit", touched, 2)
+
+// Optional field access on nil, which the fast path handles itself.
+let nothing = nil
+same("optional", nothing?.x, id(nothing)?.x)
+
+print("fast and slow agree")

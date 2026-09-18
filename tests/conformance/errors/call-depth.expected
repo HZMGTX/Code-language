@@ -1,0 +1,8 @@
+error[RT045]: too many nested calls: `countdown` is 10000 deep
+ --> call-depth.lm:7:26
+  |
+7 |   if n == 0 { 0 } else { countdown(n + 1) }
+  |                          ^^^^^^^^^^^^^^^^ call depth exceeded
+  |
+  = note: this is usually recursion with no base case, or one that never reaches it
+  = note: a loop uses no call depth at all, if the work can be written as one

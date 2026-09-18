@@ -1,0 +1,17 @@
+1
+2
+6
+7
+["if", "for", "in", "match", "or", "true", "return", "not"]
+{"if":1,"for":2,"in":3,"match":4,"or":5,"true":6,"return":7,"not":8}
+[1, 2, 3]
+[1, "x", true]
+1
+here -> there
+x -> y
+["here", "that"]
+[2, 4]
+if still works
+for still works
+true
+match still works

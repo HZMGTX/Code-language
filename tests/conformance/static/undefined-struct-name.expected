@@ -1,0 +1,7 @@
+error[RS001]: `Point` is not defined
+ --> undefined-struct-name.lm:8:9
+  |
+8 | let p = Point { x: 1, y: 2, label: "origin" }
+  |         ^^^^^ not found in this scope
+  |
+  = note: did you mean `print`?

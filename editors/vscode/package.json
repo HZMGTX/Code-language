@@ -1,0 +1,39 @@
+{
+  "name": "lumen-vscode",
+  "displayName": "Lumen",
+  "description": "Lumen language support: diagnostics, hover, completion, go to definition, and formatting.",
+  "version": "0.2.0",
+  "private": true,
+  "license": "SEE LICENSE IN ../../LICENSE",
+  "engines": { "vscode": "^1.75.0" },
+  "categories": ["Programming Languages"],
+  "activationEvents": ["onLanguage:lumen"],
+  "main": "./extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "lumen",
+        "aliases": ["Lumen"],
+        "extensions": [".lm"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "lumen",
+        "scopeName": "source.lumen",
+        "path": "./lumen.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "Lumen",
+      "properties": {
+        "lumen.path": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the `lumen` command. Leave empty to look for one on PATH, then in a checkout above the workspace."
+        }
+      }
+    }
+  }
+}

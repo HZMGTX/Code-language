@@ -1,0 +1,9 @@
+error[RT035]: cannot convert Infinity to JSON
+  --> json-infinity.lm:12:7
+   |
+12 | print(stringify(sales))
+   |       ^^^^^^^^^^^^^^^^
+   |
+   = note: it is at $.total, where `$` is the value you passed
+   = note: JSON has no way to write Infinity, and `null` would be a lie: it is how JSON spells a value that is not there
+   = note: this usually means an earlier result overflowed

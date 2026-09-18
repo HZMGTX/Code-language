@@ -1,0 +1,2 @@
+// `PA005`: `from` with no module path after it.
+import { upper } from upper

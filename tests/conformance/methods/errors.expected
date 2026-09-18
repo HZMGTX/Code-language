@@ -1,0 +1,7 @@
+error[TY012]: Str has no method `nope`
+ --> errors.lm:1:7
+  |
+1 | print("abc".nope())
+  |       ^^^^^^^^^^ not available here
+  |
+  = note: available on Str: capitalize, center, chars, clone, contains, count, endsWith, indexOf, inspect, isEmpty, isNil, len, lines, lower, padEnd, padStart, removePrefix, removeSuffix, repeat, replace, reverse, slice, split, splitOnce, startsWith, str, title, toNum, trim, trimEnd, trimStart, type, upper, words

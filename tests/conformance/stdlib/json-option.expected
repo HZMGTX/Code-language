@@ -1,0 +1,9 @@
+{"name":"ada","nickname":"addy"}
+{"name":"bob","nickname":null}
+[1,null,[1,2]]
+1
+{"result":{"variant":"Ok","values":[1]}}
+{"result":{"variant":"Err","values":["bad"]}}
+["Red",{"variant":"Custom","values":[1]}]
+["A",{"variant":"B","values":[1]}]
+[null,null]

@@ -1,0 +1,10 @@
+// A parse error inside `${...}` says where its input really ended.
+//
+// Each interpolation is parsed by its own sub-parser over the fragment's
+// source, so its end-of-input is the end of the *fragment* — and this said
+// "expected an expression, found end of file" while pointing at line 5 of a
+// seven-line file. Every other position in the diagnostic was right, which
+// made the one wrong word harder to disbelieve.
+let name = "ada"
+print("hello ${name +} there")
+print("this line is not the end of the file")

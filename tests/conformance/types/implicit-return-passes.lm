@@ -1,0 +1,37 @@
+// The same rule, in every shape it must stay quiet for. A check that rejects a
+// valid program is worse than one that misses an invalid one.
+
+// The value really is the last expression, and it matches.
+fn total(xs: List) -> Num { xs.sum() }
+print(total([1, 2, 3]))
+
+// An early `return`, with the value at the end.
+fn sign(n: Num) -> Str {
+  if n < 0 { return "negative" }
+  "positive"
+}
+print(sign(-1))
+print(sign(1))
+
+// `match` and `if` are expressions, so either can be the value.
+fn name(n: Num) -> Str {
+  match n {
+    0 => "zero",
+    _ => "other",
+  }
+}
+print(name(0))
+
+// An unannotated helper is Any, and Any is compatible with everything, so
+// nothing here is known well enough to complain about.
+fn helper(x) { x }
+fn viaHelper() -> Num { helper(1) }
+print(viaHelper())
+
+// A body ending in a loop or a declaration yields nil. That is a function
+// whose value nobody uses, not a type error, so it is left alone.
+fn sideEffects() -> Num {
+  var t = 0
+  for i in range(3) { t += i }
+}
+print(sideEffects())
