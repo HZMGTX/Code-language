@@ -790,16 +790,19 @@ class Checker {
       return;
     }
 
-    // Nothing else can be indexed at all, which `RT023` says at run time.
-    if (target.k === 'nil' || target.k === 'num' || target.k === 'bool') {
-      this.report(
-        'TY011',
-        aTy(target) + ' cannot be indexed',
-        expr.span,
-        'not indexable',
-        ['`[…]` reads from a List, a Str or a Map'],
-      );
-    }
+    // Nothing else can be indexed at all, which `RT023` says at run time — and
+    // "nothing else" was three kinds short. A struct, an enum value and a
+    // function are as certainly not indexable as a `Num` is, and each was
+    // silent here and `RT023` at run time, which is the gap this check exists
+    // to close. Listed positively, so a kind added to `Ty` has to be thought
+    // about rather than silently falling through.
+    this.report(
+      'TY011',
+      aTy(target) + ' cannot be indexed',
+      expr.span,
+      'not indexable',
+      ['`[…]` reads from a List, a Str or a Map'],
+    );
   }
 
   /**

@@ -1,0 +1,19 @@
+// §6 says `TY011` fires when the thing indexed cannot be — and "nothing else
+// is indexed at all" was three kinds short. A struct, an enum value and a
+// function are as certainly not indexable as a Num is, and each was silent
+// here and `RT023` at run time, which is the gap this check exists to close.
+struct P { x: Num }
+enum E { A }
+
+let p = P { x: 1 }
+print(p["x"])
+
+let e: E = E.A
+print(e[0])
+
+fn f() { 1 }
+print(f[0])
+
+print(true[0])
+print(1[0])
+print(nil[0])

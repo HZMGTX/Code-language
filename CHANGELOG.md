@@ -773,6 +773,36 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
 
 ### Fixed
 
+- **`TY011` was silent about three of the kinds it names.** The spec says
+  nothing but a `List`, a `Str` or a `Map` can be indexed, and the check tested
+  for `Nil`, `Num` and `Bool` by name — so a struct, an enum value and a
+  function passed `lumen check` and failed at run time as `RT023`, which is the
+  gap this check exists to close. The test is positive now: a kind added to the
+  type language has to be thought about rather than falling through.
+
+- **Five documentation claims were false.** Each was found by a sweep that read
+  the prose as a set of assertions and tried them:
+
+  - `docs/from-python.md` said annotations "parse, but nothing checks them yet".
+    They are checked, `TY001`–`TY012` do it, and §6 of the spec describes it in
+    detail — so the one document aimed at newcomers told them the feature was
+    not there, and cited a roadmap that says otherwise.
+  - It said `all` and `any` "always take a predicate; there is no one-argument
+    form". There is, it works, and `docs/stdlib.md` documents the predicate as
+    optional.
+  - It sent Python's `s.split()` to `s.split(" ")` "— no whitespace-aware
+    form". `s.words()` is exactly that, and the recommended substitute is wrong
+    on a run of spaces and on a tab.
+  - It said `a, b = 1, 2` was "not available — one `let` each". `let [a, b] =
+    [1, 2]` is in §3.1, and so is the swap.
+  - `docs/spec.md` §9 says "The modules are" and then names them, which makes
+    it an enumeration. It listed 14 of the 19, omitting `std/crypto`,
+    `std/csv`, `std/path`, `std/process` and `std/regex`. `check-counts.mjs`
+    now reads that sentence and fails the build when it disagrees with the
+    library, in both directions.
+  - `ROADMAP.md` listed unused-binding warnings under "Still ahead" and said
+    the `'warning'` severity had never been used. Three warnings ship.
+
 - **Four library functions cut characters in half.** A character in Lumen is a
   code point, and `len`, `slice`, `indexOf`, `chars`, `reverse` and the padding
   functions all agreed — while `split("")`, `replace("", …)`, `capitalize` and

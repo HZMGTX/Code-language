@@ -1,0 +1,47 @@
+error[TY011]: a P cannot be indexed
+ --> index-what-cannot-be.lm:9:7
+  |
+9 | print(p["x"])
+  |       ^^^^^^ not indexable
+  |
+  = note: `[…]` reads from a List, a Str or a Map
+
+error[TY011]: an E cannot be indexed
+  --> index-what-cannot-be.lm:12:7
+   |
+12 | print(e[0])
+   |       ^^^^ not indexable
+   |
+   = note: `[…]` reads from a List, a Str or a Map
+
+error[TY011]: a fn() -> Any cannot be indexed
+  --> index-what-cannot-be.lm:15:7
+   |
+15 | print(f[0])
+   |       ^^^^ not indexable
+   |
+   = note: `[…]` reads from a List, a Str or a Map
+
+error[TY011]: a Bool cannot be indexed
+  --> index-what-cannot-be.lm:17:7
+   |
+17 | print(true[0])
+   |       ^^^^^^^ not indexable
+   |
+   = note: `[…]` reads from a List, a Str or a Map
+
+error[TY011]: a Num cannot be indexed
+  --> index-what-cannot-be.lm:18:7
+   |
+18 | print(1[0])
+   |       ^^^^ not indexable
+   |
+   = note: `[…]` reads from a List, a Str or a Map
+
+error[TY011]: a Nil cannot be indexed
+  --> index-what-cannot-be.lm:19:7
+   |
+19 | print(nil[0])
+   |       ^^^^^^ not indexable
+   |
+   = note: `[…]` reads from a List, a Str or a Map

@@ -23,7 +23,7 @@ Everything below runs. Try any of it with `lumen run file.lm`.
 | `s.upper()` / `s.lower()` | `s.upper()` / `s.lower()` |
 | `s.strip()` | `s.trim()` |
 | `s.split(",")` | `s.split(",")` |
-| `s.split()` (on whitespace) | `s.split(" ")` — no whitespace-aware form |
+| `s.split()` (on whitespace) | `s.words()` |
 | `",".join(xs)` | `xs.join(",")` |
 | `s.replace("a", "b")` | `s.replace("a", "b")` |
 | `s.startswith("a")` | `s.startsWith("a")` |
@@ -70,8 +70,9 @@ print("x".padStart(3, "0"))              // 00x
 | `functools.reduce(f, xs, 0)` | `xs.reduce(f, 0)` |
 | `all(bs)` / `any(bs)` | `bs.all(fn(b) { b })` / `bs.any(fn(b) { b })` |
 
-Lumen's `all` and `any` always take a predicate; there is no one-argument form
-over a list of booleans, which is why the last row looks noisier than Python's.
+Lumen's `all` and `any` take an optional predicate. With one they ask it of
+every element; without one they read the elements themselves, so
+`[true, true].all()` works exactly as Python's does.
 
 ### List comprehensions
 
@@ -185,7 +186,8 @@ Unlike Python's it returns an actual list, not a lazy object.
 | `f(b=2, a=1)` | `f(b: 2, a: 1)` |
 | `lambda n: n * 2` | `fn(n) { n * 2 }` |
 | `def f(*args, **kwargs)` | not available |
-| `a, b = 1, 2` | not available — one `let` each |
+| `a, b = 1, 2` | `let [a, b] = [1, 2]` |
+| `a, b = b, a` | `[a, b] = [b, a]` |
 
 ```lumen
 fn greet(name, greeting = "Hello") { "${greeting}, ${name}!" }
@@ -329,9 +331,9 @@ Relax about most of it. These carry over unchanged:
   `type(x)` hands back a `Str` (`"List"`) rather than a type object, and `round`
   rounds halves upwards instead of to even, so `round(2.5)` is `3` here and `2`
   in Python. Upwards, not away from zero: `round(-2.5)` is `-2` in both.
-- **Dynamic typing.** Values carry their types; you do not declare them.
-  (Annotations parse, but nothing checks them yet — the roadmap is honest about
-  this.)
+- **Dynamic typing.** Values carry their types, and you need not declare them.
+  An annotation you do write is checked, where both sides are known — see §6 of
+  the spec — but a program that writes none produces no type diagnostic at all.
 - **Indexing and negative indices.** `xs[0]` and `xs[-1]` mean what they mean in
   Python, on both lists and strings.
 - **Literals.** `[1, 2, 3]` is a list, `{ a: 1 }` is a dict-alike, `true`/`false`

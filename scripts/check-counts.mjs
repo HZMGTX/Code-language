@@ -132,6 +132,37 @@ for (const name of listed) {
   if (!onDisk.includes(name)) problems.push('the README table names ' + name + ', which does not exist');
 }
 
+// ------------------------------------ every standard module is named in §9
+
+/**
+ * §9 says "The modules are …" and then lists them, which makes it an
+ * enumeration rather than a sample — and it had gone five modules stale, so
+ * the document defining the language did not mention `std/crypto`, `std/csv`,
+ * `std/path`, `std/process` or `std/regex`. This is the same drift the counts
+ * above exist to catch, in prose instead of a number.
+ */
+{
+  const { STD_MODULE_NAMES } = await import(
+    new URL('../packages/stdlib/dist/modules.js', import.meta.url).href
+  );
+  const spec = readFileSync(path.join(ROOT, 'docs', 'spec.md'), 'utf8');
+  const listed = /See \[stdlib\.md\]\(stdlib\.md\) for the full reference\. The modules are([^.]*)\./s.exec(spec);
+  if (listed === null) {
+    problems.push('docs/spec.md §9 no longer enumerates the modules where this check looks');
+  } else {
+    for (const name of STD_MODULE_NAMES) {
+      if (!listed[1].includes('`' + name + '`')) {
+        problems.push(name + ' ships but docs/spec.md §9 does not name it');
+      }
+    }
+    for (const [, named] of listed[1].matchAll(/`(std\/[a-z]+)`/g)) {
+      if (!STD_MODULE_NAMES.includes(named)) {
+        problems.push('docs/spec.md §9 names ' + named + ', which does not exist');
+      }
+    }
+  }
+}
+
 // --------------------------------------- every static check is in the spec
 
 /**

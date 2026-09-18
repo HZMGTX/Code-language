@@ -1,0 +1,16 @@
+// The other side: everything that can be indexed, and everything the checker
+// cannot know about, stays silent.
+let xs = [1, 2, 3]
+print(xs[0])
+print(xs[0 - 1])
+let m = { a: 1 }
+print(m["a"])
+let s = "abc"
+print(s[1])
+// A parameter is Any, and so is a var that has held more than one kind.
+fn at(v, i) { v[i] }
+print(at([9, 8], 1))
+print(at({ k: "v" }, "k"))
+var any = [1]
+any = "text"
+print(any[0])

@@ -56,9 +56,10 @@ depth: knowing the types of things nobody annotated.
 - Full `match` exhaustiveness, including values whose enum only the type checker
   can determine (the resolver already covers the cases it can prove)
 - Generics and traits, and with traits, methods on your own types
-- Unused-binding warnings (the resolver already reports duplicate declarations).
-  `Severity` has had a `'warning'` arm since v0.1 and nothing has ever emitted
-  one; this would be the first.
+- Warnings beyond the three there are. `RS011` (a binding nothing reads),
+  `RS012` (a statement that can never run) and `TY010` (a statement whose call
+  answers with a value nothing takes) ship; the question each time is whether a
+  rule is narrow enough to be worth reading, which is what kept the list short.
 
 ## v0.3 — Speed
 
