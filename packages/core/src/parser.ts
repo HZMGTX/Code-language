@@ -431,6 +431,26 @@ export class Parser {
     }
   }
 
+  /**
+   * A match guard: a condition, but with no body brace to be ambiguous with.
+   *
+   * `RS013` still wants to know it is a condition — `m if m = 5` is the same
+   * mistake there as anywhere — while brace literals stay legal, because
+   * `parseMatch` requires `=>` next and there is nothing a `{` could be but a
+   * value.
+   */
+  private inGuard<T>(parse: () => T): T {
+    this.conditions += 1;
+    const saved = this.noBraceLit;
+    this.noBraceLit = 0;
+    try {
+      return parse();
+    } finally {
+      this.noBraceLit = saved;
+      this.conditions -= 1;
+    }
+  }
+
   /** Inside `(`/`[`/argument lists, braces are unambiguous again. */
   private inBrackets<T>(parse: () => T): T {
     const saved = this.noBraceLit;
@@ -684,6 +704,7 @@ export class Parser {
   private parseParamList(): Param[] {
     this.expect('(', 'to start a parameter list');
     const params: Param[] = [];
+    let reportedTrailingRest = false;
     this.inBrackets(() => {
       this.skipNewlines();
       while (!this.at(')') && !this.at('eof')) {
@@ -711,7 +732,13 @@ export class Parser {
           });
           defaultValue = undefined;
         }
-        if (params.some((p) => p.rest)) {
+        // Once, however many parameters follow. `fn f(..a, b, c, …)` is one
+        // mistake, and reporting it per later parameter turned it into sixty
+        // identical diagnostics — a cascade, which is exactly what the 25-error
+        // bound exists to contain and could not, because that bound is only
+        // consulted where a diagnostic aborts the parse.
+        if (params.some((p) => p.rest) && !reportedTrailingRest) {
+          reportedTrailingRest = true;
           this.report({
             severity: 'error',
             code: 'PA017',
@@ -1345,7 +1372,10 @@ export class Parser {
     if (this.at('await')) {
       this.advance();
       this.skipNewlines();
-      const operand = this.parseUnary();
+      // Through `nested`, like the `-`/`!`/`not` branch above: the budget is
+      // the depth of the tree being built, and a recursion that skips it is a
+      // shape the limit cannot see.
+      const operand = this.nested(() => this.parseUnary());
       return { kind: 'AwaitExpr', operand, span: this.spanFrom(start) };
     }
     // `return`, `break` and `continue` are also expressions. They produce no
@@ -1374,7 +1404,12 @@ export class Parser {
 
     for (;;) {
       this.skipNewlinesBeforeContinuation();
-      if (this.atAny('(', '[', '.', '?')) {
+      // `?.` as well as `.`: the branch below handles both spellings, and
+      // leaving its token out here meant `a?.b?.b…` built an unbounded spine
+      // that `PA016` never saw — and then the *checker* walked it and died
+      // with a host `RangeError`, which is the one outcome the limit exists to
+      // prevent.
+      if (this.atAny('(', '[', '.', '?.', '?')) {
         suffixes += 1;
         if (this.depth + suffixes >= MAX_NESTING) return this.tooDeep('chained suffixes');
       }
@@ -1689,7 +1724,12 @@ export class Parser {
     if (this.at('else')) {
       this.advance();
       this.skipNewlines();
-      otherwise = this.at('if') ? this.parseIf() : this.parseBlock();
+      // An `else if` ladder is a right-leaning tree, one `IfExpr` per rung, so
+      // it costs depth exactly as a nested `if` does — and it was recursing
+      // outside the budget, so a dispatch table emitted from data (the most
+      // plausible way anybody writes four thousand of these) took out the
+      // host's stack instead of earning `PA016`.
+      otherwise = this.at('if') ? this.nested(() => this.parseIf()) : this.parseBlock();
     } else {
       this.i = savedIndex;
     }
@@ -1724,7 +1764,11 @@ export class Parser {
         let guard: Expr | undefined;
         if (this.eat('if')) {
           this.skipNewlines();
-          guard = this.inCondition(() => this.parseExpr());
+          // A guard is not a control-flow header. `=>` follows it, never a
+          // block, so a `{` here can only be a literal — and suppressing them
+          // rejected `_ if { a: 1 }["a"] == v` with a note saying the brace
+          // "starts the body", which is not true in this one position.
+          guard = this.inGuard(() => this.parseExpr());
         }
         this.expect('=>', 'after a match pattern');
         this.skipNewlines();

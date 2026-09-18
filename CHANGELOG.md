@@ -773,6 +773,52 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
 
 ### Fixed
 
+- **Three shapes of source could still take out the host's stack.** `PA016`
+  bounds the depth of the tree the parser will build, and the spec says that
+  bound is what keeps every later walk — the resolver, the checker, printing,
+  equality — finite. Three shapes were not counted by it:
+
+  ```text
+  a?.b?.b?.b…          `?.` was missing from the token set that counts a suffix,
+                       while the branch below handled both spellings
+  else if … else if …  recursed without going through the budget at all
+  await await await …  the same, beside a sibling branch that does
+  ```
+
+  Each died as `Maximum call stack size exceeded` with no file, line or code —
+  and an `else if` ladder is the most plausible of the three, since it is what a
+  dispatch table emitted from data looks like. All three are `PA016` now, and
+  `deep-source.test.ts` generates them along with its other twenty.
+
+- **One misplaced `..` parameter produced sixty identical errors.** The
+  25-error cascade bound is consulted where a diagnostic aborts the parse, and
+  `PA017` reports without aborting, so `fn f(..a, b, c, …)` re-reported the same
+  mistake once per later parameter. It is one mistake and it is reported once.
+
+- **A nested interpolation stopped lexing.** A string inside a `${…}` may
+  itself interpolate, and the braces inside *it* are the outer scan's braces
+  too — so the scan that skips a nested string counted them anyway and lost
+  count. The example that broke is the spec's own, one level further down:
+
+  ```text
+  print("outer ${ "inner ${ pick("}") }" }")      LX003, wrongly
+  ```
+
+- **A line continuation did not work in a CRLF file.** The character after the
+  backslash is the carriage return there, and only `\n` was accepted — so the
+  same file was valid on one operating system and `LX004` on another, and the
+  message spliced the bare CR into itself, naming a character nobody can see.
+
+- **A `{` in a match guard was refused.** A guard is not a control-flow header:
+  `=>` follows it and never a block, so a brace there can only be a literal.
+  `_ if { a: 1 }["a"] == v` was rejected with a note saying the brace "starts
+  the body", which is untrue in that one position.
+
+- **An emoji outside a string was reported twice, as a character that was not
+  there.** It is two UTF-16 code units; the lexer advanced by one, so the second
+  half became a second error, and each message carried a lone surrogate that
+  arrives as `?`. One diagnostic now, naming the character.
+
 - **Renaming in an editor produced a file that no longer compiles, two ways.**
 
   Renaming a reassigned `var` rewrote every *read* and left the assignment

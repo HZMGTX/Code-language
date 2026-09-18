@@ -65,6 +65,18 @@ const SHAPES: Readonly<Record<string, string>> = {
   'nested fn': 'print(' + 'fn() { '.repeat(DEEP) + '1' + ' }'.repeat(DEEP) + ')',
   'string interpolation': 'print("' + '${"'.repeat(DEEP) + 'x' + '"}'.repeat(DEEP) + '")',
   'nested map': 'print(' + '{ a: '.repeat(DEEP) + '1' + ' }'.repeat(DEEP) + ')',
+  // Three shapes that escaped the budget after this file was written, each
+  // found by a sweep rather than by this list — which is the argument for
+  // deriving a list rather than writing one, and the reason these are here.
+  // `?.` was absent from the token set that counts a suffix while the branch
+  // below handled both spellings; `else if` and `await` recursed without going
+  // through `nested` at all.
+  'optional-chain': 'let a = nil\nprint(a' + '?.b'.repeat(DEEP) + ')',
+  'else-if ladder':
+    'let n = 0\nlet r = if n == 0 { 0 }\n' +
+    Array.from({ length: DEEP }, (_, i) => '  else if n == ' + (i + 1) + ' { ' + (i + 1) + ' }').join('\n') +
+    '\n  else { 0 - 1 }\nprint(r)',
+  'await chain': 'let x = ' + 'await '.repeat(DEEP) + '1\nprint(x)',
 };
 
 /** Text that means a host exception escaped instead of a Lumen diagnostic. */

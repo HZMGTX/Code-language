@@ -264,8 +264,13 @@ export class Lexer {
       }
     }
 
-    // Nothing matched.
-    this.advance();
+    // Nothing matched. A whole character, which is not the same as a whole
+    // `this.source[i]`: an emoji is two UTF-16 code units, so advancing by one
+    // left the second half to be reported as a *second* unexpected character,
+    // and each message carried a lone surrogate that came out as `` ` ` `` —
+    // naming a character that is not in the file and cannot be typed.
+    const whole = String.fromCodePoint(this.source.codePointAt(this.i) ?? 0);
+    for (let n = 0; n < whole.length; n += 1) this.advance();
     const hint =
       c === '|' ? 'did you mean `||` or `|>`?'
         : c === '&' ? 'did you mean `&&`?'
@@ -275,7 +280,7 @@ export class Lexer {
     this.diagnostics.push({
       severity: 'error',
       code: 'LX001',
-      message: 'unexpected character `' + c + '`',
+      message: 'unexpected character `' + whole + '`',
       span: span(start, this.here()),
       label: 'not valid here',
       ...(hint === undefined ? {} : { notes: [{ message: hint }] }),
@@ -461,6 +466,14 @@ export class Lexer {
         return '"';
       case '$':
         return '$';
+      case '\r':
+        // A CRLF file ends its lines with two characters, and the one after the
+        // backslash is the carriage return. Taking only `\n` meant the
+        // continuation worked on one operating system's files and reported
+        // `LX004` on another's — with a bare CR spliced into the message, so it
+        // named a character the reader cannot see.
+        if (this.peek() === '\n') this.advance();
+        return '';
       case '\n':
         // A line continuation: backslash at end of line swallows the newline.
         return '';
@@ -552,6 +565,20 @@ export class Lexer {
   }
 
   /** Skip over a string literal without interpreting it (used while brace-matching). */
+  /**
+   * Walk past a string that is sitting inside an interpolation.
+   *
+   * It has to know about `${…}` as well as quotes, because a string inside an
+   * interpolation may itself interpolate, and the braces in *that* are the
+   * outer scan's braces too. Without it the depth count desynchronised and the
+   * spec's own example stopped lexing one level down:
+   *
+   *     print("outer ${ "inner ${ pick("}") }" }")
+   *
+   * The `"}"` there is a string containing a brace — the very thing the
+   * bracket-counting is written to see past — and the scan that was supposed
+   * to skip it counted the brace anyway.
+   */
   private skipRawString(): void {
     this.advance(); // opening quote
     while (!this.atEnd()) {
@@ -560,10 +587,31 @@ export class Lexer {
         this.advance();
         continue;
       }
+      if (this.peek() === '$' && this.peek(1) === '{') {
+        this.skipRawInterpolation();
+        continue;
+      }
       if (this.peek() === '"') {
         this.advance();
         return;
       }
+      this.advance();
+    }
+  }
+
+  /** The `${…}` of a string being skipped, braces and nested strings and all. */
+  private skipRawInterpolation(): void {
+    this.advance(); // $
+    this.advance(); // {
+    let depth = 1;
+    while (!this.atEnd() && depth > 0) {
+      const c = this.peek();
+      if (c === '"') {
+        this.skipRawString();
+        continue;
+      }
+      if (c === '{') depth += 1;
+      if (c === '}') depth -= 1;
       this.advance();
     }
   }

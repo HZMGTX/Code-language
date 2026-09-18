@@ -590,6 +590,10 @@ A `return` in expression position takes its value at the lowest precedence, so
 `return a + b` returns the sum; a comma, a closing bracket or the end of the
 line ends it. `break` and `continue` never take one.
 
+A guard is an ordinary expression and not a control-flow header, so a `{` in
+one is a map or struct literal rather than the start of a body — `parseMatch`
+requires `=>` next, and there is nothing for it to be ambiguous with.
+
 `break` and `continue` outside a loop are `RS006`. A function boundary counts:
 a `break` inside a lambda cannot leave the loop the lambda was written in,
 because by the time it runs that loop may already have finished.
