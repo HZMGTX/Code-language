@@ -60,7 +60,10 @@ gets turned off:
   after an open `(`, `[` or `{` — that is alignment, and it is the author's
   decision. It moves with that line if the line itself moves.
 - Trailing whitespace is removed, runs of blank lines collapse to one, and the
-  file ends with exactly one newline.
+  file ends with exactly one newline — except inside a token. A line that ends
+  part-way through a multi-line string or block comment ends *inside* it, so
+  what looks like trailing whitespace there is the string's own value and is
+  left alone.
 
 Nothing else changes. Line breaks are never moved — §1.1 makes a line break part
 of the program's meaning — and spacing within a line is never touched, so a set
@@ -227,8 +230,10 @@ var count = 0          // mutable
 count += 1
 ```
 
-An inner scope may shadow an outer name. Assigning to a `let` binding is
-error `RT029` (`RS005` when the static checker gets there first).
+An inner scope may shadow an outer name — including a `struct` or `enum`
+declaration, which is scoped like any other name and may shadow one outside it.
+Assigning to a `let` binding is error `RT029` (`RS005` when the static checker
+gets there first).
 
 The left side may be a list pattern, which is how a function returns more than
 one thing:
@@ -269,7 +274,11 @@ let double = fn(n) { n * 2 }
 ```
 
 - A function's value is the value of its last statement; `return` exits early.
-- Parameters may have type annotations (§6) and default values.
+- Parameters may have type annotations (§6) and default values. A default is an
+  ordinary expression, evaluated at each call that leaves the argument out, and
+  it may name the parameters before it: `fn greet(name, greeting = "hello
+  ${name}")`. Parameters after it are not in scope, whichever way they are
+  later filled.
 - Declarations are **hoisted**, so order within a scope does not matter and
   mutual recursion needs no forward declaration.
 - Arguments may be passed positionally or by name; all positional arguments must
@@ -873,6 +882,22 @@ valid program:
   declaration yields `nil` and is left alone: that is a function whose value
   nobody uses, not a type error, and rejecting it would need an analysis of
   whether every path returns something, which is not what this pass does.
+- **A body that ends by stopping the program has no value to check.** `panic`
+  and `exit` are declared `-> Nil`, because `Nil` is as near as the type
+  language gets to "no answer", and taking that literally made the guard-clause
+  shape a type error:
+
+  ```text
+  fn mustBePositive(n: Num) -> Num {
+    if n > 0 { return n }
+    panic("expected a positive number, got ${n}")
+  }
+  ```
+
+  `RS012` has always counted that call as a statement that certainly leaves, so
+  the two static passes disagreed about it. Both now recognise it the same way,
+  and by *binding* rather than by name: a program that declares its own `panic`
+  is calling its own, and neither pass says anything about it.
 - **A guarded arm covers nothing.** `Light.Amber if hurry => ...` does not make
   a `match` exhaustive, because the guard may be false.
 - **A function body may name declarations that come later.** A body does not

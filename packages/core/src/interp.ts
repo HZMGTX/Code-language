@@ -1628,17 +1628,38 @@ export class Interpreter {
     const filledByName: string[] = [];
     let next = 0;
 
+    /**
+     * Where a default is evaluated: the closure, plus the parameters bound so
+     * far.
+     *
+     * `fn greet(name, greeting = "hello " + name)` is what a person writes, and
+     * the resolver accepts it — it declares each parameter only after walking
+     * that parameter's default, so an earlier one is in scope and an unknown
+     * name in a default is still `RS001`. The interpreter evaluated defaults in
+     * the closure alone, so the two passes disagreed: `lumen check` said the
+     * program was fine and the call that left the argument out died with
+     * `RT005` on a parameter that is right there.
+     *
+     * Built only when a default is actually reached, so an ordinary call
+     * allocates nothing extra.
+     */
+    let defaults: Env | undefined;
+    const bind = (name: string, value: Value): void => {
+      out.set(name, value);
+      defaults?.declare(name, value, false);
+    };
+
     for (const param of params) {
       // `..parts` takes everything positional that is left, as a list. It is
       // always last, so this is the end of the loop either way.
       if (param.rest) {
-        out.set(param.name, list(positional.slice(next).map((a) => a.value)));
+        bind(param.name, list(positional.slice(next).map((a) => a.value)));
         next = positional.length;
         continue;
       }
       const byName = named.get(param.name);
       if (byName !== undefined) {
-        out.set(param.name, byName.value);
+        bind(param.name, byName.value);
         named.delete(param.name);
         filledByName.push(param.name);
         continue;
@@ -1646,11 +1667,15 @@ export class Interpreter {
       const byPosition = positional[next];
       if (byPosition !== undefined) {
         next += 1;
-        out.set(param.name, byPosition.value);
+        bind(param.name, byPosition.value);
         continue;
       }
       if (param.defaultValue !== undefined) {
-        out.set(param.name, await this.evaluate(param.defaultValue, defaultsEnv));
+        if (defaults === undefined) {
+          defaults = new Env(defaultsEnv);
+          for (const [name, value] of out) defaults.declare(name, value, false);
+        }
+        bind(param.name, await this.evaluate(param.defaultValue, defaults));
         continue;
       }
       this.fail(

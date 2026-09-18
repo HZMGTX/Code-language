@@ -226,6 +226,23 @@ describe('fmt — the rules', () => {
     assert.equal(out, 'fn f() {\n  print("one\n  two\n\nthree")\n}\n');
   });
 
+  it('keeps the whitespace at the end of a multi-line string’s first line', () => {
+    // The line a multi-line string opens on ends *inside* the string, so what
+    // looks like trailing whitespace there is the string's value. `trim()` was
+    // applied to it — only the continuation lines were marked verbatim — and
+    // deleted it, so `"a   ⏎b".len()` went from 6 to 3 on a file that had been
+    // formatted. The formatter's one promise is that it changes whitespace and
+    // not meaning; this is the one way it was breaking it.
+    for (const tail of ['   ', ' ', '\t', '  \t ']) {
+      const source = 'fn f() {\nlet s = "a' + tail + '\nb"\nprint(s)\n}\n';
+      const out = format(source, 'f.lm');
+      assert.ok(out.includes('"a' + tail + '\nb"'), JSON.stringify(tail) + ' was eaten:\n' + JSON.stringify(out));
+      assert.equal(tokenKey(out), tokenKey(source), 'token stream changed for ' + JSON.stringify(tail));
+    }
+    // The indentation of such a line is still rewritten: that is what fmt is for.
+    assert.equal(format('fn f() {\n      let s = "a  \nb"\n}\n', 'f.lm'), 'fn f() {\n  let s = "a  \nb"\n}\n');
+  });
+
   it('keeps counting brackets across a multi-line string', () => {
     // `two"))` closes two real brackets on a line that is otherwise verbatim.
     // Missing them would leave everything after it one level too far in.

@@ -1,0 +1,7 @@
+error[TY012]: `Payload` has no field `nosuchfield`
+  --> struct-order.lm:10:7
+   |
+10 | print(w.inner.nosuchfield)
+   |       ^^^^^^^^^^^^^^^^^^^ unknown field
+   |
+   = note: its fields are: value

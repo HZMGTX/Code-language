@@ -771,6 +771,75 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
   took. The example ran clean every day and would have failed the first person
   to rename a file onto another.
 
+### Fixed
+
+- **`lumen fmt` was deleting the contents of a multi-line string.** The line a
+  multi-line string opens on ends *inside* the string, so what looks like
+  trailing whitespace there is the string's value — and the formatter ran
+  `trim()` over it:
+
+  ```text
+  let s = "a␣␣␣
+  b"
+  print(s.len())      6 before `lumen fmt`, 3 after
+  ```
+
+  Only the *continuation* lines of a multi-line token were marked as untouchable;
+  the line the token opens on was treated as ordinary code. The same one-line
+  off-by-one corrupted every multi-line string in a CRLF file, because the CR is
+  trailing whitespace on the string's first line. The formatter's whole promise
+  is that it changes whitespace and not meaning, and this was the one way it was
+  breaking it; `tests/unit/format.test.ts` had stated the invariant in its own
+  header since v0.1 and exercised only the lines that were already safe.
+
+- **A guard clause ending in `panic` was a type error.** `panic` and `exit` are
+  declared `-> Nil` because `Nil` is as near as the type language gets to "no
+  answer", and `TY002` read it literally:
+
+  ```text
+  fn mustBePositive(n: Num) -> Num {
+    if n > 0 { return n }
+    panic("expected a positive number, got ${n}")   ← TY002, wrongly
+  }
+  ```
+
+  `RS012` has always counted that call as a statement that certainly leaves, so
+  the two static passes disagreed about the same call. The checker is now told
+  which library signatures belong to functions that never give a value back, and
+  recognises them by the identity of the signature rather than by name — so a
+  program that declares its own `panic` is calling its own, exactly as `RS012`
+  already had it. Nothing in a signature distinguishes these two, so it is a
+  list; `tests/unit/never-returns.test.ts` keeps it honest by running every
+  library function that answers `Nil` and requiring that exactly the listed two
+  fail to reach the line after the call.
+
+- **A struct or enum declared inside a function was checked against the one
+  outside it.** Declarations are scoped like any other name and may shadow
+  (§7.2), and this pass collected only the module's top level — so an inner
+  `struct Point { label: Str }` was invisible, and `p.label` beside it was
+  `TY012: \`Point\` has no field \`label\``, listing fields from a declaration
+  somewhere else in the file. A valid program rejected, which is the worst thing
+  this pass can do.
+
+- **A struct field naming a struct declared further down the file was `Any`.**
+  Field types were resolved in the same pass that registered the names, so
+  `struct Wrapper { inner: Payload }` written above `struct Payload` left
+  `w.inner` untyped and every check on it silently switched off — the same
+  program, checked differently depending on which line came first. Registered in
+  one pass and resolved in another now, so declaration order cannot matter.
+
+- **A default that read an earlier parameter passed `lumen check` and failed at
+  run time.** `fn greet(name, greeting = "hello ${name}")` is what a person
+  writes, and the resolver accepts it — it declares each parameter only after
+  walking that parameter's default. The interpreter evaluated defaults in the
+  closure alone, so the call that left the argument out died with `RT005` on a
+  parameter that is right there, and with a note suggesting the enclosing
+  function as a replacement for it. Defaults now see the parameters bound before
+  them, which is what both the resolver and the reader already assumed.
+
+  Found by a ten-dimension sweep of the language that wrote and ran programs
+  against every surface it has; these five are the first of what it turned up.
+
 ### Added
 
 - **Every library function now says what it does to `help()`.** `help(walk)`

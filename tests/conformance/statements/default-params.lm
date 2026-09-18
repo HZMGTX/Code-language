@@ -1,0 +1,23 @@
+// A default may read the parameters before it. The resolver has always
+// accepted this — it declares each parameter only after walking that
+// parameter's default — while the interpreter evaluated defaults in the
+// closure alone, so `lumen check` passed and the call that left the argument
+// out died with `RT005` on a parameter that is right there.
+fn greet(name, greeting = "hello ${name}") { greeting }
+print(greet("ada"))
+print(greet("ada", "hi ada"))
+
+fn chain(a, b = a + 1, c = b * 2) { [a, b, c] }
+print(chain(1))
+print(chain(1, 5))
+print(chain(1, 5, 9))
+print(chain(c: 7, a: 2))
+
+// A parameter filled by name is in scope for a later default too.
+fn named(a = 1, b, c = b) { [a, b, c] }
+print(named(b: 4))
+
+// A rest parameter is bound before any default that follows it cannot exist —
+// `..rest` is always last — but the ones before it are visible.
+fn counted(first, ..rest) { [first, rest.len()] }
+print(counted(1, 2, 3))

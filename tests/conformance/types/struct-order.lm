@@ -1,0 +1,10 @@
+// A field whose type names a struct declared further down the file. The
+// checker resolved field types while it was still registering struct names, so
+// `Wrapper.inner` was `Any` in this order and `Payload` in the other one — the
+// same program, checked differently depending on which line came first. Both
+// spellings must report this typo.
+struct Wrapper { inner: Payload }
+struct Payload { value: Str }
+
+let w = Wrapper { inner: Payload { value: "hi" } }
+print(w.inner.nosuchfield)

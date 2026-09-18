@@ -247,6 +247,7 @@ class Checker {
   /** `"Str.upper"` to the type of `x.upper`, with the receiver already removed. */
   private readonly methods: ReadonlyMap<string, Ty>;
   private readonly methodNames: ReadonlyMap<string, ReadonlySet<string>> | undefined;
+  private readonly neverReturning: ReadonlySet<Ty>;
   /** What each described module exports, so an imported name has a type. */
   private readonly moduleExports: ReadonlyMap<string, ReadonlyMap<string, Ty>>;
   /** Where to send every type derived, when anybody wants them. */
@@ -270,6 +271,7 @@ class Checker {
     this.methods = options.methods ?? new Map();
     // Usable only when it says what every value has; see `CheckOptions`.
     this.methodNames = options.methodNames?.has(UNIVERSAL) ? options.methodNames : undefined;
+    this.neverReturning = options.neverReturns ?? new Set();
     this.moduleExports = options.moduleExports ?? new Map();
     this.record = options.record;
     this.effectful = options.effectful ?? new Set();
@@ -442,19 +444,80 @@ class Checker {
     return this.diagnostics;
   }
 
-  /** Structs and enums first, so annotations naming them resolve. */
+  /**
+   * Structs and enums first, so annotations naming them resolve.
+   *
+   * In three passes rather than two, because a field's type may name a struct
+   * declared further down the file. `toTy` asks `this.structs.has(name)` to
+   * decide whether an annotation names a struct, so filling the fields in the
+   * same pass that registers the names made the answer depend on the order the
+   * two structs were written in:
+   *
+   *     struct Wrapper { inner: Payload }      `w.inner` was Any, and every
+   *     struct Payload  { value: Str }         check on it silently stopped
+   *
+   * Swapping those two lines changed what the checker could see about a program
+   * that means the same thing either way. So every name is registered first,
+   * with the field map it will be given, and the types go into that same map
+   * afterwards — by which point every struct in the file is known.
+   */
   private collectTypes(stmts: readonly Stmt[]): void {
     for (const stmt of stmts) {
       const decl = stmt.kind === 'ExportDecl' ? stmt.declaration : stmt;
       if (decl.kind === 'EnumDecl') this.enums.set(decl.name, decl.variants.map((v) => v.name));
     }
+    const pending: { decl: Extract<Stmt, { kind: 'StructDecl' }>; fields: Map<string, Ty> }[] = [];
     for (const stmt of stmts) {
       const decl = stmt.kind === 'ExportDecl' ? stmt.declaration : stmt;
       if (decl.kind !== 'StructDecl') continue;
       const fields = new Map<string, Ty>();
-      for (const field of decl.fields) fields.set(field.name, this.toTy(field.type));
       this.structs.set(decl.name, { fields });
+      pending.push({ decl, fields });
     }
+    for (const { decl, fields } of pending) {
+      for (const field of decl.fields) fields.set(field.name, this.toTy(field.type));
+    }
+  }
+
+  /**
+   * The struct and enum declarations a block introduces, in force for that
+   * block only.
+   *
+   * A declaration inside a function is scoped like any other name — §7.2 — and
+   * this pass used to collect only the module's top level, so an inner `struct
+   * Point` was invisible and a `Point { … }` beside it was checked against the
+   * *outer* one. That is the worst kind of wrong answer this pass can give: a
+   * valid program rejected, and rejected with a message listing fields from a
+   * declaration somewhere else in the file.
+   *
+   * Returns what to put back, because a shadowed outer declaration has to
+   * survive the block that shadowed it.
+   */
+  private scopedTypes(stmts: readonly Stmt[]): () => void {
+    const undo: (() => void)[] = [];
+    for (const stmt of stmts) {
+      const decl = stmt.kind === 'ExportDecl' ? stmt.declaration : stmt;
+      if (decl.kind === 'StructDecl') {
+        const had = this.structs.get(decl.name);
+        const fields = new Map<string, Ty>();
+        for (const field of decl.fields) fields.set(field.name, this.toTy(field.type));
+        this.structs.set(decl.name, { fields });
+        undo.push(() => {
+          if (had === undefined) this.structs.delete(decl.name);
+          else this.structs.set(decl.name, had);
+        });
+      } else if (decl.kind === 'EnumDecl') {
+        const had = this.enums.get(decl.name);
+        this.enums.set(decl.name, decl.variants.map((v) => v.name));
+        undo.push(() => {
+          if (had === undefined) this.enums.delete(decl.name);
+          else this.enums.set(decl.name, had);
+        });
+      }
+    }
+    return () => {
+      for (const put of undo) put();
+    };
   }
 
   private hoist(stmts: readonly Stmt[]): void {
@@ -490,6 +553,7 @@ class Checker {
   private block(block: Block, inside?: () => void): void {
     const saved = this.scope;
     this.scope = new Scope(saved);
+    const restoreTypes = this.scopedTypes(block.stmts);
     this.hoist(block.stmts);
     for (const [i, stmt] of block.stmts.entries()) {
       this.stmt(stmt);
@@ -498,6 +562,7 @@ class Checker {
       if (i < block.stmts.length - 1) this.checkDiscarded(stmt);
     }
     inside?.();
+    restoreTypes();
     this.scope = saved;
   }
 
@@ -839,6 +904,10 @@ class Checker {
     if (last === undefined || last.kind !== 'ExprStmt') return;
 
     const actual = this.typeOf(last.expr);
+    // A body that ends by stopping the program has no value to give back, so
+    // there is nothing to compare against the annotation. Typed after the line
+    // above so the expression is still checked for its own sake.
+    if (this.neverReturns(last.expr)) return;
     if (!accepts(this.returnTy, actual)) {
       this.report(
         'TY002',
@@ -848,6 +917,45 @@ class Checker {
         ["a function's value is the value of its last statement"],
       );
     }
+  }
+
+  /**
+   * Whether an expression stops the program rather than producing a value.
+   *
+   * The same shapes `RS012` calls "certainly leaves", for the same reason and
+   * with the same restraint: the call has to be to a *library* function that
+   * never returns, recognised by the identity of its type rather than by its
+   * name, so a program's own `panic` is its own business.
+   */
+  private neverReturns(expr: Expr): boolean {
+    switch (expr.kind) {
+      case 'CallExpr': {
+        if (expr.callee.kind !== 'Ident') return false;
+        const ty = this.scope.lookup(expr.callee.name);
+        return ty !== undefined && this.neverReturning.has(ty);
+      }
+      case 'IfExpr':
+        // Both ways out, or it is not certain — an `if` with no `else` falls
+        // through by definition.
+        if (expr.otherwise === undefined) return false;
+        return (
+          this.blockNeverReturns(expr.then) &&
+          (expr.otherwise.kind === 'IfExpr'
+            ? this.neverReturns(expr.otherwise)
+            : this.blockNeverReturns(expr.otherwise))
+        );
+      case 'MatchExpr':
+        return expr.arms.length > 0 && expr.arms.every((arm) => this.neverReturns(arm.body));
+      case 'BlockExpr':
+        return this.blockNeverReturns(expr.block);
+      default:
+        return false;
+    }
+  }
+
+  private blockNeverReturns(block: Block): boolean {
+    const last = block.stmts[block.stmts.length - 1];
+    return last !== undefined && last.kind === 'ExprStmt' && this.neverReturns(last.expr);
   }
 
   /**
@@ -1471,6 +1579,25 @@ export interface CheckOptions {
    * `TY012` says nothing — an incomplete table would call working code a typo.
    */
   readonly methodNames?: ReadonlyMap<string, ReadonlySet<string>>;
+  /**
+   * The types of library functions that never give a value back, by identity.
+   *
+   * `panic` and `exit` stop the program. Both are declared `-> Nil`, because
+   * `Nil` is the nearest thing the type language has to say about a call that
+   * has no answer — and taking that literally made a guard clause a type error:
+   *
+   *     fn mustBePositive(n: Num) -> Num {
+   *       if n > 0 { return n }
+   *       panic("expected a positive number, got ${n}")   ← TY002, wrongly
+   *     }
+   *
+   * The resolver has always known better: `RS012` counts a call to `panic` as a
+   * statement that certainly leaves, so the two static passes disagreed about
+   * the same call. By type identity rather than by name, exactly as `RS012`
+   * recognises it by binding — a program that declares its own `panic` is
+   * calling its own, and this must not speak about it.
+   */
+  readonly neverReturns?: ReadonlySet<Ty>;
   /**
    * What each module exports and the type of each, keyed by module path.
    *

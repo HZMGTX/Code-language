@@ -1,0 +1,27 @@
+// A struct or enum declared inside a function is that function's own, and
+// shadowing an outer name is explicitly legal (§7.2). The checker used to
+// collect only the module's top level, so an inner `Point` was invisible and a
+// `Point { … }` beside it was checked against the outer one — a valid program
+// rejected, with a message listing fields from a declaration somewhere else.
+struct Point { x: Num, y: Num }
+enum Colour { Red, Green }
+
+fn inner() {
+  struct Point { label: Str }
+  enum Colour { Amber }
+  let p = Point { label: "inner" }
+  print(p.label)
+  print(Colour.Amber)
+}
+
+fn outer() {
+  let p = Point { x: 1, y: 2 }
+  print(p.x)
+  print(Colour.Red)
+}
+
+inner()
+outer()
+// And the outer declarations are still the outer ones out here.
+print(Point { x: 3, y: 4 }.y)
+print(Colour.Green)

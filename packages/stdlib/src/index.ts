@@ -265,6 +265,33 @@ export function stdMethodSignatures(): ReadonlyMap<string, Ty> {
 }
 
 /**
+ * The two functions that stop the program instead of answering.
+ *
+ * Both are declared `-> Nil`, which is as close as the type language gets to
+ * "no answer", and reading that literally made `fn f() -> Num { … panic(…) }` a
+ * type error. The checker is handed their signature *objects*, so it recognises
+ * them by identity and says nothing about a program's own `panic`.
+ *
+ * A list of two rather than something derived, because nothing in a signature
+ * distinguishes them — it is what the function does. `tests/unit/never-returns.test.ts`
+ * is what keeps the list honest: it runs every library function that answers
+ * `Nil` and requires that exactly these two stop the program.
+ */
+export const NEVER_RETURNS: readonly (readonly [string, string])[] = [
+  ['', 'panic'],
+  ['std/core', 'exit'],
+];
+
+export function neverReturningSignatures(): ReadonlySet<Ty> {
+  const out = new Set<Ty>();
+  for (const [module, name] of NEVER_RETURNS) {
+    const ty = module === '' ? stdSignatures().get(name) : stdModuleExports().get(module)?.get(name);
+    if (ty !== undefined) out.add(ty);
+  }
+  return out;
+}
+
+/**
  * Every method each built-in type has, by the name `typeName` reports, with
  * the five every value has under `UNIVERSAL` — read off a built interpreter,
  * so they are the tables `RT027` consults and not a second statement of them.
@@ -300,6 +327,7 @@ export function checkOptions(globals: readonly string[]): ResolveOptions {
     signatures: stdSignatures(),
     methods: stdMethodSignatures(),
     methodNames: stdMethodNames(),
+    neverReturns: neverReturningSignatures(),
     effectful: effectfulFunctions(),
   };
 }

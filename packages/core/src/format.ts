@@ -118,6 +118,22 @@ interface LineShape {
   commentOnly: boolean;
   /** True when the line begins inside a multi-line token and must not be touched. */
   verbatim: boolean;
+  /**
+   * True when a multi-line token *starts* on this line, so the line ends inside
+   * it.
+   *
+   * `verbatim` covers the lines a span passes through, and was set from
+   * `from + 1` — never the line the span opens on, which is still indented like
+   * ordinary code and so had `trim()` applied to it. Everything from a
+   * multi-line token's start to the end of that line is inside the token, so
+   * the trailing half of that `trim()` was deleting the contents of a string:
+   *
+   *     let s = "a   ⏎ b"        `s.len()` was 6, and 3 after `lumen fmt`
+   *
+   * The indentation rewrite is still right on such a line — it is what `fmt` is
+   * for — so the line is trimmed at the start only.
+   */
+  opensSpan: boolean;
 }
 
 /**
@@ -146,6 +162,7 @@ function shapes(source: string, tokens: readonly Token[], comments: readonly Com
     blank: true,
     commentOnly: false,
     verbatim: false,
+    opensSpan: false,
   }));
 
   const at = (line: number): LineShape | undefined => out[line];
@@ -161,8 +178,13 @@ function shapes(source: string, tokens: readonly Token[], comments: readonly Com
   /** Whether every code token so far on a line has been a closing bracket. */
   const onlyClosers = new Array<boolean>(count).fill(true);
 
-  /** Every line after a multi-line span's first belongs to that span. */
+  /**
+   * Every line after a multi-line span's first belongs to that span, and the
+   * line it opens on ends inside it.
+   */
   const markSpanned = (from: number, to: number): void => {
+    const first = at(from);
+    if (first !== undefined) first.opensSpan = true;
     for (let l = from + 1; l <= to && l < count; l += 1) {
       const shape = at(l);
       if (shape !== undefined) shape.verbatim = true;
@@ -318,7 +340,9 @@ export function format(source: string, file = '<input>'): string {
       // needed before the file stopped changing.
       const aligned = current.length === enclosing?.column && !current.includes('\t');
       const indent = aligned ? ' '.repeat(enclosing?.outColumn ?? current.length) : floor;
-      out.push(indent + raw.trim());
+      // Trimmed at the start only when the line ends inside a token: what looks
+      // like trailing whitespace there is the contents of a string.
+      out.push(indent + (s.opensSpan ? raw.trimStart() : raw.trim()));
       shift = indent.length - current.length;
       previous = level;
     }
