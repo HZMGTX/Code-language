@@ -42,12 +42,23 @@ function mapToHeaders(value: Value, ctx: CallCtx, where: string): Record<string,
   const out = Object.create(null) as Record<string, string>;
   if (value.k !== 'map') return out;
   for (const [key, item] of value.entries) {
-    if (item.k === 'str') {
-      out[key] = item.v;
-      continue;
-    }
-    if (item.k === 'num') {
-      out[key] = String(item.v);
+    if (item.k === 'str' || item.k === 'num') {
+      const text = item.k === 'str' ? item.v : String(item.v);
+      // Said here, in Lumen's words. The host refuses these too, and its
+      // refusal names `Headers.append` — a method of the Fetch API, in a
+      // language the reader is not writing, whose wording changes with the
+      // Node version. `docs/stdlib.md` names that exact hazard.
+      if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/u.test(key)) {
+        ctx.panic(where + ' name `' + key + '` is not a header name', [
+          'a header name is letters, digits and `-`, with no spaces',
+        ]);
+      }
+      if (/[\r\n]/u.test(text)) {
+        ctx.panic(where + ' value for `' + key + '` cannot contain a line break', [
+          'a value that did would let whoever supplied it write headers of their own',
+        ]);
+      }
+      out[key] = text;
       continue;
     }
     // Anything else used to be sent as an **empty** header, which is the one
@@ -93,6 +104,17 @@ async function send(
 ): Promise<Value> {
   const wrong = badUrl(url);
   if (wrong !== undefined) return Err(str(method + ' ' + url + ' failed: ' + wrong));
+  // Said here for the same reason the headers are: the host's refusal is
+  // `'GE T' is not a valid HTTP method`, in quotes of its own choosing and
+  // wording of its own version.
+  if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/u.test(method)) {
+    return Err(
+      str(
+        method + ' ' + url + ' failed: `' + method + '` is not a method name — ' +
+          'a method is letters with no spaces, as in GET, POST or PATCH',
+      ),
+    );
+  }
   try {
     const response = await fetch(url, {
       method,

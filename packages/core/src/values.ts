@@ -408,7 +408,24 @@ export function display(v: Value): string {
 const PRELUDE_ENUMS: ReadonlySet<string> = new Set(['Result', 'Option']);
 
 /** Rendering for the REPL and for values nested inside collections. */
-export function inspect(v: Value, seen = new Set<unknown>()): string {
+/**
+ * How deep a rendering will walk before it stops describing the contents.
+ *
+ * A value can be nested far deeper than the host's stack: `reduce(range(0,
+ * 2500), fn(acc, x) { [acc, x] }, [])` is an ordinary program with no
+ * recursion in it and no nesting in its source, and printing what it built
+ * ended in a host stack overflow that asked the reader to report their file.
+ *
+ * So rendering stops, the way it already stops for a value that contains
+ * itself, and says so with the same marker. A thousand levels is past anything
+ * anybody reads and comfortably inside what the host can walk.
+ */
+const MAX_RENDER_DEPTH = 1000;
+
+export function inspect(v: Value, seen = new Set<unknown>(), depth = 0): string {
+  if (depth > MAX_RENDER_DEPTH) {
+    return v.k === 'list' ? '[...]' : v.k === 'map' ? '{...}' : v.k === 'struct' ? v.typeName + ' {...}' : '...';
+  }
   switch (v.k) {
     case 'nil':
       return 'nil';
@@ -421,7 +438,7 @@ export function inspect(v: Value, seen = new Set<unknown>()): string {
     case 'list': {
       if (seen.has(v)) return '[...]';
       seen.add(v);
-      const body = v.items.map((item) => inspect(item, seen)).join(', ');
+      const body = v.items.map((item) => inspect(item, seen, depth + 1)).join(', ');
       seen.delete(v);
       return '[' + body + ']';
     }
@@ -429,7 +446,7 @@ export function inspect(v: Value, seen = new Set<unknown>()): string {
       if (seen.has(v)) return '{...}';
       seen.add(v);
       const body = [...v.entries]
-        .map(([key, value]) => keyOf(key) + ': ' + inspect(value, seen))
+        .map(([key, value]) => keyOf(key) + ': ' + inspect(value, seen, depth + 1))
         .join(', ');
       seen.delete(v);
       return '{' + body + '}';
@@ -441,7 +458,7 @@ export function inspect(v: Value, seen = new Set<unknown>()): string {
       // plain names; going through `keyOf` anyway costs nothing and means
       // there is one answer to "how is a key written" rather than two.
       const body = [...v.fields]
-        .map(([key, value]) => keyOf(key) + ': ' + inspect(value, seen))
+        .map(([key, value]) => keyOf(key) + ': ' + inspect(value, seen, depth + 1))
         .join(', ');
       seen.delete(v);
       return v.typeName + ' {' + body + '}';
@@ -452,7 +469,7 @@ export function inspect(v: Value, seen = new Set<unknown>()): string {
       // variant is written `Enum.Variant`, so that is how it renders.
       const prefix = PRELUDE_ENUMS.has(v.enumName) ? '' : v.enumName + '.';
       if (v.values.length === 0) return prefix + v.variant;
-      const body = v.values.map((value) => inspect(value, seen)).join(', ');
+      const body = v.values.map((value) => inspect(value, seen, depth + 1)).join(', ');
       return prefix + v.variant + '(' + body + ')';
     }
     case 'fn':

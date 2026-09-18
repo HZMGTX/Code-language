@@ -350,6 +350,18 @@ describe('web server', () => {
     assert.equal(res.status, 200);
   });
 
+  it('answers HEAD with the GET route, headers only', async () => {
+    // RFC 9110 §9.1 requires every general-purpose server to support HEAD, and
+    // it is defined as GET without the body — `curl -I`, uptime monitors, link
+    // checkers and caches all send it. `router` answered 405, which to a
+    // monitor reads as "down".
+    const res = await fetch(base + '/json', { method: 'HEAD' });
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type') ?? '', /application\/json/u);
+    assert.equal(await res.text(), '');
+  });
+
+
   it('refuses a header value carrying a line break, in its own words', async () => {
     // Response splitting: a value a visitor supplied, put into a header. Node
     // refuses it, and used to do so as `TypeError [ERR_INVALID_CHAR]` written

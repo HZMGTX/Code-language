@@ -276,7 +276,11 @@ export function stdList(): Map<string, Value> {
       const xs = expectList(arg(a, 0), c, 'flatten(xs)');
       const out: Value[] = [];
       for (const item of xs.items) {
-        if (item.k === 'list') out.push(...item.items);
+        // One at a time. `push(...items)` passes every element as an argument,
+        // and an argument list is bounded by the host's stack — so flattening a
+        // list of 150,000 answered "stack overflow … please report the file"
+        // about a program with no recursion and no nesting in it at all.
+        if (item.k === 'list') for (const inner of item.items) out.push(inner);
         else out.push(item);
       }
       return list(out);
@@ -403,7 +407,8 @@ export function stdList(): Map<string, Value> {
       const out: Value[] = [];
       for (const item of xs.items) {
         const produced = await c.call(f, [item]);
-        if (produced.k === 'list') out.push(...produced.items);
+        // One at a time, for the reason `flatten` above gives.
+        if (produced.k === 'list') for (const inner of produced.items) out.push(inner);
         else out.push(produced);
       }
       return list(out);

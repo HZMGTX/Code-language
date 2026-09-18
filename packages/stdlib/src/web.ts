@@ -194,7 +194,14 @@ function matchPattern(pattern: Pattern, pathname: string): Map<string, Value> | 
     if (segment !== part) return undefined;
   }
   if (pattern.rest !== undefined) {
-    params.set(pattern.rest, str(parts.slice(pattern.segments.length).map(safeDecode).join('/')));
+    // The *rest* of the path, as it was written. A `:name` captures one value —
+    // a slug, an id — and handing it over decoded is what the link meant. A
+    // `*rest` captures a *path*, and its escapes belong to it until whoever
+    // consumes it decodes them: the documented use is `file(req.params.path,
+    // root: "public")`, and `file` decodes, so decoding here as well meant
+    // `/static/100%25.txt` looked for `100` and `/static/a%2520b.txt` served
+    // `a b.txt` — each request finding the wrong file, in both directions.
+    params.set(pattern.rest, str(parts.slice(pattern.segments.length).join('/')));
   }
   return params;
 }
@@ -379,7 +386,7 @@ const DOCS: Readonly<Record<string, string>> = {
   notFound: 'A 404 response, with a body of "Not Found" unless given.',
   redirect: 'A response sending the visitor to another location, with a status of 302 unless given.',
   route: 'One route: methods, a path pattern with `:name` and `*rest` holes, and a handler.',
-  router: 'A handler for `serve` that tries routes in order, answering 404 or 405 for what none match.',
+  router: 'A handler for `serve` that tries routes in order, answering 404 or 405 for what none match; HEAD uses the GET route.',
   escape: 'Text made safe to put inside HTML: `<`, `&` and quotes become entities.',
   url: "A visitor's link made safe for an `href`; an unlinkable scheme becomes `about:blank`.",
   form: 'The fields a form submitted, as a Map of the last value under each name.',
@@ -530,10 +537,17 @@ export function stdWeb(): Map<string, Value> {
         // Methods that would have matched, gathered as we go, so a 405 can name
         // them without a second pass over the routes.
         const allowed = new Set<string>();
+        // HEAD is GET without the body — RFC 9110 §9.1 requires every
+        // general-purpose server to answer it, and `curl -I`, uptime monitors,
+        // link checkers and caches all send it. Answering 405 to it told them
+        // the page does not exist in the way they asked for, which for a
+        // monitor means "down". The handler runs as it would for GET, and
+        // `serve` sends the headers without the body, which is what HEAD is.
+        const matchable = wanted === 'HEAD' ? ['HEAD', 'GET'] : [wanted];
         for (const entry of compiled) {
           const params = matchPattern(entry.pattern, pathname);
           if (params === undefined) continue;
-          if (!entry.methods.includes(wanted)) {
+          if (!matchable.some((m) => entry.methods.includes(m))) {
             for (const m of entry.methods) allowed.add(m);
             continue;
           }
@@ -828,7 +842,12 @@ export function stdWeb(): Map<string, Value> {
                 // charset says.
                 const type = headers['content-type'] ?? '';
                 const isText = type.startsWith('text/') || type.includes('charset=');
-                res.end(Buffer.from(out, isText ? 'utf8' : 'latin1'));
+                // HEAD is "GET, but send me only the headers", so the handler's
+                // answer is computed and its body is not written. Node refuses
+                // to write one on a HEAD anyway; doing it here means the
+                // `content-length` the handler set still describes what a GET
+                // would have returned, which is the point of asking.
+                res.end(req.method === 'HEAD' ? undefined : Buffer.from(out, isText ? 'utf8' : 'latin1'));
               } catch (error) {
                 // A handler that throws becomes a 500 with the Lumen error text,
                 // so a broken page never silently hangs the connection.

@@ -356,4 +356,29 @@ describe('std/http: cookies, header values and URL schemes', () => {
       assert.match(out, expected, url + ' was reported as: ' + out);
     }
   });
+
+  it('says what is wrong with a header or a method in its own words', async () => {
+    // The host refuses these too, and names `Headers.append` — a method of the
+    // Fetch API, in a language the reader is not writing, whose wording
+    // changes with the Node version. `docs/stdlib.md` names that exact hazard
+    // as the reason this module translates what the host says.
+    for (const [program, expected] of [
+      [
+        'print(get("https://example.invalid/", headers: { "x a": "b" }))',
+        /is not a header name/u,
+      ],
+      [
+        'print(get("https://example.invalid/", headers: { "x-a": "b\\nc" }))',
+        /cannot contain a line break/u,
+      ],
+      [
+        'import { request } from "std/http"\nprint(request("GE T", "https://example.invalid/"))',
+        /is not a method name/u,
+      ],
+    ] as const) {
+      const out = await run('import { get } from "std/http"\n' + program + '\n');
+      assert.match(out, expected, 'reported as: ' + out);
+      assert.doesNotMatch(out, /Headers\.append|undici/u, 'host wording leaked: ' + out);
+    }
+  });
 });

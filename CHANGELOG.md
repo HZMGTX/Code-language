@@ -773,6 +773,68 @@ stability policy in [docs/spec.md](docs/spec.md) §10.
 
 ### Fixed
 
+- **Four library functions cut characters in half.** A character in Lumen is a
+  code point, and `len`, `slice`, `indexOf`, `chars`, `reverse` and the padding
+  functions all agreed — while `split("")`, `replace("", …)`, `capitalize` and
+  `title` went through the host, which cuts in UTF-16 units:
+
+  ```text
+  "a😀b".split("")        ["a", "\u{D83D}", "\u{DE00}", "b"]   ← four "characters"
+  "a🎉b".replace("", "-") a-?-?-b                              ← the emoji, halved
+  "𐐨bc".capitalize()      𐐨bc                                  ← nothing happened
+  ```
+
+  The halves are lone surrogates, which are not characters at all, and `len`
+  then counted each as one. `capitalize` and `title` took `s.slice(0, 1)` as
+  "the first letter" and got half of one, which has no upper case — so they
+  returned their argument unchanged for Deseret and Adlam, alphabets with
+  ordinary words in them, while `upper` on the same letter had always worked.
+
+- **Two ordinary programs met the host's stack instead of an answer.**
+  `flatten` and `flatMap` passed an inner list to `push(...items)`, and an
+  argument list is bounded by the stack — so flattening a list of 150,000
+  answered "stack overflow … please report the file" about a program with no
+  recursion and no nesting in it. Printing a value nested thousands deep did
+  the same; it stops at a depth now and says so with the marker it already uses
+  for a value that contains itself. The message that appears when the stack
+  does run out named only recursion and source nesting, and asked for a bug
+  report; it names the third cause now, which is the one that looks ordinary.
+
+- **`std/path`: `relative(".", target)` climbed out of a directory nobody had
+  entered.** `normalize(".")` is `"."`, and that single dot was counted as a
+  directory — so `relative(".", "docs/spec.md")` was `"../docs/spec.md"`, for
+  the commonest base anybody passes, and `resolve` agreed with it because it
+  made the same mistake in reverse. Found with it: `resolve("/", "a/b")` built
+  `//a/b`, which the path reader takes for a UNC network path — resolving
+  against the root produced a path pointing at another machine.
+
+- **`std/time` was wrong by nineteen centuries for the years 0 to 99.** The
+  host's `Date.UTC` still carries a rule written for two-digit years in the
+  nineties, and reads a year in that range as 1900 plus it. `fromParts` worked
+  around it; `startOfDay` and `parts` did not, so `startOfDay` on an instant in
+  the year 50 answered 1950 and `dayOfYear` came back as -693,900. And `iso`
+  wrote `-0044` for a year before zero, which is not ISO 8601 — the standard
+  reserves a leading sign for the expanded six-digit form — so the module's own
+  `parseIso` refused what its `iso` had just written.
+
+- **`router` answered 405 to HEAD.** HEAD is GET without the body, which RFC
+  9110 requires every general-purpose server to support, and which `curl -I`,
+  uptime monitors, link checkers and caches all send — so a monitor read every
+  page as unavailable. The GET route runs and the body is not written.
+
+- **A route's `*rest` capture was decoded twice.** `file` decodes the path it
+  is given, and the router had already decoded the capture, so the documented
+  static-file route served the wrong file in both directions:
+  `/static/100%25.txt` looked for `100` and `/static/a%2520b.txt` served
+  `a b.txt`. A `:name` still arrives decoded, which is the name the link meant;
+  a `*rest` is a path and arrives as written.
+
+- **`std/http` reported the host's wording.** A bad header name or value came
+  back as `Headers.append: "x a" is an invalid header name` — a method of the
+  Fetch API, in a language the reader is not writing, whose text changes with
+  the Node version. The module already translates what the host says about a
+  URL, and now says this too, along with what is wrong with a method name.
+
 - **Three shapes of source could still take out the host's stack.** `PA016`
   bounds the depth of the tree the parser will build, and the spec says that
   bound is what keeps every later walk — the resolver, the checker, printing,

@@ -139,9 +139,16 @@ export function reportError(error: unknown): never {
     // nobody has diagnosed yet, and guessing at it would send the reader after
     // the wrong thing.
     process.stderr.write(
-      'lumen: stack overflow — the program or the source is nested deeper than Lumen can walk\n' +
-        '       runaway recursion is reported as `RT045` and deeply nested source as `PA016`,\n' +
-        '       so this is a case neither of them caught: please report the file\n',
+      // Three causes, and the message used to name only two of them and then
+      // ask for a bug report. The third is a *value* nested deeply — a list
+      // inside a list inside a list, which an ordinary `reduce` builds without
+      // any recursion in the program and without any nesting in the source, so
+      // both of the codes named here were beside the point and the reader was
+      // told their perfectly normal file was worth reporting.
+      'lumen: stack overflow — something here is nested deeper than Lumen can walk\n' +
+        '       runaway recursion is reported as `RT045` and deeply nested source as `PA016`;\n' +
+        '       a *value* nested thousands deep is neither, and is the usual cause when the\n' +
+        '       program itself looks ordinary — copying or comparing one walks its whole depth\n',
     );
     process.exit(1);
   }

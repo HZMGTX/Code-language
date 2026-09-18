@@ -264,7 +264,10 @@ serve(handler: app, port: 3000)
 ```
 
 A pattern is literal segments plus two kinds of hole: `:name` matches one
-segment, and `*name` matches the rest of the path. What they capture arrives in
+segment, and `*name` matches the rest of the path. A `:name` captures one
+value and arrives percent-decoded, which is the name the link meant; a `*name`
+captures a path and arrives as written, because its escapes belong to it until
+whoever consumes it decodes them — `file` does. What they capture arrives in
 `req.params`, so every handler takes one argument whether it has parameters or
 not, decoded — `/post/a%20b` gives `a b`. A method may name several verbs
 separated by spaces.

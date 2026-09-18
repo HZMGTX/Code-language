@@ -246,7 +246,13 @@ export function stdPath(): Map<string, Value> {
           const base = expectStr(arg(a, 0), c, 'resolve(base)');
           const target = expectStr(arg(a, 1), c, 'resolve(path)');
           if (rootOf(target).absolute) return str(normalise(target));
-          return str(normalise(base === '' ? target : base + '/' + target));
+          // Not a separator when the base already ends in one. `resolve("/",
+          // "a/c/d")` built `//a/c/d`, which `rootOf` then reads as a UNC
+          // network path — `//a/c` is a server and a share — so resolving
+          // against the root produced a path pointing at another machine.
+          const joined =
+            base === '' ? target : base.endsWith('/') ? base + target : base + '/' + target;
+          return str(normalise(joined));
         }),
 
         /**
@@ -269,8 +275,15 @@ export function stdPath(): Map<string, Value> {
           if (fromRoot.prefix !== toRoot.prefix || fromRoot.absolute !== toRoot.absolute) {
             return str(toRaw);
           }
-          const fromParts = fromRoot.rest.split('/').filter((s) => s !== '');
-          const toParts = toRoot.rest.split('/').filter((s) => s !== '');
+          // `.` is a segment that means "here", and `normalise` leaves it as
+          // the whole of a path that is only that. Counting it as a directory
+          // made `relative(".", "docs/spec.md")` climb out of a directory that
+          // was never entered — `"../docs/spec.md"` — for the commonest base
+          // anybody passes, and broke the round trip with `resolve`.
+          const segments = (rest: string): string[] =>
+            rest.split('/').filter((s) => s !== '' && s !== '.');
+          const fromParts = segments(fromRoot.rest);
+          const toParts = segments(toRoot.rest);
           let shared = 0;
           while (
             shared < fromParts.length &&

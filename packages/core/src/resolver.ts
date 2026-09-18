@@ -155,7 +155,7 @@ class Scope {
     const out: string[] = [];
     let scope: Scope | undefined = this;
     while (scope !== undefined) {
-      out.push(...scope.names.keys());
+      for (const name of scope.names.keys()) out.push(name);
       scope = scope.parent;
     }
     return out;
@@ -170,7 +170,8 @@ class Scope {
     const out: string[] = [];
     let scope: Scope | undefined = this;
     while (scope !== undefined) {
-      out.push(...scope.names.keys(), ...scope.future.keys());
+      for (const name of scope.names.keys()) out.push(name);
+      for (const name of scope.future.keys()) out.push(name);
       scope = scope.parent;
     }
     return out;

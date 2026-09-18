@@ -159,6 +159,13 @@ export function stdStr(): Map<string, Value> {
     fn('split', ['s', 'separator'], (a, c) => {
       const source = expectStr(arg(a, 0), c, 'split(s)');
       const sep = expectStr(arg(a, 1), c, 'split separator');
+      // An empty separator means "every character", and a character here is a
+      // code point — as it is for `chars`, `len`, `slice`, `indexOf` and the
+      // padding functions. The host splits by UTF-16 unit, so `"a😀b".split("")`
+      // came back with four pieces where `chars` gives three, two of them lone
+      // surrogates: values that are not characters at all, that `len` then
+      // called one character each.
+      if (sep === '') return list([...source].map((ch) => str(ch)));
       return list(source.split(sep).map((part) => str(part)));
     }),
 
@@ -191,6 +198,11 @@ export function stdStr(): Map<string, Value> {
       const source = expectStr(arg(a, 0), c, 'replace(s)');
       const old = expectStr(arg(a, 1), c, 'replace old');
       const replacement = expectStr(arg(a, 2), c, 'replace new');
+      // Between every character, and a character is a code point — the same
+      // rule `split` follows, and for the same reason: splitting by UTF-16
+      // unit put the replacement *inside* an emoji and handed back a string of
+      // broken halves.
+      if (old === '') return str([...source].join(replacement));
       return str(source.split(old).join(replacement));
     }),
 
@@ -277,10 +289,10 @@ export function stdStr(): Map<string, Value> {
     /** Trailing whitespace removed, leading left alone. */
     fn('trimEnd', ['s'], (a, c) => str(expectStr(arg(a, 0), c, 'trimEnd(s)').trimEnd())),
 
-    /** First letter upper, the rest lower: `"aDA" -> "Ada"`. */
+    /** First letter upper, the rest lower: `"aDA" -> "Ada"`. See `firstUpper`. */
     fn('capitalize', ['s'], (a, c) => {
       const s = expectStr(arg(a, 0), c, 'capitalize(s)');
-      return str(s.slice(0, 1).toUpperCase() + s.slice(1).toLowerCase());
+      return str(firstUpper(s));
     }),
 
     /** Every word capitalized: `"ada lovelace" -> "Ada Lovelace"`. */
@@ -291,7 +303,7 @@ export function stdStr(): Map<string, Value> {
       return str(
         s
           .split(' ')
-          .map((word) => word.slice(0, 1).toUpperCase() + word.slice(1).toLowerCase())
+          .map((word) => firstUpper(word))
           .join(' '),
       );
     }),
@@ -409,4 +421,22 @@ export function stdStr(): Map<string, Value> {
     ),
     SIGNATURES,
   );
+}
+
+/**
+ * The first character upper-cased and the rest lower, where a character is a
+ * code point.
+ *
+ * `s.slice(0, 1)` cuts in UTF-16 units, so for a letter outside the basic
+ * plane it takes half of one — a lone surrogate, which has no upper case, so
+ * `capitalize("𐐨bc")` handed back its argument unchanged while `upper` on the
+ * same letter worked perfectly. Deseret and Adlam are cased alphabets with
+ * ordinary words in them, and this is the one place in the module that had not
+ * been taught what `len` and `slice` already know.
+ */
+function firstUpper(s: string): string {
+  const first = s.codePointAt(0);
+  if (first === undefined) return s;
+  const head = String.fromCodePoint(first);
+  return head.toUpperCase() + s.slice(head.length).toLowerCase();
 }

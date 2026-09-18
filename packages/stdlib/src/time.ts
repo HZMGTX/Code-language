@@ -103,10 +103,49 @@ function instant(value: Value, ctx: { panic: (m: string, notes?: readonly string
 
 const pad = (n: number, width = 2): string => String(Math.abs(n)).padStart(width, '0');
 
-/** The year, padded to four digits, with a sign for the years before 0. */
+/**
+ * `Date.UTC`, with the two-digit-year rule taken out of it.
+ *
+ * The host's `Date.UTC` still carries a rule written for two-digit years in
+ * the nineties: it reads a year in 0…99 as 1900 plus it. `fromParts` worked
+ * around it and `startOfDay` and `parts` did not, so an instant in the year 50
+ * printed correctly, and asking for the start of its day answered 1950 —
+ * `startOfDay` moved a value nineteen centuries and said nothing.
+ *
+ * Computing four hundred years later and subtracting them back is exact,
+ * because the Gregorian calendar repeats every 400 years to the day, and it
+ * keeps working when the month or day rolls over into the next year.
+ */
+function utcOf(
+  y: number,
+  month: number,
+  day: number,
+  hour = 0,
+  minute = 0,
+  second = 0,
+  millisecond = 0,
+): number {
+  const shift = y >= 0 && y <= 99 ? 400 : 0;
+  return (
+    Date.UTC(y + shift, month, day, hour, minute, second, millisecond) -
+    shift * (GREGORIAN_CYCLE_DAYS / 400) * DAY
+  );
+}
+
+/**
+ * The year, in the form ISO 8601 gives it.
+ *
+ * Four digits inside 0…9999, which is what everybody reads and writes. Outside
+ * it, the *expanded* form: a sign and six digits. `-0044` is not ISO 8601 at
+ * all — the standard reserves a leading sign for the expanded representation —
+ * and the module's own `parseIso` refused what its `iso` had just written, so
+ * a value could be printed and not read back. The module accepts instants
+ * ±273,000 years out, so this is the range it has to be able to write.
+ */
 function year(d: Date): string {
   const y = d.getUTCFullYear();
-  return (y < 0 ? '-' : '') + pad(y, 4);
+  if (y >= 0 && y <= 9999) return pad(y, 4);
+  return (y < 0 ? '-' : '+') + pad(y, 6);
 }
 
 function isoOf(d: Date): string {
@@ -287,7 +326,7 @@ export function stdTime(): Map<string, Value> {
        */
       fn('parts', ['instant'], (a, c) => {
         const d = instant(arg(a, 0), c, 'parts(instant)');
-        const startOfYear = Date.UTC(d.getUTCFullYear(), 0, 1);
+        const startOfYear = utcOf(d.getUTCFullYear(), 0, 1);
         return map(
           new Map<string, Value>([
             ['year', num(d.getUTCFullYear())],
@@ -338,8 +377,7 @@ export function stdTime(): Map<string, Value> {
           // calendar repeats every 400 years to the day — and it keeps working
           // when the month or day rolls over into the next year, which patching
           // the year afterwards would not.
-          const shift = y >= 0 && y <= 99 ? 400 : 0;
-          const at = Date.UTC(y + shift, ...rest) - shift * (GREGORIAN_CYCLE_DAYS / 400) * DAY;
+          const at = utcOf(y, ...rest);
           if (!Number.isFinite(at) || Math.abs(at) > LIMIT) {
             return c.panic('those pieces do not make a time that can be represented');
           }
@@ -426,7 +464,7 @@ export function stdTime(): Map<string, Value> {
       /** Midnight UTC at the start of the instant's day. */
       fn('startOfDay', ['instant'], (a, c) => {
         const d = instant(arg(a, 0), c, 'startOfDay(instant)');
-        return num(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+        return num(utcOf(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
       }),
 
       /** The name of the instant's day: `"Sunday"` … `"Saturday"`. */

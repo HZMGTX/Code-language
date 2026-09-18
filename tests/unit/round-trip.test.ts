@@ -154,6 +154,65 @@ describe('the inverse pairs whose names do not say so', () => {
     assert.equal(result.output.trim(), 'ok', result.output);
   });
 
+  it('path: resolve takes what relative gives', async () => {
+    // `resolve(base, relative(base, target))` must be `normalize(target)`. It
+    // was not for the commonest base of all: `normalize(".")` is `"."`, and
+    // counting that single dot as a directory made `relative(".", "docs/x")`
+    // climb out of a directory nobody had entered — `"../docs/x"` — which then
+    // resolved to the same wrong place, so the pair agreed with each other and
+    // with nothing else.
+    const result = await runSource(
+      `
+      import { relative, resolve, normalize } from "std/path"
+      let bases = [".", "./", "", "a", "a/b", "/a/b", "/", "a/b/c"]
+      let targets = ["x", "docs/spec.md", "a/b/c/d", "/a/c/d", "/x", "a", "."]
+      for base in bases {
+        for target in targets {
+          // Only where a relative path can connect the two at all: an absolute
+          // base and a relative target have no such path, and relative answers
+          // with the target itself, which resolve then reads against the base.
+          // The pair is documented not to be an inverse there.
+          if base.startsWith("/") != target.startsWith("/") { continue }
+          let back = resolve(base, relative(base, target))
+          if back != normalize(target) {
+            print("FAILED \${base} -> \${target}: \${relative(base, target)} resolved to \${back}, not \${normalize(target)}")
+          }
+        }
+      }
+      print("ok")
+    `.trim() + '\n',
+    );
+    assert.equal(result.failed, false, result.output);
+    assert.equal(result.output.trim(), 'ok', result.output);
+  });
+
+  it('time: parseIso takes what iso gives, at every year the module accepts', async () => {
+    // `iso` wrote `-0044`, which is not ISO 8601 — the standard reserves a
+    // leading sign for the *expanded* form, six digits wide — and the module's
+    // own `parseIso` refused it. A value could be printed and not read back.
+    const result = await runSource(
+      `
+      import { fromParts, iso, parseIso, startOfDay, parts } from "std/time"
+      let years = [0 - 44, 0 - 1, 0, 1, 50, 99, 100, 1970, 2024, 9999, 10000, 12345]
+      for y in years {
+        let t = fromParts(y, 3, 1, 13, 45, 0)
+        match parseIso(iso(t)) {
+          Ok(back) => { if back != t { print("FAILED \${y}: \${iso(t)} read back as \${iso(back)}") } }
+          Err(why) => print("FAILED \${y}: \${iso(t)} -> \${why}")
+        }
+        // And the day's start is the same day, which the host's two-digit-year
+        // rule broke for every year from 0 to 99 — by nineteen centuries.
+        let midnight = startOfDay(t)
+        if parts(midnight).year != y { print("FAILED startOfDay \${y}: \${iso(midnight)}") }
+        if parts(midnight).day != 1 { print("FAILED startOfDay day \${y}: \${iso(midnight)}") }
+      }
+      print("ok")
+    `.trim() + '\n',
+    );
+    assert.equal(result.failed, false, result.output);
+    assert.equal(result.output.trim(), 'ok', result.output);
+  });
+
   it('json: parse takes what stringify gives', async () => {
     const result = await runSource(
       `
